@@ -39,6 +39,7 @@ const SHIPPY: Record<ShippyPose, Cue[]> = {
   alarmed: [{ sfx: "caught", at: 0 }],
   weld: [], // build poses: the construction kit below already carries those sounds
   carry: [],
+  inspect: [], poke: [], skid: [], idle: [], // tap-to-walk poses (pixel plan): juice picks their sounds
 };
 
 // Construction is its own quiet kit (every cue under build.ts ROUTINE_PEAK), the same one the old buildout used.
@@ -78,6 +79,7 @@ export function cuesFor(e: DeckEvent): Cue[] {
     case "launch": return [{ sfx: "launch", at: 0 }, { sfx: "launch_iron", at: 0.62 }];
     case "automated": return [{ sfx: "permit_grant", at: 0 }, { sfx: "level_up", at: 0.55 }];
     case "shippy": return SHIPPY[e.pose];
+    default: return []; // tap / shippy-arrive / interact: not wired yet
   }
 }
 

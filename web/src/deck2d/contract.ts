@@ -62,7 +62,7 @@ export interface CardView {
   setup?: boolean; // a "plug in an agent" / connect card rather than a decision on work
 }
 
-export type ShippyPose = "folded" | "peek" | "unfold" | "walking" | "lever" | "happy" | "alarmed" | "weld" | "carry";
+export type ShippyPose = "folded" | "peek" | "unfold" | "walking" | "lever" | "happy" | "alarmed" | "weld" | "carry" | "inspect" | "poke" | "skid" | "idle";
 export interface ShippyView {
   pose: ShippyPose;
   at: StopId | "corner"; // corner = folded up in the top-left of the screen
@@ -109,7 +109,20 @@ export type DeckEvent =
   | { type: "shippy"; pose: ShippyPose }
   | { type: "deck-grow"; size: "small" | "medium" | "large"; phase: "beams" | "plates" | "rails" | "glow" | "rocks" | "done" } // grow/
   | { type: "build-stage"; stop: StopId; stage: "plot" | "scaffold" | "frame" | "panels" | "top" | "burst" | "check" } // build/
-  | { type: "launch-stage"; stage: "island-rising" | "island-up" | "bridge" | "bridge-done" | "tower" | "rocket-lowering" | "rocket-seated" }; // launch/
+  | { type: "launch-stage"; stage: "island-rising" | "island-up" | "bridge" | "bridge-done" | "tower" | "rocket-lowering" | "rocket-seated" } // launch/
+  | { type: "tap"; target: TapTarget } // interact/ (docs/PIXEL-PLAN.md section 6)
+  | { type: "shippy-arrive"; target: TapTarget }
+  | { type: "interact"; target: TapTarget; action: string };
+
+/** Anything on the deck you can tap; Shippy walks to standX and does action. interact/targets.ts builds these. */
+export interface TapTarget {
+  kind: "station" | "belt" | "crate" | "lever" | "rocket" | "shippy" | "floor";
+  id: string;
+  box: { x: number; y: number; w: number; h: number }; // world units
+  standX: number;
+  face: -1 | 1;
+  action: string;
+}
 
 export interface DeckBus {
   on(fn: (e: DeckEvent) => void): () => void;
@@ -141,6 +154,50 @@ export const LOOK: Record<StopId, { h: number; drop: number }> = {
 export const ART_BASE = "/deck/art/";
 export const art = (name: string) => `${ART_BASE}${name}.webp`;
 /** Every sprite on disk. Strips were split into one file per frame/state, frames share one size, feet at the bottom. */
+// ---------- the pixel canvas (LOCKED 2026-10-28, Justin) ----------
+// Everything on the deck is pixel art on one canvas. Code draws anything that moves; snapped pictures are fine for
+// big things that don't (sky, city, deck hull). Rules every module follows:
+//  - The camera shows CANVAS art px (landscape) or CANVAS_PORTRAIT (phones), blown up at a whole-number scale with
+//    smoothing off. 1 art px = ART_PX world units, so STOP_X / BELT_Y / LOOK stay as they are.
+//  - Draw at whole art px only (world coords that are multiples of ART_PX): fillRect, no arcs, no anti-aliasing,
+//    no rotating or free-scaling sprites (anything that turns gets frames).
+//  - Only PALETTE colors, alpha fully on or off. One exception: glow/steam on a light layer at 25/50/75%.
+//  - Light from the upper right: top/right faces use the light end of a ramp, bottom/left the dark end.
+//    1 art px soot outline around anything on the deck; inside lines use the ramp's darkest color.
+//  - jam reds = stuck only, ok greens = done/automatic only, energy cyan = Shippy's eye, the core, power.
+//  - Calm: one thing moves at a time. Nothing ambient flashes; only the jam breathes.
+// Sizes at this scale (art px): station ~38 tall, Shippy ~16 standing, crate ~8, belt ~7 tall.
+export const CANVAS = { w: 640, h: 360 } as const;
+export const CANVAS_PORTRAIT = { w: 360, h: 640 } as const;
+export const ART_PX = 5;
+/** Snap a world coordinate to the art grid. */
+export const snap = (n: number) => Math.round(n / ART_PX) * ART_PX;
+/** Black Iron 48 (art/palette/black-iron-48.*), each ramp dark -> light. */
+export const PALETTE = {
+  soot: ["#0a0604"],
+  iron: ["#181211", "#291b17", "#432f29", "#6b5360", "#8f6f62"],
+  steel: ["#121e2b", "#273349", "#3d4d6a", "#7d8ea3"],
+  copper: ["#713e30", "#a04430", "#cd4f27", "#e28059", "#f2b48c"],
+  brass: ["#422616", "#6d370c", "#a36915", "#c98115", "#fdc727", "#fdec9a"],
+  plate: ["#351705", "#5a3521", "#834621", "#ae6237", "#b48254"],
+  sun: ["#652203", "#bc3c0b", "#e44e1b", "#f6601f", "#fc8717", "#fdad1e", "#f9c47a"],
+  haze: ["#623a3a", "#82525a", "#c0988e", "#eed3c5"],
+  white: ["#fdfaec"],
+  energy: ["#28545a", "#0ea0ac", "#41f3f7", "#bcf6f6"],
+  ok: ["#1c450f", "#1ab004", "#81f381"],
+  jam: ["#6a0d0d", "#c8231b", "#ff5b4a"],
+} as const;
+export const PALETTE_48: readonly string[] = Object.values(PALETTE).flat();
+
+/** Pixel sheets: web/public/deck/px/<group>/<name>.png + .json (Aseprite json-array with frameTags). */
+export const SHEETS = {
+  stations: ["repo", "planner", "builder", "checks", "review", "gate"],
+  shippy: ["shippy"],
+  props: ["crate", "belt", "lever", "lamp", "beacon", "boiler", "rocket", "flame", "core", "vent"],
+  scene: ["sky", "clouds", "skyline", "deck-small", "deck-medium", "deck-large"],
+} as const;
+export const sheet = (group: keyof typeof SHEETS, name: string) => `/deck/px/${group}/${name}`;
+
 export const SPRITES = {
   scene: ["sky", "clouds", "deck", "pad", "boiler-off", "boiler-on"],
   rocket: ["rocket", "flame"],
@@ -165,6 +222,9 @@ export interface ShippyModule {
   update(dt: number, view: ShippyView): void;
   drawWorld(ctx: CanvasRenderingContext2D): void;
   drawCorner(ctx: CanvasRenderingContext2D, x: number, y: number, size: number): void; // x,y = top-left of a size x size box
+  /** Tap-to-walk (pixel plan C6). Optional until shippy/ wires walk.ts; story poses still win over taps. */
+  goTo?(target: TapTarget): void;
+  busy?(): boolean;
 }
 export type CreateShippy = (art: ArtLoader) => ShippyModule;
 
