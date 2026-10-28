@@ -57,10 +57,15 @@ test("browser pairing: session + origin + repo permission, terminal-only deliver
     const page = await request(path, { headers: { cookie: cookies } });
     expect(page.status).toBe(200);
     expect(page.headers.get("referrer-policy")).toBe("same-origin");
-    expect(await page.text()).toContain(d.code);
+    const html = await page.text();
+    expect(html).toContain(d.code);
+    // Repos the App already reaches are offered, so the player doesn't guess owner/name.
+    expect(html).toContain('<option value="you/repo">'); expect(html).toContain('<option value="you/second">');
     const approve = (repo = "you/repo", origin = "https://shiptorio.com") => request(path, { method: "POST", headers: { cookie: cookies, origin }, body: new URLSearchParams({ repo }) });
     expect((await approve("you/repo", "https://evil.test")).status).toBe(403);
-    expect((await approve("stranger/private")).status).toBe(403);
+    const unavailable = await approve("stranger/private");
+    expect(unavailable.status).toBe(403);
+    expect(await unavailable.text()).toContain(`href="/runner/pair?code=${encodeURIComponent(d.code)}"`);
     permission = "read"; expect((await approve()).status).toBe(403); permission = "write";
     const poll = (secret = d.secret) => request("/api/runner-device/poll", { method: "POST", body: JSON.stringify({ code: d.code, secret }) });
     expect(await (await poll("x".repeat(72))).json()).toEqual({ status: "expired" });
