@@ -80,7 +80,7 @@ export default function install(IRON) {
       mem.run = null;
       let first = true;
       return {
-        update(t, dt) {
+        update(t, dt, renderElapsed = dt) {
           if (first) {
             // after the bake, before the first frame draws: the floors that aren't built are gone
             const state = I.driver && I.driver.state;
@@ -94,7 +94,7 @@ export default function install(IRON) {
             if (mem.floor) mem.run = buildFloor(I, mem.floor, { reduced: reducedMotion() });
             next();
           }
-          if (mem.run && mem.run.update(dt)) finished();
+          if (mem.run && mem.run.update(renderElapsed)) finished();
           // the chalk on the next site waits for its deck
           const chalk = I.root && I.root.getObjectByName('buildout-chalk');
           if (chalk) chalk.visible = !mem.run;
