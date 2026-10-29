@@ -24,7 +24,7 @@ Session cookies and preview-form proofs now reuse the existing bounded, isolate-
 
 ## Hosted tester playthrough fixes (Codex, 2026-10-28)
 
-- 2026-10-29 (#48): full promotion suite exposed retired admin UI assumptions; browser coverage now checks confirmed, audited Pause/Resume and preserves quota form coverage pending the real form repair.
+- 2026-10-29 (#48): full promotion suite exposed retired admin UI assumptions; browser coverage now checks confirmed, audited Pause/Resume; quota form coverage ships with its separate repair.
 
 - 2026-10-29 (#48): player actions use one captured card and reject stale replacements; unknown Later is never selected, and held Launch/explicit deferrals are recorded.
 
