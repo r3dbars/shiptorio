@@ -71,6 +71,13 @@ where the first fix doesn't really fix the bug, so AI review fails it and the re
 | 10-27 14:45 | Three browser pair codes expire unseen; one killed by ECONNRESET | https://github.com/r3dbars/shiptorio/pull/339 | F28. Merged 15:59 |
 | 10-27 ~16:30 | Mac runner handed to Codex root for the Shiptorio #170 acceptance run | | Testing paused until it's released |
 | 10-27 17:24 | Testing#13 (#7, docs/SHIPPING.md) merged | https://github.com/r3dbars/Testing/pull/13 | Doc is true only once #2 ships |
+| 10-28 | Fake "GitHub rate limit" from the per-isolate queue cap; tick and gate polls hammer GitHub | https://github.com/r3dbars/shiptorio/pull/493 · https://github.com/r3dbars/shiptorio/pull/494 | F29. Promoted 17:45 |
+| 10-28 ~20:50 | Verify bay sends #20 and #21 back for having no test | https://github.com/r3dbars/shiptorio/pull/536 | F30. Rework added a test; #20 then passed every bay |
+| 10-28 21:25 | gh-4 rework loses its runner lease: claim and heartbeat get 500s | https://github.com/r3dbars/shiptorio/pull/561 | Rate limits now return 503 + Retry-After |
+| 10-28 21:29 | Testing wedged: one hung GitHub call holds the queue at its cap | https://github.com/r3dbars/shiptorio/pull/567 · https://github.com/r3dbars/shiptorio/pull/571 | F31. D1 showed no real pressure. Cleared by itself ~23:00, back ~23:59 |
+| 10-28 23:00 | Launch cards waiting: Testing#19 (code of conduct), #20 (SAVE10) | https://github.com/r3dbars/Testing/pull/19 · https://github.com/r3dbars/Testing/pull/20 | Held for Justin's recorded taps |
+| 10-28 23:36 | gh-4 codex build cut at the 15-minute cap, 3 times | https://github.com/r3dbars/shiptorio/pull/581 | F32. Runner Codex was loading the owner's plugins |
+| 10-29 00:03 | Parked gh-4 rework card blocks the one-at-a-time plan dealer | | F33. Tapping "Look later" freed it |
 
 ## Friction log
 
@@ -161,3 +168,18 @@ Format: what hurt, how bad, what we did. Fixed items stay for the record.
   a browser within 10 minutes, so an overnight expiry stalls an unattended factory until someone notices.
 - **F28. Pairing died on one dropped connection.** A single ECONNRESET on the poll ended `pair` and burned the code.
   #339 retries network errors, 429 and 5xx until the code's own expiry.
+- **F29. A full in-isolate queue looked like a GitHub rate limit.** `ghRequest` throws `RateLimitError` once 8 calls
+  queue on one installation, and every tick guard then logged a failure and retried 2s later, which kept the queue full.
+  #493 makes the tick rest until the error's retry time. #494 polls merge readiness every 30s, not every tick.
+- **F30. The planner and the verify bay disagreed about tests.** Plans for code fixes listed only the source file, so
+  the runner couldn't stage a test and the verify bay sent every code PR back with "No proof". #536 has the planner
+  list a test file, and a widened rework may add one.
+- **F31. One hung call wedged the factory for hours.** A D1, KV or body read that never settles holds its scope's
+  promise chain, so `queued` stays at the cap and every readiness check, plan, claim and heartbeat fails until the
+  isolate is evicted. #567 gives each call a 45s deadline on its own turn. It's only on dev until #571 promotes it.
+- **F32. Runner Codex loaded the owner's plugins.** `--ignore-user-config` still starts every plugin MCP in the agent
+  home (Gmail, Drive, meetings, finances…). That's a privacy bug, and a likely cause of gh-4's 15-minute stalls.
+  #581 adds `features.plugins=false` and `features.apps=false`. Installed runners need a rebuild or a one-line patch.
+- **F33. One untapped card blocks every new plan.** The dealer offers one plan card at a time, and a rework card
+  counts. When the autopilot parked gh-4, its "Try again" card sat on the deck and no other issue got planned for 26
+  minutes.
