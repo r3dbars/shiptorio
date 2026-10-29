@@ -94,13 +94,13 @@ try { for (const [index,view] of views.entries()) {
       const online=await context.request.post(origin+`/api/runner/${stub.state.repo}/heartbeat`,{data:{harnesses:['codex']},headers:{origin,authorization:`Bearer ${token}`}});assert.equal(online.ok(),true,await online.text());
       await card().getByRole('button',{name:baseline?'Check again':'Check',exact:true}).click();await card().getByRole('heading',{name:'Codex engine is ready',exact:true}).waitFor();
     });
-    await step('first-issue-card',async()=>{if(baseline) await page.getByRole('button',{name:'Repo inbox',exact:true}).click();else await card().getByRole('button',{name:'Open inbox',exact:true}).click();await card().getByRole('button',{name:'Start issue',exact:true}).waitFor();assert.match(await card().innerText(),/#1.*Checkout total/);});
+    await step('first-issue-card',async()=>{if(baseline) await page.getByRole('button',{name:'Repo inbox',exact:true}).click();else await card().getByRole('button',{name:'Open inbox',exact:true}).click();await card().getByRole('button',{name:baseline?'Start issue':'Plan',exact:true}).waitFor();assert.match(await card().innerText(),/#1.*Checkout total/);});
     assert.ok(Date.now()-started<120000,'first issue must be reached in under two minutes');
     assert.deepEqual(errors,[],'no browser runtime errors');
     assert.ok(!requests.some(p=>p.endsWith('/start')),'browsing must not start a job');
     assert.equal(stub.state.pulls.length,0,'no PR before starting an issue');
     const overflow=await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth);assert.ok(overflow<=1,`horizontal overflow ${overflow}`);
-    const bounds=await card().getByRole('button',{name:'Start issue',exact:true}).boundingBox();assert.ok(bounds.x>=0&&bounds.x+bounds.width<=view.width,'Start issue is fully onscreen');
+    const bounds=await card().getByRole('button',{name:baseline?'Start issue':'Plan',exact:true}).boundingBox();assert.ok(bounds.x>=0&&bounds.x+bounds.width<=view.width,'Start issue is fully onscreen');
     reports.push({view: view.name,totalMs:Date.now()-started,steps,slowest:[...steps].sort((a,b)=>b.ms-a.ms).slice(0,3),errors});
     console.log(`PASS deck first run ${view.name}: ${Date.now()-started}ms`);
   } finally {await context?.close();await mf?.dispose();}
