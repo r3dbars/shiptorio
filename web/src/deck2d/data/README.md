@@ -41,6 +41,6 @@ The sim scenario `?source=sim&scenario=deck2d` asks before every build, so the w
 builder goes green. Tests: `web/test/deck2d-view.test.ts`.
 
 For hands-off viewing, `/deck.html?source=sim&scenario=deck-watch&watch=1` runs one simulated checkout fix:
-build, failed CI, repair, verification, launch, then an 18-second rest before replay. It automatically answers only
+build, failed CI, repair, verification, launch, then the full rocket return and a short rest before replay. It automatically answers only
 that simulator's build and merge cards. `watch=1` has no effect on a live source. The caption labels the simulation;
 no backend, credentials, GitHub changes, or real merges are involved.

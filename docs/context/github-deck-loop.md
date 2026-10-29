@@ -26,7 +26,7 @@ Justin, 2026-10-29: establish the physical conveyor behavior first, then connect
 
 - One identity travels through every stage. Issue number becomes a PR label without spawning a duplicate crate.
 - A transfer starts at the prior machine and finishes at the next; the next machine does not process early.
-- Idle and held cargo do not animate the conveyor. Moving cargo advances its bay's belts; stopping preserves their phase.
+- Idle and held cargo do not animate the conveyor. Each connection spans one machine to the next; the entire connection moves while carrying a crate, with no midpoint switch. Stopping preserves its phase.
 - Red stops cargo and the affected belt. Yellow asks a human; it does not imply an outage.
 - Reconnect restores authoritative state. Visual arrival never authorizes real execution or merge; only the local prototype uses arrival events to pace its demonstration.
 - Validate single issue, several queued issues, outage/recovery, rejected checks/rework, permission loss, reconnect and duplicate webhook cases before declaring the real loop complete.

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { PALETTE } from "../src/deck2d/contract";
+import { PALETTE, STOPS, STOP_X } from "../src/deck2d/contract";
 import { beltRun } from "../src/deck2d/engine/pxdraw";
-import { advanceBeltDistance } from "../src/deck2d/engine/flow";
+import { advanceBeltDistance, beltConnectionAt } from "../src/deck2d/engine/flow";
 
 function render(t: number, blocked = false, moving = true) {
   const pixels = new Map<string, string>();
@@ -27,6 +27,16 @@ test("only the blocked area turns red and clearing restores green", () => {
 test("an empty green conveyor holds still", () => {
   expect(render(0, false, false)).toEqual(render(10, false, false));
   expect(render(0, false, false).get("150,25")).toBe(PALETTE.ok[1]);
+});
+
+test("a belt connection does not change ownership halfway between machines", () => {
+  for (let i = 0; i < STOPS.length - 1; i++) {
+    const from = STOPS[i], to = STOPS[i + 1];
+    expect(beltConnectionAt(STOP_X[from] + 1)).toBe(from);
+    expect(beltConnectionAt((STOP_X[from] + STOP_X[to]) / 2)).toBe(from);
+    expect(beltConnectionAt(STOP_X[to] - 1)).toBe(from);
+    expect(beltConnectionAt(STOP_X[to])).toBe(to);
+  }
 });
 
 test("green arrows travel right on the art grid", () => {
