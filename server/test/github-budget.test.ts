@@ -398,6 +398,8 @@ it("never coalesces credentials, representations, queries or explicit freshness/
     gh("/repos/a/b", token, { cache: "reload" }),
   ]);
   expect(calls).toBe(8);
+  await Promise.all([gh("/repos/a/b", token), gh("/repos/a/b", token, { redirect: "manual" })]);
+  expect(calls).toBe(10);
 });
 
 it("shares provider backoff across duplicate reads without consuming more GitHub calls", async () => {

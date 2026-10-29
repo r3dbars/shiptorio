@@ -153,8 +153,9 @@ async function ghRequest<T>(path: string, token: string, init: RequestInit = {})
     boundedSet(readGenerations, generationKey, crypto.randomUUID());
   }
   const headers = new Headers(init.headers);
-  const shared = (init.method ?? "GET").toUpperCase() === "GET" && !init.body && !init.signal
-    && !(init as RequestInit & { cache?: string }).cache && !headers.has("if-none-match") && !headers.has("if-modified-since")
+  const shared = (init.method ?? "GET").toUpperCase() === "GET"
+    && Object.keys(init).every(field => field === "method" || field === "headers")
+    && !headers.has("if-none-match") && !headers.has("if-modified-since")
     && !headers.has("range") && !headers.has("cache-control");
   if (!shared) return queuedGhRequest<T>(path, token, init);
   const identity = JSON.stringify(["inflight", readGenerations.get(generationKey), owner?.env.GITHUB_APP_ID, owner?.installationId, owner?.version, owner?.scope]);
