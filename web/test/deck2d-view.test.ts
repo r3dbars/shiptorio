@@ -41,6 +41,7 @@ test("watch mode builds, fails, repairs, launches, and resets without a click", 
     if (job?.state === "rejected") expect(src.view().jam).toBe("builder");
     if (job?.state === "working" && job.attempts > 1) repaired = true;
     if (src.view().shipped > 0) launched = true;
+    expect(src.view().stops.every(s => s.built)).toBe(true);
     if (launched && src.view().shipped === 0) { reset = true; break; }
     expect(src.view().card).toBeNull();
   }
@@ -49,6 +50,15 @@ test("watch mode builds, fails, repairs, launches, and resets without a click", 
   expect(repaired).toBe(true);
   expect(launched).toBe(true);
   expect(reset).toBe(true);
+  expect(timers.size).toBe(0);
+});
+
+test("closing while a watch reset is pending leaves no simulator running", () => {
+  const src = createWatchSource();
+  advance(0);
+  src.reset();
+  src.close();
+  advance(0);
   expect(timers.size).toBe(0);
 });
 

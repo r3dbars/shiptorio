@@ -13,10 +13,18 @@ export function isWatchMode(search: string): boolean {
 export function createWatchSource() {
   const connect = () => createLiveSource({ kind: "sim", scenario: "deck-watch", repo: "" });
   let source = connect();
+  let replacement: typeof source | null = null;
   let pending = "", waiting = 0, finished = 0;
   const watch: DeckSource & { close(): void; reset(): void; state: typeof source.state } = {
     state: () => source.state(),
     step(dt) {
+      if (replacement) {
+        // Keep the built scene until the next snapshot exists. A null view for even
+        // one frame makes the build layer replay every station's construction.
+        if (!replacement.state()) return;
+        source = replacement; replacement = null;
+        pending = ""; waiting = 0; finished = 0;
+      }
       const card = source.view().card;
       if (card?.id !== pending) { pending = card?.id ?? ""; waiting = 0; }
       if (card) {
@@ -48,8 +56,8 @@ export function createWatchSource() {
       };
     },
     approve() {}, later() {},
-    reset() { source.close(); source = connect(); pending = ""; waiting = 0; finished = 0; },
-    close() { source.close(); },
+    reset() { if (replacement) return; source.close(); replacement = connect(); },
+    close() { source.close(); replacement?.close(); replacement = null; },
   };
   return watch;
 }
