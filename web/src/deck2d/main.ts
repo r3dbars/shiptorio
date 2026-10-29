@@ -144,7 +144,7 @@ export function storyBeforeSignIn(story: DeckSource, connections: { open(target:
     if (opts.ask && !asked) return { ...view, card: { ...view.card, id: askId() } };
     if (!finished) { finished = true; connections.open("repo"); }
     else if (opts.ask && connections.answer && connections.card()?.yes === "Sign in" && pressed !== `${asks}`) {
-      pressed = `${asks}`; void connections.answer(connections.card()!.id, true); // "Create my factory" was the press
+      pressed = `${asks}`; void connections.answer(connections.card()!.id, true); // "Build mine" was the press
     }
     else if (!connections.card() && opts.ask) { finished = false; asked = false; asks++; return { ...view, card: { ...view.card, id: askId() } }; }
     else if (!connections.card()) {
@@ -320,7 +320,7 @@ const seed = Number(params.get("seed")) || 0;
   const zoom = document.getElementById("zoom") as HTMLButtonElement;
   let all = false, asking = false;
   // Phone only, and only while nothing asks: a card on screen is the one thing to tap.
-  const zoomLabel = () => { const label = all ? "Zoom in" : "Zoom out"; zoom.hidden = !engine.portrait || asking; zoom.textContent = label; zoom.setAttribute("aria-label", label); };
+  const zoomLabel = () => { const label = all ? "Zoom in" : "Zoom out"; zoom.hidden = !engine.portrait || asking || guestTour; /* the tour frames every shot itself */ zoom.textContent = label; zoom.setAttribute("aria-label", label); };
   zoom.addEventListener("click", () => { all = !all; engine.seeAll(all); zoomLabel(); });
   addEventListener("resize", zoomLabel); zoomLabel();
 
