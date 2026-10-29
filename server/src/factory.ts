@@ -2812,11 +2812,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   private async launch(item: Item, by: "player" | "overrule" | "autonomy"): Promise<void> {
     if (by === "autonomy" && !(await flagEnabled(this.env, "permits"))) return;
     if (!item.prNumber || !this.meta) return;
-    const launchingInspection = this.state!.items.find(current => current.id === item.id)?.inspection;
+    const launchingItem = this.state!.items.find(current => current.id === item.id && current.prNumber === item.prNumber);
+    const launchingInspection = launchingItem?.inspection;
     try {
       const token = await installationToken(this.env, this.meta.installationId);
       const head = (await gh<{ head: { sha: string } }>(`/repos/${this.meta.repo}/pulls/${item.prNumber}`, token)).head.sha;
-      if (!this.state!.items.some(current => current === item)) throw new Error("Current checks changed while launch was being refreshed.");
+      if (!launchingItem || !this.state!.items.some(current => current === launchingItem)) throw new Error("Current checks changed while launch was being refreshed.");
       if (by !== "overrule") {
         if (!stationsPassed(item.inspection)) throw new Error("Current checks require complete station receipts.");
         if (item.inspection?.headSha !== head) {
@@ -2824,7 +2825,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           throw new Error("The PR changed after its checks ran. It goes back through the gauntlet.");
         }
         const checks = await inspectPullRequest(token, this.meta.repo, item.prNumber, head, this.state!.baseBranch);
-        if (!this.state!.items.some(current => current === item)) throw new Error("Current checks changed while launch was being refreshed.");
+        if (!launchingItem || !this.state!.items.some(current => current === launchingItem)) throw new Error("Current checks changed while launch was being refreshed.");
         if (checks.stale) throw new Error("The PR changed while its checks were being refreshed.");
         if (checks.state !== "passed") {
           const current = checks.state === "failed" ? setStage(item, "ci", "rework", checks.summary) : { ...item, state: "inspecting" as const, machineId: "ci-1", inspection: freshInspection(head), updatedAt: Date.now() };
