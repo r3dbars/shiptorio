@@ -1,6 +1,6 @@
 import {
   ART_PX, BELT_Y, DECK_DX, DECK_END, HULL, snap, FLOOR_Y, LAUNCH_Y, LOOK, PALETTE, PALETTE_48, STOPS, STOP_X,
-  type ArtLoader, type DeckBus, type DeckLayer, type DeckView, type Item, type LayerSlot, type ShippyModule, type Stop, type StopId,
+  type ArtLoader, type DeckBus, type DeckLayer, type DeckView, type Item, type LayerSlot, type Shot, type ShippyModule, type Stop, type StopId,
 } from "../contract";
 import { pixelOn } from "../../flags";
 import { createPixelCanvas } from "./pixel";
@@ -10,7 +10,7 @@ import { BOILER_H, BOILER_W, boilerFrame } from "../props/boiler2d";
 import { stationSize, type StationId } from "../stations";
 import { advanceBeltDistance, beltConnectionAt } from "./flow";
 import { needsAttention, type AttentionView } from "../stations/attention";
-import { anchoredCenter, pixelZoom, settleCamera } from "./camera";
+import { anchoredCenter, frameShot, pixelZoom, settleCamera, SHOT_RATE, wholeScale } from "./camera";
 
 // stations/ (its own thread) draws each machine in pixel code; until it lands, pixel mode shows the snapped webp.
 type DrawStation = (cx: CanvasRenderingContext2D, id: StopId, state: string, t: number, x: number, feetY: number, scale?: number, attention?: boolean) => void;
@@ -54,6 +54,8 @@ export interface Engine {
   where(stop: StopId): { x: number; y: number }; // CSS pixels on screen
   focus(stop: StopId | null): void; // fly the camera there (null: back to automatic)
   seeAll(on: boolean): void;
+  /** True once the camera has arrived where the current view (or its `shot`) wants it. */
+  settled(): boolean;
   readonly portrait: boolean;
 }
 
@@ -115,8 +117,27 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     const half = W / 2 / s, x0 = BOUNDS.x0 - 40 + half, x1 = right() - half;
     return { x: x1 <= x0 ? all.x : Math.max(x0, Math.min(x1, x)), y: all.y - 20, s };
   }
+  // Story shots (DeckView.shot, or ?shot= for previews): the first run frames one thing at a time.
+  const previewShot = new URLSearchParams(location.search).get("shot") as Shot | null;
+  function subject(shot: Exclude<Shot, "line">) {
+    if (shot === "shippy") {
+      const actor = shippy as ShippyModule & { readonly state?: { x: number } };
+      return { x: actor.state?.x ?? STOP_X.repo - 150, y: FLOOR_Y + (px ? 38 : 22) - 45, width: 560 };
+    }
+    if (shot === "boiler") return { x: BOILER.x, y: BOILER.base - (BOILER_H * ART_PX) / 2, width: 900 };
+    if (shot === "launch") return { x: STOP_X.launch - 70, y: LAUNCH_Y - 150, width: 1100 };
+    return { x: STOP_X[shot], y: FLOOR_Y - 90, width: 900 };
+  }
+  function shotTarget(shot: Shot, all: { x: number; y: number; s: number }) {
+    const scr = { w: W, h: H, dpr: DPR, artPx: ART_PX, pixel: !!px };
+    // the whole line rounds the zoom down, so nothing built falls off the edge
+    if (shot === "line") return { x: all.x, y: all.y, s: wholeScale(all.s, scr, true) };
+    return frameShot(subject(shot), scr);
+  }
   function target(v: DeckView) {
     const all = fitAll();
+    const shot = v.shot ?? previewShot;
+    if (shot) return shotTarget(shot, all);
     if (cam.all) return all;
     const following = (v as DeckView & { followItem?: string }).followItem;
     const cargo = following ? crates.get(following) : undefined;
@@ -149,7 +170,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     return { x: Math.max(BOUNDS.x0 + half, Math.min(right() - half, focusX(v))), y: 250, s };
   }
   { const f = fitAll(); Object.assign(cam, f); }
-  let first = true;
+  let first = true, arrived = false, lastShot: Shot | null | undefined;
 
   // drag to pan, pinch or wheel to zoom
   const ptrs = new Map<number, [number, number]>(); let pinch = 0, moved = 0;
@@ -515,14 +536,17 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   function frame(v: DeckView, dt: number) {
     t += dt; lever = Math.max(0, lever - dt);
     take(v, dt); rocketStep(dt);
+    const shot = v.shot ?? previewShot;
+    if (shot !== lastShot) { lastShot = shot; cam.manual = 0; } // a new story shot takes the camera back from a drag
     if (performance.now() >= cam.manual) {
-      const tg = target(v);
+      const tg = target(v), rate = shot ? SHOT_RATE : undefined;
       if (first) Object.assign(cam, tg);
       else {
-        cam.x = settleCamera(cam.x, tg.x, dt, ART_PX / 4);
-        cam.y = settleCamera(cam.y, tg.y, dt, ART_PX / 4);
-        cam.s = settleCamera(cam.s, tg.s, dt, 0.0001);
+        cam.x = settleCamera(cam.x, tg.x, dt, ART_PX / 4, rate);
+        cam.y = settleCamera(cam.y, tg.y, dt, ART_PX / 4, rate);
+        cam.s = settleCamera(cam.s, tg.s, dt, 0.0001, rate);
       }
+      arrived = cam.x === tg.x && cam.y === tg.y && cam.s === tg.s;
       first = false;
     }
     for (const l of layers) l.update(dt, v);
@@ -607,6 +631,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     where(stop) { return { x: W / 2 + (STOP_X[stop] - cam.x) * cam.s, y: H / 2 + ((stop === "launch" ? LAUNCH_Y : FLOOR_Y - 80) - cam.y) * cam.s }; },
     focus(stop) { cam.pin = stop; cam.manual = 0; },
     seeAll(on) { cam.all = on; cam.manual = 0; },
+    settled() { return arrived; },
     get portrait() { return portrait(); },
   };
 }

@@ -6,7 +6,7 @@ type Repo = { fullName: string };
 type Issue = { id: number; number: number; title: string; body: string };
 type Suggested = { number: number; because: string; by: 'spark' | 'fallback' };
 type Pane = 'repos' | 'issues' | 'power' | 'setup' | 'disconnect';
-type Options = { repo?: string; origin: string; path: string; fetch?: typeof fetch; navigate: (url: string) => void; copy: (text: string | Promise<string>) => Promise<void>; onStart?: (id: string) => void; now?: () => number };
+type Options = { repo?: string; origin: string; path: string; fetch?: typeof fetch; navigate: (url: string) => void; askPassword?: (next: string) => void; copy: (text: string | Promise<string>) => Promise<void>; onStart?: (id: string) => void; now?: () => number };
 
 /** Browsing is read-only. Starting one issue requests a plan; a separate card approves the build.
  * Setup asks for as few taps as possible: one repo is used without asking, one tap copies the Codex line,
@@ -15,6 +15,7 @@ export function createConnections(o: Options) {
   const request = o.fetch ?? fetch, now = o.now ?? Date.now;
   let accountChecked = false;
   let pane: Pane | null = null, revision = 0, displayRevision = 0, busy = false, refreshing = false, error = '', login = false;
+  let locked = false; // shiptorio.dev shows the tutorial to anyone; the preview password comes before GitHub sign-in (password.ts)
   let repos: Repo[] = [], issues: Issue[] = [], suggested: Suggested | null = null, index = 0, page = 1, nextPage: number | null = null;
   let status: RunnerStatus | null = null, command = '', copied = false, copyFailed = false, expires = 0, nextPoll = 0;
   let leaving = '', onboarding = false; // leaving: the one repo we're opening. onboarding: go straight to the inbox once Codex is ready.
@@ -34,6 +35,7 @@ export function createConnections(o: Options) {
         try {
           const info = await request('/api/me', { cache: 'no-store' });
           if (info.ok) configured = (await info.json()).githubConfigured !== false;
+          else if (info.status === 401) locked = true;
         } catch { /* Keep the original authentication error when readiness is unavailable. */ }
         if (!configured) { login = false; throw new Error('GitHub setup is not finished on this server. The factory owner must connect its GitHub App before anyone can sign in.'); }
       }
@@ -51,6 +53,7 @@ export function createConnections(o: Options) {
         // so an expected sign-in step does not produce a failed API request in the browser.
         if (!accountChecked) {
           const response = await request('/api/me', { cache: 'no-store' });
+          if (response.status === 401) { locked = login = true; throw new Error('Sign in with GitHub to choose your repository.'); }
           if (!response.ok) throw new Error('Could not check sign-in. Try again.');
           const account = await response.json();
           if (current !== revision) return;
@@ -124,7 +127,8 @@ export function createConnections(o: Options) {
     displayRevision++; // A refresh is a new card even when its content is unchanged.
     if (busy || leaving) return true;
     if (error && approve) {
-      if (login) o.navigate(`/auth/login?next=${encodeURIComponent(o.path)}`); else if (pane === 'disconnect') { error = ''; } else { await refresh(); return true; }
+      const signIn = `/auth/login?next=${encodeURIComponent(o.path)}`;
+      if (login && locked && o.askPassword) o.askPassword(signIn); else if (login) o.navigate(signIn); else if (pane === 'disconnect') { error = ''; } else { await refresh(); return true; }
       if (login) return true;
     }
     if (!approve) {

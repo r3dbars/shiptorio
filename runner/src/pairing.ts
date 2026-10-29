@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 import { homedir } from "node:os";
 export type GrantRejectionCode = "runner_grant_expired" | "runner_grant_invalid" | "runner_pair_revoked" | "runner_access_revoked";
 export interface Pairing { repo: string; token: string; expires: number; rejected?: { code: GrantRejectionCode; at: number } }
+/** Decode a runner grant's unsigned claims for local scheduling/comparison only; the server verifies the signature. */
+export const tokenClaims = (token: string) => JSON.parse(atob(token.split(".")[0].replace(/-/g, "+").replace(/_/g, "/")));
 export const runnerHome = () => resolve(process.env.SHIPTORIO_RUNNER_ROOT || resolve(homedir(), ".local/share/shiptorio/runner"));
 const validRepo = (repo: string) => /^[\w.-]+\/[\w.-]+$/.test(repo) && !repo.split("/").some(p => p === "." || p === "..");
 export async function savePairing(pairing: Pairing, root = runnerHome()) {

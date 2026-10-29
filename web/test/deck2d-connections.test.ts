@@ -142,6 +142,26 @@ test('anonymous front door asks for sign-in without a protected API request', as
   ui.open('repo');await settle();expect(ui.card()?.title).toBe('Sign in to your factory');expect(ui.card()?.yes).toBe('Sign in');expect(calls).toEqual(['/api/me']);
 });
 
+test('a visitor without the preview password gets the password popup before GitHub sign-in', async () => {
+  const asked: string[] = [], navigations: string[] = [];
+  const ui = createConnections({origin:'https://shiptorio.dev',path:'/deck?source=live',navigate:url=>navigations.push(url),askPassword:next=>asked.push(next),copy:async()=>{},
+    fetch:(async()=>new Response('Preview password required',{status:401})) as typeof fetch});
+  ui.open('repo');await settle();
+  expect(ui.card()).toMatchObject({title:'Sign in to your factory',yes:'Sign in'});
+  await ui.answer(ui.card()!.id,true);
+  expect(asked).toEqual(['/auth/login?next=%2Fdeck%3Fsource%3Dlive']);
+  expect(navigations).toEqual([]);
+});
+
+test('a visitor who already has the password goes straight to GitHub', async () => {
+  const asked: string[] = [], navigations: string[] = [];
+  const ui = createConnections({origin:'https://shiptorio.dev',path:'/deck?source=live',navigate:url=>navigations.push(url),askPassword:next=>asked.push(next),copy:async()=>{},
+    fetch:(async()=>Response.json({guest:true,login:null,githubConfigured:true})) as typeof fetch});
+  ui.open('repo');await settle();await ui.answer(ui.card()!.id,true);
+  expect(asked).toEqual([]);
+  expect(navigations).toEqual(['/auth/login?next=%2Fdeck%3Fsource%3Dlive']);
+});
+
 test('ready engine keeps unplug behind Options and never disconnects on the first tap', async () => {
   const f = setup([{ paired: true, online: true, harnesses: ['codex'] }]);
   f.ui.open('power'); await settle();

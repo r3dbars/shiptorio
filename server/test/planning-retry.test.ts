@@ -51,6 +51,18 @@ describe("planner cooldowns", () => {
   });
 });
 
+test("a short timeout or 429 rest reads as a calm moment, a long rest keeps its reset time", async () => {
+  const { PLANNER_BUSY_LINE } = await import("../src/planning-retry");
+  for (const error of [new Error("Planner rate limit (429)"), new Error("The operation timed out.")]) {
+    const once = planningFailure(undefined, error, now);
+    expect(plannerRestDeck([], once, now)[0].title).toBe(PLANNER_BUSY_LINE);
+    let long = once;
+    for (let n = 1; n < 3; n++) long = planningFailure(long, error, now + n * 1000);
+    expect(plannerRestDeck([], long, now)[0].title).toMatch(/^Planner is resting until/);
+  }
+  expect(plannerRestDeck([], planningFailure(undefined, new Error("503"), now), now)[0].title).toMatch(/^Planner is resting until/);
+});
+
 test("the resting card respects the twelve-card browser contract on a full deck", async () => {
   const { ServerToWeb } = await import('@shiptorio/shared');
   const retry = planningFailure(undefined, new Error('503'), now);

@@ -34,8 +34,10 @@ It never ends. There is always a bottleneck, always something to optimize, alway
 3. **Your sign-ins are the machines.** The player's Claude and ChatGPT subscriptions are the power plants and
    assemblers (via the local runner). Later, local models are another resource (geothermal). More sign-ins,
    bigger factory.
-4. **Autonomy is earned by playing.** Day one, Spark asks before it acts. The more you play, the more it's
-   allowed to do on its own (advisor → floor → build → per-district launch permits → lights out).
+4. **Autonomy is earned by playing.** Day one, Spark asks before it acts. One trust meter: say yes to the same
+   kind of card three times and the factory does that kind on its own (`server/src/learn.ts`). Only safe, undoable
+   steps can be learned (starting and approving plans). Ship it always waits for a human. Launch permits and the
+   advisor → lights-out levels are parked behind flags that stay off, even on dev.
 5. **Verify everything (checks and balances, inspired by Lauren Tan / poteto).** Checks (CI + proof) → Review →
    Gate (your merge). Fails loop back to Spark. Every station is visible and clickable, piles show the bottleneck,
    and the game rewards adding more checks.
@@ -44,9 +46,10 @@ It never ends. There is always a bottleneck, always something to optimize, alway
    (phone, web, later voice). The gauntlet makes fast yeses safe, and earned trust means fewer cards.
 7. **Simple, easy, addictive in a good way.** Two minutes from sign-in to your first bottleneck. Justin loves
    games; the game pull is the product. Fun is what makes people keep shipping.
-8. **Plain words in the UI, no "Spark".** Players don't care what the planner model is called. Recommended options
-   just get a "Suggested" tag. No named character. The only credit is one small "powered by Meta Muse Spark" line
-   (onboarding/about). Internally (code, docs, contracts) Spark keeps its name.
+8. **Plain words in the UI; Shippy is the one guide.** Players don't care what the planner model is called, so
+   cards use plain words and recommended options just get a "Suggested" tag. Shippy is the only character. One short
+   tutorial beat says he's powered by Meta Muse Spark (Justin 2026-10-29); otherwise no "Spark" in player copy.
+   Internally (code, docs, contracts) Spark keeps its name.
 9. **Progressive disclosure: one concept at a time, mobile first.** Shiptorio is a lot (ore, machines, power, the gauntlet, bottlenecks, autonomy), and all of it at once overwhelms. Onboarding walks a new player through it step by step, with a coach card as the guide: your factory is one codebase, then ore, a machine, power, the line, one inspection, the rocket, the bottleneck, the check-in deck. Each piece of HUD stays hidden until the coach introduces it, and each lesson is taught by doing, not by reading. New features follow the same rule: they show up when the player is ready for them. Big readable text, few boxes.
 
 10. **The map reads like the work, bottom to top.** Raw work is mined deep underground (inbox, GitHub, Sentry,
@@ -139,7 +142,7 @@ The full approved rounds 1–4 and rollout policy are in [GAMEPLAY-PICKS.md](GAM
   Station labels, cards, captions, story, setup copy, runner messages, PR comments and docs all use these exact
   words (source of truth: `STOP_LABEL` in `web/src/deck2d/contract.ts`). No synonyms (not inspector, verify bay,
   AI review, merge gate, assembler, inbox or launch pad). Checks runs the CI check and the proof check (`docs/LOOP.md`).
-- **Who it's for:** solo founders and tiny teams with real users. Hosted on shiptorio.com (password-gated for now).
+- **Who it's for:** solo founders and tiny teams with real users. Hosted on shiptorio.com (password-gated for now). shiptorio.dev opens straight into the tutorial; the password comes at "create your own factory".
 - **Hackathon:** Meta, submit by noon CT Wed Nov 4. It's a date, not the goal.
 
 ## How to decide what's next
@@ -185,6 +188,9 @@ New high-level goals from Justin go here, dated, then get folded into the sectio
 - 2026-10-27: Build mode (advanced, optional): players build and redesign the factory themselves, Factorio /
   RollerCoaster Tycoon style, on the Black Iron art. Every piece is a real pipeline part, so the layout is the
   pipeline config, and the gauntlet can be added to but never bypassed. Spec: `docs/BUILD-MODE.md`.
+- 2026-10-29: One trust meter. The player sees one way the factory earns trust: learned cards (three yeses, then
+  it's automatic). Launch permits and autonomy levels are parked (off on every worker, data kept), so Gate never
+  auto-merges and Ship it stays human.
 - 2026-10-27: Simple out of the box, complexity over months (principle 11). Justin approved the walkthrough cuts:
   no XP or levels (trust is the only progress bar), two counters (waiting on you, shipped), Next Move and the
   check-in deck become one queue, research / mines / tools hidden until needed, no first-run Check in / Build fork.
@@ -203,3 +209,7 @@ New high-level goals from Justin go here, dated, then get folded into the sectio
   launch pad) rise in 5 to 8 animated seconds each, burst online with electricity and stamp themselves done while a
   real first issue rides through. Behind `?buildout=1` until Justin has played it. Contract:
   `web/src/buildout/CONTRACT.md`; plan https://claude.ai/artifact/T6puBBYVnZiFaBiqephirN.
+- 2026-10-29 20:56: **Tutorial first, password at "create your own factory".** Anyone visiting shiptorio.dev lands in
+  Shippy's tutorial with no password, waitlist or landing page in front. The password pops up only when they choose to
+  create their own factory, right before GitHub sign-in. Real accounts stay locked; the tutorial is scripted (no Spark
+  spend). shiptorio.com follows only via a promotion. Details: `docs/context/landing.md`.
