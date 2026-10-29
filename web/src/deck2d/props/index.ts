@@ -6,7 +6,7 @@
 import { ART_PX, DECK_DX, HULL, PALETTE, snap, type CreateLayer, type DeckLayer, type DeckView, type LayerSlot } from "../contract";
 import { pixelOn } from "../../flags";
 import { BOILER_H, BOILER_W, boilerFrame } from "../../bakeoff/boiler2d";
-import { A, PAD, TOP, VENT_MOUTH, hullCanvas, orbFrame, orbX, ventXs } from "./hull";
+import { A, PAD, TOP, VENT_MOUTH, hullCanvas, hullHighlights, orbFrame, orbX, rockBottom, ventXs } from "./hull";
 
 type Size = "small" | "medium" | "large";
 /** Built width per size, world units: each size ends just past its last station (small: Builder, medium: Review);
@@ -64,6 +64,21 @@ export const createLayer: CreateLayer = () => {
       const w = width(), cv = hullCanvas(w), was = ctx.imageSmoothingEnabled;
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(cv, -PAD * ART_PX, -TOP * ART_PX, cv.width * ART_PX, cv.height * ART_PX);
+      // Light travels slowly through the existing cyan fractures; stone stays still.
+      for (const seam of hullHighlights(w)) {
+        const light = still ? 2 : 1 + Math.round((Math.sin(t * 0.9 - seam.y * 0.12 + seam.x * 0.025) + 1));
+        ctx.fillStyle = PALETTE.energy[light];
+        ctx.fillRect(seam.x * ART_PX, seam.y * ART_PX, ART_PX, ART_PX);
+      }
+      // A few detached slivers hover beyond the stepped cliffs, like the launch island.
+      for (let i = 0; i < 12; i++) {
+        const x = Math.round(w * (i + 0.5) / 12 + (still ? 0 : Math.sin(t * 0.35 + i) * 2));
+        if (Math.abs(x - orbX(w)) < 34) continue;
+        const y = Math.round(rockBottom(x, w) + 8 + i % 3 * 4 + (still ? 0 : Math.sin(t * 0.5 + i * 2) * 2));
+        ctx.fillStyle = PALETTE.iron[0]; ctx.fillRect(x * ART_PX, y * ART_PX, 4 * ART_PX, 5 * ART_PX);
+        ctx.fillStyle = PALETTE.iron[2]; ctx.fillRect((x + 1) * ART_PX, (y - 1) * ART_PX, 2 * ART_PX, 4 * ART_PX);
+        ctx.fillStyle = PALETTE.steel[1]; ctx.fillRect((x + 3) * ART_PX, (y + 1) * ART_PX, ART_PX, 2 * ART_PX);
+      }
       const phase = still ? 3 : Math.floor(t * (blocked ? 4 : 2)) % 8;
       const core = orbFrame(blocked, phase);
       ctx.drawImage(core, snap((orbX(w) - 38) * ART_PX), (A.skirt - 2) * ART_PX, core.width * ART_PX, core.height * ART_PX);

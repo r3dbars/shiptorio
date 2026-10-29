@@ -1,5 +1,5 @@
 import { HULL, ART_PX } from "../contract";
-import type { Color } from "../stations/palette";
+import { IDX, type Color } from "../stations/palette";
 import { Px, shift } from "../stations/px";
 import { BRASS, GOLD, IRON, ball, blotch, cylH, cylV, noise, rivet, strap, tone, type Ramp } from "../stations/shade";
 import { CU, tube } from "../../bakeoff/boiler2d";
@@ -19,7 +19,7 @@ export const A = {
   back: Math.round(HULL.back / ART_PX),
   front: Math.round(HULL.front / ART_PX) + FRONT_DEPTH,
   skirt: Math.round(HULL.skirt / ART_PX) + FRONT_DEPTH,
-  orb: { x: HULL.orb.x / ART_PX, y: HULL.orb.y / ART_PX + FRONT_DEPTH + 58 },
+  orb: { x: HULL.orb.x / ART_PX, y: HULL.orb.y / ART_PX + FRONT_DEPTH + 30 },
 };
 /** The canvas starts TOP art px above y 0 (lanterns on the back rail) and is H tall (orb at the bottom). */
 export const TOP = 20, H = 250, PAD = 2;
@@ -184,8 +184,11 @@ function hangers(g: Px, w: number) {
 // ---------- rock underside ----------
 function depth(x: number, w: number) {
   const k = 1 - Math.abs((x - w / 2) / (w / 2));
-  return 10 + 68 * Math.pow(Math.max(0, k), 0.65) + (blotch(x, 0, 13, 31) - 0.5) * 8;
+  const shelves = [[0.17, 0.11, 30], [0.38, 0.13, 44], [0.58, 0.10, 34], [0.81, 0.12, 28]];
+  const spur = Math.max(...shelves.map(([at, spread, height]) => Math.max(0, 1 - Math.abs(x / w - at) / spread) * height));
+  return 12 + 48 * Math.pow(Math.max(0, k), 0.65) + spur + (blotch(x, 0, 13, 31) - 0.5) * 7;
 }
+export const rockBottom = (x: number, w: number) => A.skirt + depth(x, w);
 function rocks(g: Px, w: number) {
   const y0 = A.skirt;
   // Interlocking, irregular stone faces: every pixel belongs to one fracture cell.
@@ -210,6 +213,7 @@ function rocks(g: Px, w: number) {
       }
       const face = (x - owner.x) * 0.65 - (j - owner.y) * 0.35;
       let light = 0.28 + owner.tone * 0.2 + (face > 1.5 ? 0.13 : face < -3 ? -0.06 : 0);
+      light += Math.floor((j + x * 0.12) / 18) % 2 ? -0.035 : 0.035; // receding rock strata
       light -= Math.max(0, j / d - 0.65) * 0.16;
       const seam = second - best;
       if (seam < 7) light = 0.08; // narrow fracture depth
@@ -307,6 +311,8 @@ function endCap(g: Px, w: number) {
 }
 
 const cache = new Map<number, HTMLCanvasElement>();
+const highlights = new Map<number, { x: number; y: number }[]>();
+export function hullHighlights(w: number) { return highlights.get(Math.max(60, Math.round(w))) ?? []; }
 const orbFrames = new Map<string, HTMLCanvasElement>();
 /** Eight tiny cached frames: only the light/core moves; the hanging cage stays anchored. */
 export function orbFrame(blocked: boolean, phase: number): HTMLCanvasElement {
@@ -338,6 +344,10 @@ export function hullCanvas(w: number): HTMLCanvasElement {
   frontRail(g, w);
   endCap(g, w);
   raw.outline();
+  const seams: { x: number; y: number }[] = [];
+  for (let i = 0; i < raw.d.length; i++) if (raw.d[i] === IDX["energy-2"] || raw.d[i] === IDX["energy-3"])
+    seams.push({ x: i % raw.w - PAD, y: Math.floor(i / raw.w) - TOP });
+  highlights.set(w, seams);
   cv = raw.bake();
   cache.set(w, cv);
   return cv;
