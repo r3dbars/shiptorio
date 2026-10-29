@@ -67,3 +67,9 @@ other sounds. Your choices are saved in this browser. Press **M** to mute all so
 
 For comparison, add `music=1` to the URL to hear the older score. The `music=2` option
 still selects the new soundtrack, but is no longer needed.
+
+## The 2D deck
+
+On the 2D deck, click the Repo machine at the start of the line to browse GitHub issues. Click the steam engines behind it to check or connect Codex. The machines are the controls; there is no separate Repo or Codex toolbar. Keyboard users can Tab through the named machines and press Enter.
+
+Issue cards show a short excerpt. **Read full issue** expands the original description. **Start issue** asks for a plan; you approve the plan before Codex builds. **Disconnect…** opens a separate confirmation and does not disconnect the engine immediately.

@@ -31,7 +31,7 @@ export function createJourney() {
       pending = new Set(base.intake?.map(i => i.id));
       return { ...base, stops, card, shipped, work: { ...work, stop }, followItem: transferring ? work.id : undefined, focus: stop,
         shippy: { at: stop, pose: transferring ? 'walking' : base.shippy.pose },
-        caption: `${work.badge} · ${work.title} · ${transferring ? `Moving to ${STOP_LABEL[stop]}` : work.status === 'waiting_player' ? `Waiting for your approval at ${STOP_LABEL[stop]}` : `${STOP_LABEL[stop]} is working`}`,
+        caption: `${work.badge} · ${work.title} · ${transferring ? `Moving to ${STOP_LABEL[stop]}` : work.status === 'shipped' ? 'Shipped' : work.status === 'waiting_player' ? `Waiting for your approval at ${STOP_LABEL[stop]}` : `${STOP_LABEL[stop]} is working`}`,
       };
     },
   };

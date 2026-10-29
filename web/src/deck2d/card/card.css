@@ -177,6 +177,5 @@
 .ic-details p { margin: 10px 0 0; overflow-wrap: anywhere; max-height: 30dvh; overflow: auto; user-select: text; }
 .ic-actions { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 .ic-btn { min-width: 0; }
-@media (max-width: 420px) {
-  .ironcard.px .ic-btn { font-size: 16px; gap: 4px; padding: 0 4px; }
-}
+.ironcard.px .ic-btn { font-size: 18px; gap: 4px; padding: 0 4px; }
+@media (max-width: 420px) { .ironcard.px .ic-btn { font-size: 16px; } }

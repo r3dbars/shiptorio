@@ -146,7 +146,7 @@ export function workStop(s: FactoryState, item: FactoryItem): StopId | null {
 
 export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckView {
   const now = opts.now ?? Date.now();
-  if (!s) return { stops: STOPS.map((id) => ({ id, built: false, state: "idle", automated: false, items: [] })), jam: null, card: null, shippy: { pose: "folded", at: "corner" }, shipped: 0, caption: null };
+  if (!s) return { stops: STOPS.map((id) => ({ id, built: false, state: "idle", automated: false, items: [] })), jam: null, card: null, shippy: { pose: "folded", at: "corner" }, shipped: 0, caption: "Connecting to your factory…" };
 
   const deck = (s.deck?.length ? s.deck : s.move ? [s.move] : []).filter((m) => !opts.hidden?.has(m.id));
   const flow = opts.visualFlow === true;
@@ -201,9 +201,9 @@ export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckV
   }
 
   const shipped = s.metrics?.rockets ?? s.items.filter((it) => it.state === "launched").length;
-  const status = activeStop ? s.pipeline?.find(p => p.id === activeStop && p.itemIds.includes(active!.id))?.state ?? 'working' : '';
+  const status = active?.state === 'launched' ? 'shipped' : activeStop ? s.pipeline?.find(p => p.id === activeStop && p.itemIds.includes(active!.id))?.state ?? 'working' : '';
   const work = active && activeStop ? { id: active.id, title: active.title, stop: activeStop, badge: crate(active, false).badge, status } : undefined;
-  const caption = !flow ? (card ? null : handed.size ? "Shippy has this. Fix the next jam." : "Software is a factory.") : work ? `${work.badge} · ${work.title} · ${STOP_LABEL[work.stop]}${status === 'waiting_player' ? ' needs your approval' : ' is working'}` : `${intake.length} issues waiting in Repo. Choose one to start.`;
+  const caption = !flow ? (card ? null : handed.size ? "Shippy has this. Fix the next jam." : "Software is a factory.") : work ? `${work.badge} · ${work.title} · ${status === 'shipped' ? 'Shipped' : `${STOP_LABEL[work.stop]}${status === 'waiting_player' ? ' needs your approval' : ' is working'}`}` : intake.length ? `${intake.length} ${intake.length === 1 ? 'issue' : 'issues'} waiting in Repo. Choose one to start.` : 'All caught up. Click a machine to see its status.';
   return { stops, jam, attention: [...attention], card, intake, work, shippy: work && !card ? { at: work.stop, pose: work.stop === 'builder' ? 'weld' : 'inspect' } : shippyOf(s, stops, jam, card, opts, now), shipped, caption };
 }
 

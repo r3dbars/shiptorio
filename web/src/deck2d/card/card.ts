@@ -274,7 +274,7 @@ export const mountCard: MountCard = (host, handlers) => {
   const onKey = (e: KeyboardEvent) => {
     if (!live || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
     const t = e.target as HTMLElement | null;
-    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    if (t && (t.isContentEditable || t.closest?.("details") || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
     if (e.key === "ArrowRight") { e.preventDefault(); if (!shown?.hold) answer("approve"); else if (!e.repeat) startHold(); }
     else if (e.key === "ArrowLeft") { e.preventDefault(); answer("later"); }
   };

@@ -73,3 +73,12 @@ test('launch cannot yield focus to the next issue before arrival and a visible l
   journey.step(9);expect(journey.finished()).toBeNull();
   journey.step(1);expect(journey.finished()).toBe('gh-16');
 });
+
+test('a shipped crate says shipped after arrival rather than working forever',()=>{
+  const state=base();state.items[0]={...state.items[0],state:'launched',prNumber:27,orbit:{since:1,until:9999999999999,state:'watching'}};
+  const view=deckView(state,{visualFlow:true});
+  expect(view.work?.status).toBe('shipped');
+  const journey=createJourney();
+  expect(journey.view(view).caption).toContain('Shipped');
+  expect(journey.view(view).caption).not.toContain('is working');
+});

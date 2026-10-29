@@ -71,4 +71,3 @@ body { -webkit-tap-highlight-color: transparent; overscroll-behavior: none; user
 .toast { width: calc(100% - 24px); max-width: 560px; white-space: normal; text-align: center; }
 /* Demo controls own the top-left row; "See all" tucks under it on the right instead of drifting over the clouds. */
 .machine-rehearsal .zoom { top: calc(62px + env(safe-area-inset-top, 0px)); bottom: auto; }
-

@@ -138,3 +138,18 @@ test("?px=1 draws the pixel card (canvas plate, buttons, dots); ?px=0 keeps the 
     else delete (globalThis as Record<string, unknown>).location;
   }
 });
+
+test('full issue details remain open across live refreshes and reading keys do not approve work', async () => {
+  const t=await mount();
+  const view={...card('details'),details:'Full issue text with all the context.'};
+  t.h.show(view);
+  const detail=t.live()!.querySelector('details')!;
+  expect(detail.hidden).toBe(false);
+  detail.open=true;
+  t.h.show({...view});
+  expect(detail.open).toBe(true);
+  detail.querySelector('summary')!.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));
+  expect(t.got).toEqual([]);
+  expect(detail.textContent).toContain(view.details);
+  t.h.destroy();
+});
