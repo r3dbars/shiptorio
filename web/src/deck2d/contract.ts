@@ -142,10 +142,10 @@ export const BELT_Y = 236;
 /** Pixel mode lays the line out wider (Justin 2026-10-28: "spread out a bit more"): the deck is DECK_DX longer, the
  * boiler gets its own bay at the left end, every stop gets room for crates either side, and the bridge + island move
  * right with the deck's end. Anything placed relative to the deck's right end adds DECK_DX. */
-export const DECK_DX = pixelOn() ? 940 : 0;
+export const DECK_DX = pixelOn() ? 1740 : 0;
 export const DECK_END = 2039 + DECK_DX;
 export const STOP_X: Record<StopId, number> = DECK_DX
-  ? { repo: 640, planner: 1040, builder: 1440, checks: 1840, review: 2240, gate: 2640, launch: 2834 + DECK_DX }
+  ? { repo: 640, planner: 1200, builder: 1760, checks: 2320, review: 2880, gate: 3440, launch: 2834 + DECK_DX }
   : { repo: 200, planner: 500, builder: 800, checks: 1100, review: 1400, gate: 1700, launch: 2834 };
 export const LAUNCH_Y = 250; // the launch circle on the rocket island
 /** The large deck's hull in world units (pixel mode draws it in code, hull/). The floor runs back..front; the belt row

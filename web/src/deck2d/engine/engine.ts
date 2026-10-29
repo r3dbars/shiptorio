@@ -104,11 +104,14 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
       // Pixel mode snaps the zoom to whole art px, so on a desktop the wide layout can come out wider than the screen.
       // Then frame the deck itself (the left end, the boiler bay, every stop), and slide right to the island only while
       // it's building or a rocket is going up.
+      // The pixel density is locked (Justin: "don't change that at all"): never below 2 device px per art px on a
+      // desktop, so the long deck doesn't shrink to fit; the camera follows the action along it instead.
       if (!px) return all;
-      const k = Math.max(1, Math.round(all.s * ART_PX * DPR)), vw = W / (k / (ART_PX * DPR));
+      const k = Math.max(Math.round(2 * DPR), Math.round(all.s * ART_PX * DPR)), s = k / (ART_PX * DPR), vw = W / s;
       if (vw >= right() - BOUNDS.x0) return all;
       const toIsland = (islandIn && !islandUp) || rocket.mode === "count" || rocket.mode === "up";
-      return { ...all, x: toIsland ? right() - vw / 2 : BOUNDS.x0 - 40 + vw / 2 };
+      const lo = BOUNDS.x0 - 40 + vw / 2, hi = right() - vw / 2;
+      return { ...all, s, x: toIsland ? hi : Math.max(lo, Math.min(hi, focusX(v))) };
     }
     const s = Math.max(all.s, W / (site ? 1300 : 1050)), half = W / 2 / s;
     if (site) return { x: Math.max(BOUNDS.x0 + half, Math.min(right() - half, STOP_X[site.id])), y: 230, s };

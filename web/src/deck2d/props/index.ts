@@ -11,7 +11,7 @@ import { PAD, TOP, VENT_MOUTH, hullCanvas, ventXs } from "./hull";
 type Size = "small" | "medium" | "large";
 /** Built width per size, world units: each size ends just past its last station (small: Builder, medium: Review);
  * large is the whole HULL. grow/ bounds() should report the same, so the camera and the hull agree. */
-const WIDTH: Record<Size, number> = DECK_DX ? { small: 1700, medium: 2450, large: HULL.x1 } : { small: 1000, medium: 1700, large: 2039 };
+const WIDTH: Record<Size, number> = DECK_DX ? { small: 2150, medium: 3200, large: HULL.x1 } : { small: 1000, medium: 1700, large: 2039 };
 const NEXT: Record<Size, Size> = { small: "medium", medium: "large", large: "large" };
 /** The twin boiler stands on the back of the floor behind Repo and Planner (same spot as engine's BOILER). */
 const BOILER = { x: DECK_DX ? 280 : 240, base: 182 };
