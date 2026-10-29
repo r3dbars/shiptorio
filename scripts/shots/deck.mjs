@@ -4,7 +4,7 @@
 //   DECK_PATH=/story-b/ node scripts/shots/deck.mjs     point it at another page
 //   CLIP=1 node scripts/shots/deck.mjs                   also record 30s per view (CLIP=12 for 12s)
 //   ONLY=phone-390 node scripts/shots/deck.mjs           just one view
-// Per view (desktop-1440, phone-390, phone-390-reduced) it saves 00-first.png (as soon as
+// Per view (desktop-1440, desktop-1280, phone-390, phone-390-reduced) it saves 00-first.png (as soon as
 // the deck is ready), 01-settled.png (3s later), 02-full.png and report.json, plus clip.mp4. Exits 1 on a page error, a blank canvas or a page
 // wider than the phone. The deck is a 2D canvas, so no WebGL flags are needed.
 import { spawn, spawnSync } from 'node:child_process';
@@ -17,6 +17,7 @@ const PATH = process.env.DECK_PATH || '/deck.html?seed=1';
 const CLIP_S = process.env.CLIP ? (Number(process.env.CLIP) > 1 ? Number(process.env.CLIP) : 30) : 0;
 const VIEWS = [
   { name: 'desktop-1440', options: { viewport: { width: 1440, height: 900 } } },
+  { name: 'desktop-1280', options: { viewport: { width: 1280, height: 720 } } },
   { name: 'phone-390', options: { ...devices['iPhone 14'], deviceScaleFactor: 2 } },
   { name: 'phone-390-reduced', options: { ...devices['iPhone 14'], deviceScaleFactor: 2, reducedMotion: 'reduce' } },
 ];
