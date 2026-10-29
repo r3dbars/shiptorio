@@ -355,7 +355,7 @@ try {
     assert.equal(stub.state.pulls.length, 1);
     assert.match(stub.state.pulls[0].body, /Closes #1/);
     assert.match(stub.state.pulls[0].body, new RegExp(`shiptorio-proof:${stub.state.headSha}`));
-    await until("PR at CI inspector", () => item()?.state === "inspecting");
+    await until("PR at Checks", () => item()?.state === "inspecting");
     assert.equal(item().inspection.stages.find(s => s.gate === "ci").state, "pending");
     assert.equal(stub.state.merges.length, 0);
   });
@@ -365,13 +365,13 @@ try {
     assert.equal(item().inspection.stages.find(s => s.gate === "ci").state, "pending");
     assert.equal(stub.state.merges.length, 0);
   });
-  await step("current-head CI, verify bay and Spark review pass", async () => {
+  await step("current-head Checks and Spark Review pass", async () => {
     await stub.completeChecks("success");
     await until("all automated gauntlet stages", () => item()?.state === "on_pad");
     for (const gate of ["ci", "verify", "ai"]) assert.equal(item().inspection.stages.find(s => s.gate === gate).state, "passed", gate);
     assert.match(item().inspection.stages.find(s => s.gate === "verify").reason, /reproduced on base and passed on head/i);
     assert.ok(spark.calls.includes("review"));
-    assert.ok(stub.state.comments.some(c => c.body?.includes("AI review passed")));
+    assert.ok(stub.state.comments.some(c => c.body?.includes("Review passed")));
     assert.equal(item().inspection.humanApproved, false);
     assert.equal(stub.state.merges.length, 0);
   });
