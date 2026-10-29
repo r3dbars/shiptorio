@@ -22,21 +22,29 @@ export function createPixelCanvas(screen: HTMLCanvasElement, artPx: number, pale
   screen.style.imageRendering = "pixelated";
   let k = 2, ox = 0, oy = 0, wu = 1, initialized = false; // wu = world units per buffer px after snapping
   const rgb = palette?.map((h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)));
+  // Each palette color as one opaque RGBA word in this machine's byte order, so a snapped pixel is a single write.
+  const word = new Uint32Array(rgb?.length ?? 0);
+  rgb?.forEach(([r, g, b], n) => new Uint8Array(word.buffer, n * 4, 4).set([r, g, b, 255]));
   const near = new Map<number, number>();
 
   function quantize() {
     if (!rgb) return;
-    const img = cx.getImageData(0, 0, buf.width, buf.height), d = img.data;
-    for (let i = 0; i < d.length; i += 4) {
+    const img = cx.getImageData(0, 0, buf.width, buf.height), d = img.data, out = new Uint32Array(d.buffer, d.byteOffset, d.length >> 2);
+    // Neighbouring pixels are usually the same color, so the last answer is reused before asking the map.
+    let lastKey = -1, lastWord = 0;
+    for (let p = 0, i = 0; p < out.length; p++, i += 4) {
       if (d[i + 3] === 0) continue;
       const key = (d[i] << 16) | (d[i + 1] << 8) | d[i + 2];
-      let j = near.get(key);
-      if (j === undefined) {
-        let best = Infinity; j = 0;
-        rgb.forEach(([r, g, b], n) => { const e = (r - d[i]) ** 2 + (g - d[i + 1]) ** 2 + (b - d[i + 2]) ** 2; if (e < best) { best = e; j = n; } });
-        near.set(key, j);
+      if (key !== lastKey) {
+        let j = near.get(key);
+        if (j === undefined) {
+          let best = Infinity; j = 0;
+          for (let n = 0; n < rgb.length; n++) { const [r, g, b] = rgb[n], e = (r - d[i]) ** 2 + (g - d[i + 1]) ** 2 + (b - d[i + 2]) ** 2; if (e < best) { best = e; j = n; } }
+          near.set(key, j);
+        }
+        lastKey = key; lastWord = word[j];
       }
-      [d[i], d[i + 1], d[i + 2]] = rgb[j]; d[i + 3] = 255;
+      out[p] = lastWord;
     }
     cx.putImageData(img, 0, 0);
   }

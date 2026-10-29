@@ -12,6 +12,17 @@ function px(cx: CanvasRenderingContext2D, ax: number, ay: number, w: number, h: 
 
 const BELT_H = 12;
 const SEG = 14; // one belt plate, art px
+// The belt's fixed color sets, made once rather than per column every frame.
+const WAIT = C.brass.slice(2, 5), RUN = C.energy.slice(0, 3);
+const heldTrack = (held: readonly string[]) => [C.iron[0], held[0], held[0], C.iron[1], C.iron[1], C.iron[0]];
+const TRACK = [C.iron[0], C.steel[2], C.steel[1], C.steel[0], C.steel[0], C.iron[0]], JAM_TRACK = heldTrack(C.jam), WAIT_TRACK = heldTrack(WAIT);
+/** The art-px columns of [x0, x1) that can land on the canvas (each column draws from x - 1 to x + 1); the whole
+ * run when the transform isn't a plain scale + offset (or there's no canvas, as in tests). */
+function visibleColumns(cx: CanvasRenderingContext2D, x0: number, x1: number): [number, number] {
+  const m = cx.getTransform?.(), w = cx.canvas?.width;
+  if (!m || !w || m.b !== 0 || m.c !== 0 || !(m.a > 0)) return [x0, x1];
+  return [Math.max(x0, Math.floor(-m.e / m.a / P) - 2), Math.min(x1, Math.ceil((w - m.e) / m.a / P) + 2)];
+}
 /** One belt run from (ax, ay) to (bx, by) in world units, plates moving right. Slopes become 1-px stairs.
  * 3/4 view like Justin's mockups and the deck's underside, top to bottom: soot, the status line on the back rail
  * (cyan while it runs, yellow in a bay waiting on you, red in a stuck bay) with brass studs on its posts, a shadowed gap, a track of cool steel plates (lit at
@@ -20,14 +31,16 @@ const SEG = 14; // one belt plate, art px
  * belt. */
 export function beltRun(cx: CanvasRenderingContext2D, ax: number, ay: number, bx: number, by: number, len: number, t: number, speed: number, blockedAt: (worldX: number) => boolean | "jam" | "wait" = () => false, phaseAt: (worldX: number) => number = () => 0) {
   const x0 = g(ax), x1 = g(ax + (bx - ax) * Math.min(1, len / Math.hypot(bx - ax, by - ay)));
+  // Columns off the canvas would draw nothing, so they're skipped (a phone sees a fraction of the belt).
+  const [v0, v1] = visibleColumns(cx, x0, x1);
   // cast shadow on the floor first (light layer, sun from the upper right: it falls down-left)
   cx.save(); cx.globalAlpha = 0.5;
-  for (let x = x0; x < x1; x++) { const f = (x - x0) / Math.max(1, g(bx) - x0), y = g(ay + (by - ay) * f) - Math.floor(BELT_H / 2); px(cx, x - 1, y + BELT_H, 1, 2, C.soot[0]); }
+  for (let x = v0; x < v1; x++) { const f = (x - x0) / Math.max(1, g(bx) - x0), y = g(ay + (by - ay) * f) - Math.floor(BELT_H / 2); px(cx, x - 1, y + BELT_H, 1, 2, C.soot[0]); }
   cx.restore();
-  for (let x = x0; x < x1; x++) {
+  for (let x = v0; x < v1; x++) {
     const f = (x - x0) / Math.max(1, g(bx) - x0), y = g(ay + (by - ay) * f) - Math.floor(BELT_H / 2);
     const end = x === x0 || x === x1 - 1, post = x % 28 === 0, postLit = x % 28 === 1;
-    const stop = blockedAt(x * P), blocked = !!stop, held = stop === "wait" ? C.brass.slice(2, 5) : C.jam, signal = stop ? held : C.energy.slice(0, 3);
+    const stop = blockedAt(x * P), blocked = !!stop, held = stop === "wait" ? WAIT : C.jam, signal = stop ? held : RUN;
     px(cx, x, y, 1, 1, C.soot[0]);
     // back rail: the status line along its top, a brass stud on every post catching the sun on its right
     px(cx, x, y + 1, 1, 1, end ? signal[2] : post ? C.brass[2] : postLit ? C.brass[4] : signal[1]);
@@ -35,9 +48,7 @@ export function beltRun(cx: CanvasRenderingContext2D, ax: number, ay: number, bx
     // sun), darker toward the front lip, so the warm crates pop off them.
     const shift = Math.floor(phaseAt(x * P) * speed / P);
     const k = ((x - shift) % SEG + SEG) % SEG;
-    const tr = blocked
-      ? [C.iron[0], held[0], held[0], C.iron[1], C.iron[1], C.iron[0]]
-      : [C.iron[0], C.steel[2], C.steel[1], C.steel[0], C.steel[0], C.iron[0]];
+    const tr = !blocked ? TRACK : held === WAIT ? WAIT_TRACK : JAM_TRACK;
     for (let r = 0; r < 6; r++) px(cx, x, y + 2 + r, 1, 1, tr[r]);
     if (k === 0) px(cx, x, y + 2, 1, 6, C.soot[0]); // plate seam
     else if (k === 1) px(cx, x, y + 3, 1, 4, blocked ? C.iron[0] : C.steel[0]); // the plate's shaded left edge
@@ -159,7 +170,7 @@ export function lever(cx: CanvasRenderingContext2D, x: number, base: number, mod
 /** The beacon over the one bottleneck: caged lamp, one slow breath of light (calm: the only thing that pulses).
  * Red when the station is actually stuck, yellow when it's waiting on your call. */
 export function beacon(cx: CanvasRenderingContext2D, x: number, top: number, t: number, kind: "jam" | "wait" = "jam") {
-  const ax = g(x) - 3, ay = g(top) - 8, k = kind === "wait" ? C.brass.slice(2, 5) : C.jam;
+  const ax = g(x) - 3, ay = g(top) - 8, k = kind === "wait" ? WAIT : C.jam;
   halo(cx, ax + 3, ay + 3, 8, k[1], 0.2 + 0.1 * Math.sin(t * 2.4));
   px(cx, ax + 1, ay, 5, 1, C.soot[0]); px(cx, ax, ay + 1, 7, 5, C.soot[0]);
   px(cx, ax + 1, ay + 1, 5, 4, k[0]); px(cx, ax + 2, ay + 1, 3, 3, k[1]); px(cx, ax + 3, ay + 1, 2, 1, k[2]); px(cx, ax + 4, ay + 2, 1, 1, C.white[0]);
