@@ -65,4 +65,4 @@ The live test exposed a case mismatch: GitHub's `r3dbars/Testing` assignment was
 
 Staging still had 44 active factory records from the initial all-repositories installation after access was narrowed to Testing. Those records were paused using audited staging controls to stop background GitHub contention; Testing remained active. Durable installation reconciliation and smoother live card updates still need follow-up. No production runner or production factory was changed.
 
-Test issue #26 is a separate single-file smoke test and has not been built; #25 remains the inbox-only test. Do not describe either as a shipped change.
+Test issue #25 was closed after the inbox-only check passed. The unused single-file smoke test #26 was closed as superseded by the real README test. Neither was built or shipped.
