@@ -15,6 +15,25 @@ export function requireGuest(identity) {
   assert(identity?.guest === true, 'Deck smoke must use a fresh guest, not a signed-in player');
 }
 
+/** Same-origin request timings: what is still in flight, and what took over 5s. */
+export function trackRequests(page, origin, now = Date.now) {
+  const pending = new Map(), done = [];
+  const path = request => { const url = new URL(request.url()); return url.origin === origin ? url.pathname : null; };
+  const finish = async (request, failed) => {
+    const began = pending.get(request); if (began === undefined) return;
+    pending.delete(request);
+    const response = failed ? null : await request.response().catch(() => null);
+    done.push({ path: path(request), ms: now() - began, status: response?.status() ?? 'failed', requestId: response?.headers()['x-request-id'] ?? null, timing: response?.headers()['server-timing'] ?? null });
+  };
+  page.on('request', request => { if (path(request)) pending.set(request, now()); });
+  page.on('requestfinished', request => finish(request, false));
+  page.on('requestfailed', request => finish(request, true));
+  return {
+    stuck: (over = 10_000) => [...pending].map(([request, began]) => ({ path: path(request), ms: now() - began })).filter(r => r.ms >= over),
+    slow: (over = 5_000) => done.filter(r => r.ms >= over),
+  };
+}
+
 export async function deckSmoke({ origin = 'https://shiptorio.dev', password, out = '/tmp/shiptorio-deck-smoke' } = {}) {
   origin = smokeOrigin(origin);
   if (origin === 'https://shiptorio.dev') assert(password, 'Staging preview password unavailable');
@@ -22,10 +41,11 @@ export async function deckSmoke({ origin = 'https://shiptorio.dev', password, ou
   const browser = await chromium.launch({ headless: true });
   const reports = [];
   try {
-    for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 720 }]) {
+    const attempt = async viewport => {
       const context = await browser.newContext({ viewport, reducedMotion: 'reduce' });
       const page = await context.newPage();
       const errors = [], start = Date.now();
+      const requests = trackRequests(page, origin);
       page.on('pageerror', error => errors.push(`Page: ${error.message}`));
       page.on('console', message => { if (message.type() === 'error') errors.push(`Console: ${message.text()}`); });
       page.on('response', response => { if (response.status() >= 400 && new URL(response.url()).origin === origin) errors.push(`HTTP ${response.status()} ${new URL(response.url()).pathname}`); });
@@ -59,15 +79,32 @@ export async function deckSmoke({ origin = 'https://shiptorio.dev', password, ou
         assert(overflow <= 1, `Guest deck overflowed the viewport by ${overflow}px`);
         await page.screenshot({ path: join(out, `guest-${viewport.width}.png`) });
         assert.equal(errors.length, 0, errors.join('\n'));
-        reports.push({ ...viewport, readyMs, storyMs: Date.now() - start - readyMs, storyCards, guest: true, url: page.url(), errors });
+        return { ...viewport, readyMs, storyMs: Date.now() - start - readyMs, storyCards, guest: true, url: page.url(), errors, slow: requests.slow() };
       } catch (error) {
         await page.screenshot({ path: join(out, `guest-${viewport.width}-failed.png`), timeout: 5000 }).catch(() => {});
-        await writeFile(join(out, 'report.json'), JSON.stringify({ passed: false, width: viewport.width, error: error.message, errors, reports }, null, 2));
+        const stuck = requests.stuck(), slow = requests.slow();
+        // Name the request that stalled, so a red deploy says where staging is slow.
+        console.error(`Deck smoke failed at ${viewport.width}px: ${error.message.split('\n')[0]}\nStuck: ${JSON.stringify(stuck)}\nSlow: ${JSON.stringify(slow)}`);
+        await writeFile(join(out, `report-${viewport.width}-${Date.now()}.json`), JSON.stringify({ passed: false, width: viewport.width, error: error.message, errors, stuck, slow, reports }, null, 2));
+        error.stuck = stuck;
         throw error;
       } finally { await context.close(); }
+    };
+    for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 720 }]) {
+      // A request that hangs on the staging edge (seen twice on 2026-10-29) is retried once with a fresh guest,
+      // and only when the browser shows a same-origin request stuck in flight. Anything else fails at once.
+      try { reports.push(await attempt(viewport)); }
+      catch (error) {
+        const stuck = error.stuck ?? [];
+        if (!stuck.length) throw error;
+        console.log(`::warning::Deck smoke at ${viewport.width}px hit a stuck staging request (${stuck.map(r => `${r.path} ${r.ms}ms`).join(', ')}); retrying once with a fresh guest in 10s.`);
+        await new Promise(done => setTimeout(done, 10_000));
+        reports.push({ ...await attempt(viewport), retriedAfter: stuck });
+      }
     }
     await writeFile(join(out, 'report.json'), JSON.stringify({ passed: true, reports }, null, 2));
     console.log(`Guest deck smoke passed at 390×844 and 1280×720: ${reports.map(r => `${r.readyMs}ms`).join(', ')}.`);
+    for (const r of reports) if (r.slow.length || r.retriedAfter) console.log(`Slow at ${r.width}px: ${JSON.stringify(r.slow)}${r.retriedAfter ? ` (retried after ${JSON.stringify(r.retriedAfter)})` : ''}`);
     return reports;
   } finally { await browser.close(); }
 }
