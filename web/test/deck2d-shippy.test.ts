@@ -8,7 +8,8 @@ function run(s: ReturnType<typeof createShippy>, view: ShippyView, seconds: numb
 }
 
 test("Shippy unfolds out of the corner, walks to the stop, works it, and folds back home", () => {
-  const s = createShippy(noArt, { reducedMotion: true });
+  // The screen-corner box is the non-pixel look; pixel mode (now the default) has its own test below.
+  const s = createShippy(noArt, { reducedMotion: true, pixel: false });
   run(s, { at: "corner", pose: "folded" }, 0.5);
   expect(s.state).toMatchObject({ corner: "home", world: "off" });
 
@@ -28,7 +29,7 @@ test("Shippy unfolds out of the corner, walks to the stop, works it, and folds b
 });
 
 test("a call back to the deck mid-leap drops him straight back down", () => {
-  const s = createShippy(noArt, { reducedMotion: true });
+  const s = createShippy(noArt, { reducedMotion: true, pixel: false });
   run(s, { at: "builder", pose: "walking" }, 8);
   expect(s.state.world).toBe("stand");
   s.update(1 / 60, { at: "corner", pose: "folded" });
