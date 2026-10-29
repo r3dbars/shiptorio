@@ -7,7 +7,7 @@ import { safeReportFailure, safeReportValue } from "./safe-report.mjs";
 import { localFactory } from "./local.mjs";
 import { playerAction } from "./player-action.mjs";
 import { createLaunchTracker } from "./launch-tracker.mjs";
-import { botAdmissionPath, prepareBotPersona, deckFixtureIdentity, FIXTURE_INSTALL } from "./setup.mjs";
+import { botAdmissionPath, prepareBotPersona, deckFixtureIdentity, FIXTURE_INSTALL, isFixtureInstallPage } from "./setup.mjs";
 const args = process.argv.slice(2).filter(x => x !== "--");
 const option = (key, fallback) => { const i = args.indexOf(key); return i < 0 ? fallback : args[i + 1]; };
 const persona = option("--persona", "test-newbie");
@@ -100,13 +100,15 @@ try {
       } else if (await visible(installButton)) {
         const target = new URL(page.url());
         if (!(target.origin === url.origin && target.pathname === "/test/install") && !(local && target.origin === "https://github.com")) throw new Error("Refusing non-fixture install target");
-        await installButton.click();
-        await page.waitForURL(current => current.origin === url.origin, { timeout: 30000 });
+        await Promise.all([
+          page.waitForURL(current => current.origin === url.origin && current.pathname !== "/test/install", { timeout: 30000, waitUntil: "domcontentloaded" }),
+          installButton.click(),
+        ]);
         await page.goto(`${url.origin}/deck?source=live`);
         await page.locator('[data-deck-ready="1"]').waitFor({ timeout: 30000 });
         await capture("installed-fixture");
       } else if (await visible(go) && /^Connect GitHub/.test(await go.first().innerText())) {
-        await Promise.all([page.waitForURL(current => current.origin === "https://github.com", { timeout: 30000 }), go.first().click()]);
+        await Promise.all([page.waitForURL(current => isFixtureInstallPage(current, url.origin), { timeout: 30000, waitUntil: "domcontentloaded" }), go.first().click()]);
         await capture("github-install");
       } else if (await visible(play)) { await play.first().click(); await capture("play"); }
       else if (await visible(repo)) {

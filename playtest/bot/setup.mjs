@@ -43,3 +43,10 @@ export function deckFixtureIdentity(identity, persona) {
   return identity?.login === persona && /^test-(newbie|guest|midgame|broke|blocked)$/.test(persona) && identity.installUrl === '/test/install'
     ? { ...identity, installUrl: FIXTURE_INSTALL } : identity;
 }
+
+// The local provider renders at GitHub; the staging adapter redirects immediately.
+// Match only these fixture destinations, never a real installation URL.
+export function isFixtureInstallPage(current, origin) {
+  return current.href === FIXTURE_INSTALL ||
+    current.origin === origin && current.pathname === "/test/install" && !current.search;
+}
