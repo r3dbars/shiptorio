@@ -28,3 +28,14 @@ test("the fixture player requires a scoped visible card before planning or appro
   expect(() => fixtureCardIntent("Continue", "Unknown recommendation", ["send_customer_reply"])).toThrow();
   expect(() => fixtureCardIntent("Start build", "Build #1: Fix a test")).toThrow();
 });
+
+test("a reconnect snapshot can approve its visible build before any separate deck frame", async () => {
+  const { fixtureDecisionDeck, fixtureCardIntent } = await import("./player-action.mjs");
+  const move = { id: "build-1", title: "Build #1: Fix a test", options: [{ recommended: true, actions: [{ tool: "approve_runner_job" }] }] };
+  let deck = fixtureDecisionDeck([], { type: "snapshot", state: { deck: [move] } });
+  expect(fixtureCardIntent("Start build", deck[0].title, deck[0].options[0].actions.map(action => action.tool))).toBe("approve-build");
+  expect(fixtureDecisionDeck([], { type: "snapshot", state: { move } })).toEqual([move]);
+  deck = fixtureDecisionDeck(deck, { type: "patch", patch: { deck: [] } });
+  expect(deck).toEqual([]);
+  expect(fixtureDecisionDeck([move], { type: "snapshot", state: {} })).toEqual([]);
+});

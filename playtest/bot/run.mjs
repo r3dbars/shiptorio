@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { resolve, join } from "node:path";
 import { safeReportFailure, safeReportValue } from "./safe-report.mjs";
 import { localFactory } from "./local.mjs";
-import { playerAction, fixtureCardIntent } from "./player-action.mjs";
+import { playerAction, fixtureCardIntent, fixtureDecisionDeck } from "./player-action.mjs";
 import { createLaunchTracker } from "./launch-tracker.mjs";
 import { botAdmissionPath, prepareBotPersona, deckFixtureIdentity, FIXTURE_INSTALL, isFixtureInstallPage } from "./setup.mjs";
 const args = process.argv.slice(2).filter(x => x !== "--");
@@ -52,9 +52,7 @@ try {
         try {
           const message = JSON.parse(String(frame.payload));
           observe(message);
-          if (message.type === "deck") wireDeck = message.deck;
-          if (message.type === "move") wireDeck = [...wireDeck.filter(move => move.id !== message.move.id), message.move];
-          if (message.type === "move_resolved") wireDeck = wireDeck.filter(move => move.id !== message.moveId);
+          wireDeck = fixtureDecisionDeck(wireDeck, message);
           for (const item of message.state?.items ?? message.patch?.items ?? []) wireItems.set(item.id, item.state);
         }
         catch { /* Non-JSON heartbeat frames have no game state. */ }

@@ -25,3 +25,14 @@ export function fixtureCardIntent(label, title, actionTools = []) {
   else if (text === "Continue" && actionTools.length && actionTools.every(tool => ["plan_runner_job", "approve_runner_job", "inspect_bottleneck", "run_missing_check", "request_rework"].includes(tool))) return "continue-work";
   throw new Error(`Unsupported player card action: ${text}`);
 }
+
+/** A reconnect snapshot is authoritative even before a separate deck message. */
+export function fixtureDecisionDeck(previous, message) {
+  const state = message.type === "snapshot" ? message.state : message.type === "patch" ? message.patch : null;
+  if (state && Array.isArray(state.deck)) return state.deck;
+  if (state && Object.hasOwn(state, "move")) return state.move ? [state.move] : [];
+  if (message.type === "deck") return message.deck;
+  if (message.type === "move") return [...previous.filter(move => move.id !== message.move.id), message.move];
+  if (message.type === "move_resolved") return previous.filter(move => move.id !== message.moveId);
+  return message.type === "snapshot" ? [] : previous;
+}
