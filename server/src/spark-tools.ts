@@ -11,6 +11,10 @@ import { pathAllowed, validatePlan } from "./injection-policy";
 import { redact, redactText } from "./redact";
 import { SparkError, sparkJson, type SparkEnv, type Task } from "./spark";
 
+export class RepositoryReadUnavailable extends Error {
+  constructor(cause?: unknown) { super("Repository evidence is temporarily unavailable. Review will retry without rejecting the change.", { cause }); }
+}
+
 export interface Toolbox {
   /** Repo file paths at the planned/reviewed commit. */
   paths: string[];
@@ -52,7 +56,7 @@ export interface ToolArgs { path?: string; prefix?: string; query?: string }
 export async function runReadTool(box: Toolbox, tool: ReadTool, args: ToolArgs, cache = new Map<string, string | null>()): Promise<string | undefined> {
   const read = async (path: string) => {
     if (!cache.has(path)) {
-      const content = await box.read(path).catch(() => null);
+      const content = await box.read(path).catch(error => { throw new RepositoryReadUnavailable(error); });
       cache.set(path, content === null ? null : redactText(content));
     }
     return cache.get(path)!;

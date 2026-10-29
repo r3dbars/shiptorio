@@ -48,7 +48,7 @@ test("read and triage can view jobs but cannot pair, revoke, enqueue or manage c
     f.permission(role); f.grants.clear();
     expect((await f.request("/api/repos/owner/repo/runner/jobs")).status).toBe(200);
     const before = f.calls();
-    for (const path of ["/api/repos/owner/repo/runner/pair", "/api/repos/owner/repo/runner/revoke", "/api/repos/owner/repo/runner/jobs", "/api/repos/owner/repo/issues/16/start", "/connect/sentry?repo=owner/repo", "/connect/posthog?repo=owner/repo", "/connect/support?repo=owner/repo"]) {
+    for (const path of ["/api/repos/owner/repo/runner/pair", "/api/repos/owner/repo/runner/revoke", "/api/repos/owner/repo/runner/jobs", "/api/repos/owner/repo/issues/16/start", "/api/repos/owner/repo/review/retry", "/connect/sentry?repo=owner/repo", "/connect/posthog?repo=owner/repo", "/connect/support?repo=owner/repo"]) {
       expect((await f.request(path, "POST", "{}")).status).toBe(403);
     }
     expect((await f.request("/connect/support?repo=owner/repo")).status).toBe(403);

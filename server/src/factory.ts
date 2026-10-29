@@ -81,7 +81,7 @@ import { initialFactoryState } from "./factory-initialization";
 import { inventoryCommand } from "./factory-inventory";
 import { gameMaster, heuristicTriage, readGoals, judgeOrbit, judgePermit, pickPower, pickResearch, pickFiles, planLocalTask, proposeExperiment, sparkConfigured, sparkModel, triage, writeFix, type GameMasterBrief, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
 import { emptyBrain, recordThought, scoreShip } from "./brain";
-import type { SparkStep, Toolbox } from "./spark-tools";
+import { RepositoryReadUnavailable, type SparkStep, type Toolbox } from "./spark-tools";
 import { ciReport, codeSearch, factoryBrief, issueComments, signalsBrief, treePaths } from "./spark-context";
 import { issueRevision, RunnerHarness, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
 import { enforceRoute, geothermalGuard, harnessLabel, LOCAL_POWER_ID, looksSmall, ruleRoute } from "./geothermal";
@@ -274,7 +274,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   async observedCall(method: string, args: unknown[], trace: Trace): Promise<any> {
-    const allowed = ["allowDeviceStart", "startDevice", "startJoin", "takeJoin", "approveDevice", "readyDevice", "pollDevice", "activateRunner", "recordRunnerGrant", "rejectRunnerGrant", "runnerStatus", "planningRetries", "startInboxIssue", "heartbeatRunner", "revokeRunner", "ensure", "connectMine", "disconnectMine", "pairRunner", "runnerJobs", "isRunnerPaired", "enqueueRunner", "claimRunner", "finishRunner", "enqueueGitHub", "enqueueSentry", "enqueueSupport", "debugSnapshot", "adminControl", "exportState", "summary", "exportAccountData", "eraseAccountData", "accountConnectionStatus", "closeAccountSockets", "pruneAccountDeliveries"];
+    const allowed = ["allowDeviceStart", "startDevice", "startJoin", "takeJoin", "approveDevice", "readyDevice", "pollDevice", "activateRunner", "recordRunnerGrant", "rejectRunnerGrant", "runnerStatus", "planningRetries", "retryAIReview", "startInboxIssue", "heartbeatRunner", "revokeRunner", "ensure", "connectMine", "disconnectMine", "pairRunner", "runnerJobs", "isRunnerPaired", "enqueueRunner", "claimRunner", "finishRunner", "enqueueGitHub", "enqueueSentry", "enqueueSupport", "debugSnapshot", "adminControl", "exportState", "summary", "exportAccountData", "eraseAccountData", "accountConnectionStatus", "closeAccountSockets", "pruneAccountDeliveries"];
 
     if (!allowed.includes(method)) throw new Error("Unknown factory RPC");
     return inTrace(trace, this.env, task => this.ctx.waitUntil(task), async () => {
@@ -1090,6 +1090,23 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   async planningRetries() {
     const rows = await this.ctx.storage.list<PlanningRetry>({ prefix: "planningRetry:" });
     return this.redactor.value([...rows.entries()].flatMap(([key, retry]) => key !== PLANNER_REST_KEY && planningHold(retry) ? [{ itemId: key.slice("planningRetry:".length), ...retry }] : []));
+  }
+
+  /** Recheck the same rejected head; this cannot approve or merge it. */
+  async retryAIReview(itemId: string, expectedHead: string) {
+    if (!(await this.load()) || !this.meta || await this.githubStopped()) return false;
+    const item = this.state!.items.find(i => i.id === itemId);
+    if (!item?.prNumber || item.state !== "rejected" || item.inspection?.headSha !== expectedHead || stageOf(item, "ai")?.state !== "rework" || stageOf(item, "ci")?.state !== "passed" || stageOf(item, "verify")?.state !== "passed") return false;
+    if ((await this.runnerJobs()).some(j => j.itemId === itemId && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) return false;
+    const evidence = await inspectPullRequest(await installationToken(this.env, this.meta.installationId), this.meta.repo, item.prNumber, expectedHead, this.state!.baseBranch);
+    if (evidence.stale || evidence.state !== "passed" || !this.state!.items.some(i => i === item)) return false;
+    await this.patch({items:[{...item,state:"inspecting",failure:undefined,machineId:"review-1",updatedAt:Date.now(),inspection:{...item.inspection,state:"pending",humanApproved:false,stages:item.inspection.stages.map(s => s.gate === "ai" || s.gate === "human" ? {...s,state:"pending",reason:"Waiting for a fresh review of this commit"} : s)}}]});
+    await this.decisionData();
+    this.openMoves = this.openMoves!.filter(m => m.itemId !== itemId);
+    await this.refreshDecisions();
+    await this.scheduleTick();
+    this.log("info", "AI review queued again for the same PR commit. Earlier review evidence is retained; nothing is approved or merged.", itemId);
+    return true;
   }
 
   async startInboxIssue(number: number, requestedBy: string) {
@@ -2626,12 +2643,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         this.log("info", `AI review is reading PR #${pr} (${builder} built it, a different model reviews).`, item.id);
         // Docs that name code get that code, read at the PR head, so the reviewer can check the examples work.
         const context = (await Promise.all(referencedFiles(files).map(async path => {
-          const content = await fileContent(token, this.meta!.repo, path, headSha).catch(() => null);
+          const content = await fileContent(token, this.meta!.repo, path, headSha).catch(error => { throw new RepositoryReadUnavailable(error); });
           return { path, content: content === null ? undefined : redactText(content).slice(0, 6000) };
         })))
           .filter((c): c is { path: string; content: string } => typeof c.content === "string");
         // The reviewer can read, list and search the repo at the PR head, the issue thread and CI before it rules.
-        const box = await this.sparkToolbox(token, item, headSha, await treePaths(token, this.meta.repo, headSha).catch(() => files.map(f => f.filename)), { headSha, diff: async () => diffText(files) });
+        const box = await this.sparkToolbox(token, item, headSha, await treePaths(token, this.meta.repo, headSha).catch(error => { throw new RepositoryReadUnavailable(error); }), { headSha, diff: async () => diffText(files) });
         const record = async (step: SparkStep) => this.broadcast({ type: "log", level: "info", text: step.result, at: step.at, actor: "spark", tool: step.tool, reason: step.reason, itemId: item.id });
         const verdict = await this.think("review", { title: `PR #${pr}: ${item.title}`, itemId: item.id, target: "review-1" }, () => reviewDiff(this.sparkEnv(), { title: item.title, body: item.body ?? "", builder }, diffText(files), context, box, record),
           v => ({ outcome: `${v.verdict === "pass" ? `Passed ${builder}'s PR` : `Sent ${builder}'s PR back`}${v.steps?.length ? ` after ${v.steps.length - 1} ${v.steps.length === 2 ? "look" : "looks"} at the repo` : ""}`, reason: v.reason }));
@@ -2648,8 +2665,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       await this.scheduleTick();
       return advanced;
     } catch (e) {
-      if (e instanceof BudgetError || e instanceof RateLimitError) {
-        if (e instanceof RateLimitError) this.githubRest(e.retryAt);
+      if (e instanceof BudgetError || e instanceof RateLimitError || e instanceof RepositoryReadUnavailable) {
+        const limit = e instanceof RepositoryReadUnavailable ? e.cause : e;
+        if (limit instanceof RateLimitError) this.githubRest(limit.retryAt);
         this.log("warn", `Station paused: ${e.message}`, item.id);
         return; // Keep pending proof; resource waiting is not a failed code review.
       }

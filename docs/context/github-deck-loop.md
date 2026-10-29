@@ -81,3 +81,5 @@ Player check:
 - Watch the same item become its real PR number at Checks, then reach Review and Gate.
 - At Gate, inspect the evidence. A short tap must not merge; hold **Ship it** only when ready.
 - Confirm the rocket launches after GitHub confirms the merge.
+
+The live acceptance check also found a false review rejection: a failed tree read had been replaced by a list containing only the PR's changed files. Spark therefore saw `README.md` but was told `package.json` did not exist. Review now requires a complete tree and distinguishes failed file reads from confirmed missing files. Unavailable evidence pauses review without creating a rework scar. An authenticated writer may retry a rejected AI review only against the same currently green PR head; previous evidence remains, and no build or merge is authorized by that retry.
