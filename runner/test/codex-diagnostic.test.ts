@@ -7,6 +7,7 @@ test("doctor surfaces failed JSONL turn/error categories instead of a harmless s
   for (const event of [
     { type: "error", message: "Your credentials expired. Please sign in again." },
     { type: "turn.failed", error: { message: "refresh_token_reused" } },
+    { type: "turn.failed", error: { message: "Your refresh token has already been used to generate a new access token" } },
   ]) {
     const diagnostic = codexDoctorFailure(result(JSON.stringify(event)), new Error("provider failed"));
     expect(diagnostic).toContain("authentication or authorization rejected");

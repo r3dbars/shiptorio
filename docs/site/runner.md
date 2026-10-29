@@ -117,6 +117,12 @@ unapproved file and outside canary, and the final git scope. A successful proces
 no actual edit fails. The fixture is removed afterward; the probe never claims a factory
 job, touches its pairing, commits a product change or publishes a branch.
 
+Failed edit probes report a safe category such as authentication, usage limit,
+connection, configuration or file-edit verification. Provider messages, prompts and
+raw transcripts are withheld. A sign-in check can pass while the real edit fails;
+keep that failed result and investigate its category instead of assuming a build
+worked or repeatedly rerunning the probe.
+
 macOS rejects Codex applying a second Seatbelt profile inside the runner's existing OS
 sandbox. The runner preserves that outer boundary and Codex's read-only mode: Codex
 returns structured edit proposals, and the trusted supervisor applies only exact matches

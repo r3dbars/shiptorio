@@ -3,7 +3,7 @@ import type { SandboxResult } from "./sandbox";
 
 const MAX_BYTES = 512000, MAX_EVENTS = 1000;
 const category = (message: string): string | undefined => {
-  if (/refresh_token_reused|invalid_grant|invalid_api_key|authentication_required|not logged in|unauthorized|(?:token|session|credential|authentication).{0,80}(?:expired|revoked|already used)/i.test(message)) return "Codex authentication or authorization rejected";
+  if (/refresh_token_reused|invalid_grant|invalid_api_key|authentication_required|not logged in|unauthorized|(?:token|session|credential|authentication).{0,80}(?:expired|revoked|already (?:been )?used)/i.test(message)) return "Codex authentication or authorization rejected";
   if (/rate.?limit|usage.?limit|quota|too many requests|\b429\b/i.test(message)) return "Codex usage or rate limit reached";
   const status = message.match(/\b(?:HTTP(?: status)?|status(?: code)?)\s*[:=]?\s*(4\d\d|5\d\d)\b/i)?.[1];
   if (status) return `Codex provider request failed (HTTP ${status})`;
