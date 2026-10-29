@@ -24,6 +24,8 @@ Session cookies and preview-form proofs now reuse the existing bounded, isolate-
 
 ## Hosted tester playthrough fixes (Codex, 2026-10-28)
 
+- 2026-10-29 (#48): full promotion suite exposed retired admin UI assumptions; browser coverage now checks confirmed, audited Pause/Resume; quota form coverage ships with its separate repair.
+
 - 2026-10-29 (#48): player actions use one captured card and reject stale replacements; unknown Later is never selected, and held Launch/explicit deferrals are recorded.
 
 - 2026-10-29 (#48): guest smoke shares one 30s budget between document commitment and the real rendered-deck marker, and reports outstanding resource paths on failure; story proof stays required.
@@ -465,6 +467,8 @@ links the successful Deploy run, including D1 migration application and live smo
 
 ## Live quota admin form recovery (Codex, 2026-10-26)
 
+- 2026-10-29, Codex: repaired the #63 regression by restoring only the focused Raise limit form, keeping admin authorization, native same-origin save, validation and recorded usage; no retired waitlist/abuse panels restored.
+
 - 2026-10-29, Codex #63: trim admin to factories, pause/resume, kill switches and spend; retire unused pages after authorization while retaining operational admission POSTs and all security guards. PR #632.
 
 Follow-up [PR #284](https://github.com/r3dbars/shiptorio/pull/284) to #269 on `codex/quota-admin-origin`: verified Deploy run 40432397609
@@ -841,3 +845,4 @@ Verified whole-App regressions: Hono response assignment replaced appended App t
 - Codex #73 (2026-10-29): shorten setup/watch copy, put Unplug behind Options, make Check primary after copying, and use Ship it consistently in the conveyor. Scoped card/action tests and phone/desktop browser interactions pass; full check: 1,886 passed, two existing platform skips, zero failures. PR #634 includes before/after PNG evidence. Follow-up: shorten the issue action to Plan so Next issue stays inside the existing card.
 - 2026-10-29 Claude ("Make every link land on the deck", `claude/project-thread-whfwny`, Codex #55 done by Claude): shiptorio.dev has one front door. server/src/redirect.ts `deckFrontDoor` 302s `/`, old `/?onboard=`, the old live map `/?source=live&repo=` (keeps repo), `?simple=1` and `/deck?px=0` to `/deck?source=live`; demos (`?source=sim|replay`, `?scenario=`), /judge and shiptorio.com unchanged. Route table in server/test/redirect.test.ts.
 - 2026-10-29 Claude thread "Delete the old experiments and preview pages" (Codex #49): removed /deck3d, /bakeoff, /arttest, /lab, /construct, /floorbuild, /shaft dev pages + their src and vite configs; boiler2d moved to web/src/deck2d/props/. /art/ pages kept (Settings + judge panel link them).
+- Claude #54 bug bash (2026-10-29, thread "Bug bash the whole loop"): reload no longer re-fires an old rocket or a fake "Shipped" beat (loading view is a baseline), two tabs count one ship once, a call dealt again after Later shows (story no longer stalls). Tests: web/test/deck2d-bugbash.test.ts. Branch claude/project-thread-8dlyuy.

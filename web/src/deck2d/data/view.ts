@@ -23,6 +23,7 @@ export interface LiveDeckView extends AttentionView {
   work?: { id: string; title: string; stop: StopId; badge: string; status: string; auto?: boolean }; // auto: Shippy started it, no card
   followItem?: string;
   allClear?: boolean; // nothing needs the player and nothing is moving: Shippy docks, one caption, no card
+  loading?: boolean; // no snapshot yet: nothing is known, so the first real view is a baseline, not a change
 }
 
 export interface DeckOpts {
@@ -173,7 +174,7 @@ export function workStop(s: FactoryState, item: FactoryItem): StopId | null {
 
 export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckView {
   const now = opts.now ?? Date.now();
-  if (!s) return { stops: STOPS.map((id) => ({ id, built: false, state: "idle", automated: false, items: [] })), jam: null, card: null, shippy: { pose: "folded", at: "corner" }, shipped: 0, caption: null };
+  if (!s) return { stops: STOPS.map((id) => ({ id, built: false, state: "idle", automated: false, items: [] })), jam: null, card: null, shippy: { pose: "folded", at: "corner" }, shipped: 0, caption: null, loading: true };
 
   const deck = (s.deck?.length ? s.deck : s.move ? [s.move] : []).filter((m) => !opts.hidden?.has(m.id));
   const flow = opts.visualFlow === true;

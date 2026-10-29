@@ -174,3 +174,11 @@ test('a single repo and an issue use short labels without repeated setup warning
   issue.ui.open('repo'); await settle(); expect(issue.ui.card()?.no).toBe('Next issue');
   expect(issue.ui.card()?.line).not.toContain('Shippy:');
 });
+
+test('opening a repo never leaves the site, even from a protocol-relative page path', async () => {
+  const navigations: string[] = [];
+  const ui = createConnections({ origin: 'https://shiptorio.dev', path: '//evil.example/deck?source=live', navigate: u => navigations.push(u), copy: async () => {},
+    fetch: (async url => Response.json(String(url) === '/api/me' ? { login: 'alice' } : { repos: [{ fullName: 'alice/only' }] })) as typeof fetch });
+  ui.open('repo'); await settle();
+  expect(navigations).toEqual(['/deck?source=live&repo=alice%2Fonly&onboard=codex']);
+});

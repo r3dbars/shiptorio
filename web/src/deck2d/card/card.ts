@@ -3,7 +3,7 @@
 //
 // Swipe right or tap Approve, swipe left or tap Later, or use the arrow keys. A drag tilts the card and lights the
 // button it is heading for. Letting go past the line answers: an approve pops the next dot, then the card flies off as
-// a ghost while the source deals the next one, which slides up from below. One answer per card, ever.
+// a ghost while the source deals the next one, which slides up from below. One answer each time a card is dealt.
 // show(null) right after an answer says "All caught up" for a moment, then the card steps aside for the caption.
 // A hold card ships real code (a merge): Approve takes a held press (or held →), or a swipe nearly all the way across.
 // ?px=1 (the pixel canvas): the plate, buttons and dots are drawn in code in the 48 colors at a whole-number scale
@@ -282,8 +282,9 @@ export const mountCard: MountCard = (host, handlers) => {
   window.addEventListener("blur", stopHold);
 
   return {
-    show(card) {
+    show(card, opts) {
       if (card && answered.has(card.id)) return; // the source hasn't caught up with our answer yet
+      answered.clear(); // it has: a call dealt again later (the story after a Later) is a new question
       if (card && shown?.id === card.id && live) {
         shown = card;
         fill(live, card); // same card, fresher words or dots: update in place, keep any drag going
@@ -303,7 +304,7 @@ export const mountCard: MountCard = (host, handlers) => {
         live = mountLive(card);
         return;
       }
-      if (performance.now() - answeredAt < AFTER_ANSWER_MS && !caughtUp) {
+      if (!opts?.quiet && performance.now() - answeredAt < AFTER_ANSWER_MS && !caughtUp) {
         const root = el("section", "ic-card ic-in after ic-empty");
         root.append(el("h2", "ic-title", "All caught up"), el("p", "ic-line", "Nothing is waiting on you."));
         if (PX) pixelLayer(root, cardScale, paintPlate);

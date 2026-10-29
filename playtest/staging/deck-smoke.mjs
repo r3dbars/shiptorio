@@ -63,7 +63,7 @@ export async function deckSmoke({ origin = 'https://shiptorio.dev', password, ou
         assert.equal(await page.getByRole('button', { name: 'Sign in', exact: true }).count(), 0, 'Play comes before sign-in');
         await page.screenshot({ path: join(out, `guest-first-frame-${viewport.width}.png`) });
         const storyCards = [];
-        for (let n = 1; n <= 3; n++) {
+        for (let n = 1; n <= 1; n++) { // the front door's sample is one swipe
           const decision = page.locator(`.ic-card:not(.ic-ghost)[data-card="story-call-${n}"]`);
           await decision.waitFor({ timeout: 30000 });
           assert.equal(await page.locator('.connection-tools').count(), 0);
@@ -71,7 +71,7 @@ export async function deckSmoke({ origin = 'https://shiptorio.dev', password, ou
           await decision.waitFor({ state: 'detached' });
           storyCards.push(`story-call-${n}`);
         }
-        // The third approval now watches one complete automatic trip before setup.
+        // One swipe clears the sample jam, Shippy says hello, then the sign-in card.
         await page.getByRole('button', { name: 'Sign in', exact: true }).waitFor({ state: 'visible', timeout: 45000 });
         assert(new URL(page.url()).pathname === '/deck', 'Guest left the 2D deck');
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);

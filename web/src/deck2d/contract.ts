@@ -245,7 +245,7 @@ export interface ShippyModule {
 export type CreateShippy = (art: ArtLoader) => ShippyModule;
 
 export interface CardHandle {
-  show(card: CardView | null): void; // null hides it
+  show(card: CardView | null, opts?: { quiet?: boolean }): void; // null hides it; quiet: no "All caught up" (a scripted beat took the screen)
   destroy(): void;
 }
 export type MountCard = (host: HTMLElement, handlers: { onApprove(id: string): void; onLater(id: string): void }) => CardHandle;

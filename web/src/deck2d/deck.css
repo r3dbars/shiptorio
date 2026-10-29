@@ -50,3 +50,7 @@ body { -webkit-tap-highlight-color: transparent; overscroll-behavior: none; user
   .toast { font-size: 24px; text-shadow: 0 3px 0 #000; }
   .toast { max-width: 960px; }
 }
+
+/* The live first run: Shippy's one line reads like a line, not a footnote, and nothing else competes with it. */
+body.first-run .toast { width: calc(100% - 24px); white-space: normal; text-align: center; font-size: 18px; line-height: 1.35; padding: 10px 16px; max-width: 520px; background: #121e2bd9; border: 2px solid #a36915; box-shadow: 0 3px 0 #000; }
+@media (min-width: 900px) and (min-height: 560px) { body.first-run .toast { font-size: 24px; max-width: 960px; } }
