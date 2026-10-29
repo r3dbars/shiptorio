@@ -129,7 +129,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
       const actor = shippy as ShippyModule & { readonly state?: { x: number } };
       return { x: actor.state?.x ?? STOP_X.repo - 150, y: FLOOR_Y + (px ? 38 : 22) - 45, width: 560 };
     }
-    if (shot === "boiler") return { x: BOILER.x, y: BOILER.base - (BOILER_H * ART_PX) / 2, width: 900 };
+    if (shot === "boiler") return { x: BOILER.x, y: BOILER.base, width: 900 }; // framed low, so the engine sits above the card
     if (shot === "launch") return { x: STOP_X.launch - 70, y: LAUNCH_Y - 150, width: 1100 };
     return { x: STOP_X[shot], y: FLOOR_Y - 90, width: 900 };
   }
