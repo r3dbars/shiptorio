@@ -439,3 +439,6 @@ process.exitCode = failed ? 1 : 0;
   await browser?.close();
   await mf?.dispose();
 }
+
+// The current 2D product has its own newcomer walk; keep it in the same CI check.
+if (!process.exitCode) await import('./deck-first-run.mjs');
