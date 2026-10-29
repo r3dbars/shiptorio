@@ -9,9 +9,10 @@ import { makeSessionCookie } from "../../server/src/session";
 import { ISOLATED_TEST_CONTEXT, verifyTestDelegation } from "../../server/src/test-delegation";
 import { personaId, personaRepo } from "../../server/src/test-users-policy";
 import { fixtureOnlyFetch } from "./runtime";
-import type { FixtureEnv } from "./env";
+import { fixtureProviderEnv, type FixtureEnv } from "./env";
 import { Factory as SeededFactory } from "../bot/worker";
 export class Factory extends SeededFactory {
+  constructor(ctx: DurableObjectState, env: FixtureEnv) { super(ctx, fixtureProviderEnv(env)); }
   async prepareFixtureReset() {
     const existing = await this.ctx.storage.get<{ receipt: string; complete: boolean }>("fixtureReset");
     if (existing) {
@@ -45,7 +46,8 @@ export { FixtureProvider } from "./provider";
 
 globalThis.fetch = fixtureOnlyFetch;
 export default {
-  async fetch(request: Request, env: FixtureEnv, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, rawEnv: FixtureEnv, ctx: ExecutionContext): Promise<Response> {
+    const env = fixtureProviderEnv(rawEnv);
     if (env.FIXTURE_INSTANCE !== "shiptorio-fixture" || env.TEST_USERS !== "on" || env.PUBLIC_URL !== "https://shiptorio.dev") return new Response("Fixture disabled", { status: 503 });
     const timing = new FixtureTiming();
     const persona = await verifyTestDelegation(request, env.TEST_FACTORY_KEY ?? "");
