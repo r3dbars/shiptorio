@@ -10,6 +10,7 @@ import { openUnlockLink } from "../../ui/unlockLink";
 import type { DeckSource, StopId } from "../contract";
 import { cardStop, deckView, isSetupCard, itemStop, type LiveDeckView } from "./view";
 import { createJourney } from "./journey";
+import { connectReplay, type ReplayOptions } from "./replay";
 
 type Connect = (cfg: SourceConfig, onMessage: (m: ServerToWeb) => void, onStatus: (s: "connecting" | "live" | "offline") => void) => Source;
 
@@ -33,7 +34,10 @@ export function fold(s: FactoryState | null, msg: ServerToWeb): FactoryState | n
   return s;
 }
 
-export function createLiveSource(cfg: SourceConfig = readConfig(), opts: { onPower?: () => void; connect?: Connect; now?: () => number } = {}): LiveDeckSource {
+export function createLiveSource(cfg: SourceConfig = readConfig(), opts: { onPower?: () => void; connect?: Connect; now?: () => number; replay?: ReplayOptions } = {}): LiveDeckSource {
+  const replay = opts.replay ?? (typeof location !== "undefined" && new URLSearchParams(location.search).get("source") === "replay" ? {} : undefined);
+  if (replay) cfg = { ...cfg, kind: "live" };
+  const connect: Connect = replay ? (_cfg, message, status) => connectReplay(message, status, replay) : opts.connect ?? connectFactory;
   const now = opts.now ?? Date.now;
   let state: FactoryState | null = null;
   let status: "connecting" | "live" | "offline" = "connecting";
@@ -45,7 +49,7 @@ export function createLiveSource(cfg: SourceConfig = readConfig(), opts: { onPow
   let activeItemId: string | null = null;
   const fns = new Set<() => void>();
   const changed = () => fns.forEach((fn) => fn());
-  const src = (opts.connect ?? connectFactory)(cfg, (msg) => {
+  const src = connect(cfg, (msg) => {
     const next = fold(state, msg);
     if (next === state) return;
     if (state && next) {
@@ -77,6 +81,7 @@ export function createLiveSource(cfg: SourceConfig = readConfig(), opts: { onPow
     state: () => state,
     status: () => status,
     approve(id) {
+      if (replay) return;
       const move = find(id);
       if (!move || !state || hidden.has(id)) return;
       if (isSetupCard(move) && opts.onPower) return opts.onPower(); // a local agent is set up in Power, never via a connector
@@ -88,6 +93,7 @@ export function createLiveSource(cfg: SourceConfig = readConfig(), opts: { onPow
       changed();
     },
     later(id) {
+      if (replay) return;
       if (!find(id) || hidden.has(id)) return;
       hidden.add(id);
       send({ type: "defer_move", moveId: id });
