@@ -5,9 +5,6 @@
 import type { FactoryState, Machine, Station } from "@shiptorio/shared";
 
 import type { Plan } from "./layout";
-
-// the mine each real source fills (the core's SOURCE_OF, for items)
-export const MINE_OF_ORE: Record<string, string> = { issues: "github", sentry: "sentry", inbox: "inbox", posthog: "posthog" };
 const MINE_OF_SOURCE: Record<string, string> = { github: "github", sentry: "sentry", posthog: "posthog", email: "inbox" };
 // a mine with nothing connected yet is a dim ghost mine; tapping it asks you to connect that source
 export const GHOST_KEY: Record<string, string> = { sentry: "src:sentry", posthog: "src:posthog", inbox: "src:email" };
