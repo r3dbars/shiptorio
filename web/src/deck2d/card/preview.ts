@@ -33,6 +33,8 @@ const KINDS: Record<string, CardView> = {
   "story-wave": STORY()[0],
   "story-point": STORY()[2],
   "story-skip": STORY()[3],
+  // the longest beat the guest tour deals (story/tour.ts)
+  "story-long": { id: "story-long", shippy: "talk", title: "Powered by Meta Muse Spark", line: "Meta's model is my brain. I'll cheer you on and suggest what to do next, based on what you connect: GitHub first, then issues and feedback.", dots: null, stop: "repo", no: "Back" },
   live: { id: "live", title: "Approve fix for checkout bug?", dots: { have: 2, need: 3 }, line: "Approve this one and it's automatic.", stop: "review", yes: "Continue", no: "Later" },
 };
 const only = new URLSearchParams(location.search).get("card");
