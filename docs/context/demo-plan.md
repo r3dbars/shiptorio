@@ -1,6 +1,7 @@
 # Plan to Nov 3 (demo video)
 
 Written 2026-10-29 by the "Plan what's next and load up Codex" thread. Every agent reads this before picking work.
+Shot list and voiceover: [demo-script.md](demo-script.md).
 Deadline: Meta hackathon cutoff Nov 4 8 PM CT, aim to be done Nov 3 evening. Feature freeze ~Nov 1 (after that:
 bugs, polish, reliability). Justin films the demo video himself on the real deck.
 
