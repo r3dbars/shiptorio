@@ -90,7 +90,7 @@ try { for (const [index,view] of views.entries()) {
         assert.equal(await card().getByRole('button',{name:'Sign in',exact:true}).count(),0);
         await decision.locator('.approve').click();await decision.waitFor({state:'detached'});
       });
-      await step('story-sign-in',async()=>{await card().getByRole('button',{name:'Sign in',exact:true}).waitFor();assert.equal(await page.locator('.connection-tools').count(),0);});
+      await step('story-sign-in',async()=>{await card().getByRole('button',{name:'Sign in',exact:true}).waitFor({timeout:45000});assert.equal(await page.locator('.connection-tools').count(),0);});
     }
     await step('github-sign-in',async()=>{await card().getByRole('button',{name:'Sign in',exact:true}).click();await card().getByRole('button',{name:'Use this repo',exact:true}).waitFor();signedIn=true;});
     await step('choose-repository',async()=>{await card().getByRole('button',{name:'Use this repo',exact:true}).click();await page.waitForURL(u=>u.searchParams.get('repo')===stub.state.repo);if(baseline) await page.getByRole('button',{name:'Codex engine',exact:true}).click();await card().getByRole('button',{name:'Set up Codex',exact:true}).waitFor();});

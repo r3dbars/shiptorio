@@ -52,7 +52,8 @@ export async function deckSmoke({ origin = 'https://shiptorio.dev', password, ou
           await decision.waitFor({ state: 'detached' });
           storyCards.push(`story-call-${n}`);
         }
-        await page.getByRole('button', { name: 'Sign in', exact: true }).waitFor({ state: 'visible', timeout: 15000 });
+        // The third approval now watches one complete automatic trip before setup.
+        await page.getByRole('button', { name: 'Sign in', exact: true }).waitFor({ state: 'visible', timeout: 45000 });
         assert(new URL(page.url()).pathname === '/deck', 'Guest left the 2D deck');
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
         assert(overflow <= 1, `Guest deck overflowed the viewport by ${overflow}px`);
