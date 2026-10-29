@@ -1,7 +1,7 @@
 import "./deck.css";
 import { SPRITES, createBus, type AttachJuice, type CreateLayer, type CreateShippy, type DeckLayer, type DeckSource, type MountCard } from "./contract";
 import { createArt } from "./engine/art";
-import { createDemo } from "./engine/demo";
+import { createDemo, createOrbDemo } from "./engine/demo";
 import { createEngine } from "./engine/engine";
 import { fallbackCard, fallbackShippy } from "./engine/fallbacks";
 
@@ -27,7 +27,8 @@ const seed = Number(params.get("seed")) || 0;
 
   let source: DeckSource;
   const want = params.get("source");
-  if (want === "live" && data?.createLiveSource) source = await (data.createLiveSource as () => Promise<DeckSource> | DeckSource)();
+  if (want === "orb-demo") source = createOrbDemo();
+  else if (want === "live" && data?.createLiveSource) source = await (data.createLiveSource as () => Promise<DeckSource> | DeckSource)();
   else if (want !== "demo" && story?.createStory) source = (story.createStory as (o: { seed: number; speed: number }) => DeckSource)({ seed, speed });
   else source = createDemo();
 

@@ -1,5 +1,25 @@
 import { STOPS, type DeckSource, type DeckView, type Item, type ShippyView, type StopId } from "../contract";
 
+/** Manual visual check on the same deck: ?source=orb-demo. No live actions. */
+export function createOrbDemo(): DeckSource {
+  let blocked = true;
+  let revision = 0;
+  return {
+    view: () => ({
+      stops: STOPS.map((id) => ({ id, built: true, state: blocked && id === "review" ? "jammed" : "idle", automated: false, items: [] })),
+      jam: blocked ? "review" : null,
+      card: {
+        id: `orb-demo-${revision}`, stop: "review", dots: null, title: blocked ? "Review is blocked" : "The line is clear",
+        line: blocked ? "The core flashes red. Clear the block to restore cyan." : "The core is cyan again. Block the line to replay.",
+        yes: blocked ? "Clear block" : "Block again", no: "Keep this state",
+      },
+      shippy: { at: "corner", pose: "idle" }, shipped: 0, caption: null,
+    }),
+    approve: () => { blocked = !blocked; revision++; },
+    later: () => { revision++; },
+  };
+}
+
 // A stand-in source so the engine has something to draw until story/ lands: the line builds itself, review
 // starts waiting on your call, three yeses make it automatic. story/ replaces this; keep it dumb.
 export function createDemo(): DeckSource {
