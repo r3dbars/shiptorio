@@ -77,10 +77,9 @@ export async function deckSmoke({ origin = 'https://shiptorio.dev', password, ou
           // Ship it is a held press, like every real merge.
           await beat.first().click(await shown.evaluate(el => el.classList.contains('hold')) ? { delay: 1200 } : {});
         }
+        // Stop at the ask: its press leaves for the password or GitHub, and preview admission never signs in.
         await ask.waitFor({ state: 'visible', timeout: 45000 });
         assert.equal(await signIn.count(), 0, 'Sign-in waits for the tour\'s own ask');
-        await ask.click();
-        await signIn.waitFor({ state: 'visible', timeout: 45000 });
         assert(new URL(page.url()).pathname === '/deck', 'Guest left the 2D deck');
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
         assert(overflow <= 1, `Guest deck overflowed the viewport by ${overflow}px`);

@@ -15,6 +15,7 @@ import { createConveyorDemo } from "./engine/conveyor-demo";
 import { createPayoff } from "./payoff";
 import { createFirstRun } from "./data/firstrun";
 import { createTour } from "./story/tour";
+import { askPassword } from "./password";
 import type { AttentionView } from "./stations/attention";
 
 /** Keyboard and screen-reader access for the existing card; it never invents an action. */
@@ -124,9 +125,10 @@ export function oneAsk<V extends DeckView>(view: V): V {
 
 /** Finish the sample loop with the existing connection card, not a second front door.
  *  ask: the story's own "Want to create your own factory?" card shows first, and only its yes opens sign-in
- *  (the guest tour: the password comes up there, never before). Closing sign-in brings that card back. */
-export function storyBeforeSignIn(story: DeckSource, connections: { open(target: "repo"): void; card(): CardView | null }, opts: { ask?: boolean } = {}): DeckSource {
-  let finished = false, replay = 0, asks = 0, asked = false;
+ *  (the guest tour: the password comes up there, never before), straight on to the password or GitHub with no second
+ *  card. Closing sign-in brings that card back. */
+export function storyBeforeSignIn(story: DeckSource, connections: { open(target: "repo"): void; card(): CardView | null; answer?(id: string, yes: boolean): unknown }, opts: { ask?: boolean } = {}): DeckSource {
+  let finished = false, replay = 0, asks = 0, asked = false, pressed: string | null = null;
   const askId = () => `story-connect:ask-${asks}`; // fresh each time it shows, so the card renders it again
   const originalId = (id: string) => !replay ? id : id.endsWith(`:replay-${replay}`) ? id.slice(0, -`:replay-${replay}`.length) : null;
   return { ...story, approve(id) { if (opts.ask && id === askId()) { asked = true; return; } const original = originalId(id); if (original) story.approve(original); },
@@ -135,6 +137,9 @@ export function storyBeforeSignIn(story: DeckSource, connections: { open(target:
     if (view.card?.id !== "story-connect") return replay && view.card ? { ...view, card: { ...view.card, id: `${view.card.id}:replay-${replay}` } } : view;
     if (opts.ask && !asked) return { ...view, card: { ...view.card, id: askId() } };
     if (!finished) { finished = true; connections.open("repo"); }
+    else if (opts.ask && connections.answer && connections.card()?.yes === "Sign in" && pressed !== `${asks}`) {
+      pressed = `${asks}`; void connections.answer(connections.card()!.id, true); // "Create my factory" was the press
+    }
     else if (!connections.card() && opts.ask) { finished = false; asked = false; asks++; return { ...view, card: { ...view.card, id: askId() } }; }
     else if (!connections.card()) {
       finished = false; replay++;
@@ -178,6 +183,7 @@ const seed = Number(params.get("seed")) || 0;
   const connections = createConnections({
     repo: signedIn ? params.get("repo") || undefined : undefined, origin: location.origin, path: location.pathname + location.search,
     navigate: url => { location.href = url; }, copy: copyText,
+    askPassword: next => askPassword(document, next, url => { location.href = url; }),
     onStart: id => (source as DeckSource & { focusItem?: (id: string) => void }).focusItem?.(id),
   });
   let source: DeckSource;

@@ -111,30 +111,6 @@ export function driftX(t: number, pxPerSecond: number, tileWidth: number): numbe
   return -((t * pxPerSecond) % tileWidth);
 }
 
-export interface DriftLayer {
-  el: HTMLElement;
-  /** px per second; clouds ~6, skyline ~2. Slow is the point. */
-  speed: number;
-  /** Width of one repeat. The element should hold two copies side by side (or a repeat-x background). */
-  tile: number;
-}
-
-/** Slow cloud/skyline drift. Moves each layer with a transform, pauses when the tab is hidden. Returns stop(). */
-export function startDrift(layers: DriftLayer[]): () => void {
-  if (reducedMotion() || !layers.length) return () => {};
-  let raf = 0;
-  let t = 0;
-  let last = performance.now();
-  const frame = (now: number) => {
-    t += Math.min(0.1, (now - last) / 1000); // a long pause doesn't jump the sky
-    last = now;
-    for (const l of layers) l.el.style.transform = `translate3d(${driftX(t, l.speed, l.tile).toFixed(2)}px, 0, 0)`;
-    raf = requestAnimationFrame(frame);
-  };
-  raf = requestAnimationFrame(frame);
-  return () => cancelAnimationFrame(raf);
-}
-
 // ---- the big moments ---------------------------------------------------------------------------------------
 
 /** Green AUTOMATED stamp slamming onto the deck, then fading. The stamp stays readable with reduced motion. */

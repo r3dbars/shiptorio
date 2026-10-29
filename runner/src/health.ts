@@ -1,5 +1,5 @@
 import type { Job } from "./messages";
-import type { Pairing, GrantRejectionCode } from "./pairing";
+import { tokenClaims, type Pairing, type GrantRejectionCode } from "./pairing";
 
 export class RunnerGrantRejected extends Error {
   constructor(public code: GrantRejectionCode, public status: number) {
@@ -25,7 +25,7 @@ export function renewalDue(pair: Pick<Pairing, "expires"> & Partial<Pick<Pairing
   if (pair.expires > now + RENEW_BEFORE_MS) return false;
   try {
     // Scheduling only: the server still verifies the signed grant and live session on every call.
-    const ceiling = JSON.parse(atob(pair.token!.split(".")[0].replace(/-/g, "+").replace(/_/g, "/"))).user?.expiresAt;
+    const ceiling = tokenClaims(pair.token!).user?.expiresAt;
     if (Number.isFinite(ceiling) && pair.expires >= ceiling) return false;
   } catch { /* Older/malformed local records do not suppress renewal. */ }
   return true;
@@ -102,9 +102,5 @@ export class RunnerExecutionFailure extends Error {
   }
 }
 export function runnerFailureSummary(error: unknown): string {
-  if (error instanceof RunnerExecutionFailure) {
-    if (error.kind === 'timeout') return 'Codex timed out before finishing. No code was published.';
-    if (error.kind === 'stopped') return 'Codex stopped before finishing. No code was published.';
-  }
-  return 'Local runner stopped; inspect local evidence and approve another attempt.';
+  return error instanceof RunnerExecutionFailure ? error.message : 'Local runner stopped; inspect local evidence and approve another attempt.';
 }
