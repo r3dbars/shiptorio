@@ -776,3 +776,5 @@ Verified whole-App regressions: Hono response assignment replaced appended App t
 
 - Keep fresh session/admission gates before repository I/O. Read mapping + the three required relationships in one transaction, reducing a warm decision from six SQL statements/four D1 roundtrips to the same six statements/three roundtrips. Each App/DO boundary still runs its own checks; KV/GitHub policy, permissions and the non-batch fallback are unchanged.
 - Real SQLite regressions pin query counts, same-request installation remapping, warm-grant revocations, strict/error precedence, early session/admission denial and adapter fallback. No frontend/Factory/session/access/cache changes or live fixture calls. Deployed speed remains a separate measurement, not an under-three-second claim.
+
+- 2026-10-29 Codex (`codex/deck-github-codex`): milestone 1 adds a read-only real GitHub issue inbox and boiler/Codex connection cards using existing runner pairing. Uses the current swipe UI; no work starts from browsing or pairing. Adds route authorization, inbox and connection tests plus desktop/phone fixture QA. Real account acceptance requires GitHub sign-in and a local Codex runner.

@@ -57,7 +57,7 @@ export interface Engine {
   readonly portrait: boolean;
 }
 
-export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus, shippy: ShippyModule, layers: DeckLayer[] = [], options: { onMachineSelect?: (id: StopId) => void } = {}): Engine {
+export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus, shippy: ShippyModule, layers: DeckLayer[] = [], options: { onMachineSelect?: (id: StopId) => void; onPowerSelect?: () => void } = {}): Engine {
   const owned = new Set(layers.flatMap((l) => l.replaces ?? []));
   const slot = (s: LayerSlot) => { for (const l of layers) l.draw(cx, s); };
   const screen = cv.getContext("2d")!;
@@ -167,7 +167,9 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
         const size = stationSize(s.id as StationId), feet = BELT_Y + LOOK[s.id].drop;
         return Math.abs(x - STOP_X[s.id]) <= size.w * ART_PX / 2 + 15 && y >= feet - size.h * ART_PX - 10 && y <= feet + 25;
       });
-      if (hit) options.onMachineSelect?.(hit.id);
+      const boilerHit = Math.abs(x - BOILER.x) <= BOILER_W * ART_PX / 2 && y >= BOILER.base - BOILER_H * ART_PX && y <= BOILER.base;
+      if (boilerHit) options.onPowerSelect?.();
+      else if (hit) options.onMachineSelect?.(hit.id);
     }
     ptrs.delete(e.pointerId); pinch = 0;
     if (moved < 6 && e.clientX < 110 && e.clientY < 110) { cam.manual = 0; cam.pin = null; } // tap Shippy: fly to what he's looking at

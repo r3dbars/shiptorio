@@ -1,3 +1,4 @@
+import { createConnections } from "./data/connections";
 import "./deck.css";
 import { SPRITES, createBus, type AttachJuice, type CreateLayer, type CreateShippy, type DeckLayer, type DeckSource, type MountCard } from "./contract";
 import { createArt } from "./engine/art";
@@ -31,6 +32,10 @@ const seed = Number(params.get("seed")) || 0;
   const [story, data, shippyMod, cardMod, juiceMod] = await Promise.all([
     load("story", "createStory"), load("data", "createLiveSource"), load("shippy", "createShippy"), load("card", "mountCard"), load("juice", "attachJuice")]);
 
+  const connections = createConnections({
+    repo: params.get("repo") || undefined, origin: location.origin, path: location.pathname + location.search,
+    navigate: url => { location.href = url; }, copy: text => navigator.clipboard.writeText(text),
+  });
   let source: DeckSource;
   const want = params.get("source");
   const rehearsal = want === "shippy-demo" ? createShippyRehearsal() : null;
@@ -50,7 +55,8 @@ const seed = Number(params.get("seed")) || 0;
   }
   else if (want === "launch-demo") source = createLaunchDemo();
   else if (want === "orb-demo") source = createOrbDemo();
-  else if ((want === "live" || want === "sim") && data?.createLiveSource) source = await (data.createLiveSource as () => Promise<DeckSource> | DeckSource)();
+  else if ((want === "sim" || want === "live" && params.has("repo")) && data?.createLiveSource) source = await (data.createLiveSource as (cfg: undefined, opts: { onPower: () => void }) => Promise<DeckSource> | DeckSource)(undefined, { onPower: () => connections.open("power") });
+  else if (want === "live") source = createDemo();
   else if (want !== "demo" && story?.createStory) source = (story.createStory as (o: { seed: number; speed: number }) => DeckSource)({ seed, speed });
   else source = createDemo();
 
@@ -59,7 +65,15 @@ const seed = Number(params.get("seed")) || 0;
   const layers: DeckLayer[] = [];
   for (const f of ["grow", "build", "launch", "juice", "props"]) { const m = await load(f, "createLayer"); if (m) layers.push((m.createLayer as CreateLayer)(art, bus)); }
   const inspector = createMachineInteraction(machines ? id => { if (id === machines.machine) machines.setMode("working"); } : undefined);
-  const engine = createEngine(cv, art, bus, shippy, layers, { onMachineSelect: id => {
+  const connectionTools = document.createElement("div"); connectionTools.className = "shippy-tools connection-tools";
+  for (const [label, target] of [["Repo inbox", "repo"], ["Codex engine", "power"]] as const) {
+    const button = document.createElement("button"); button.type = "button"; button.textContent = label;
+    button.onclick = () => connections.open(target); connectionTools.append(button);
+  }
+  document.body.append(connectionTools);
+  if (want === "live" && !params.has("repo")) connections.open("repo");
+  const engine = createEngine(cv, art, bus, shippy, layers, { onPowerSelect: () => connections.open("power"), onMachineSelect: id => {
+    if (id === "repo" && !want?.endsWith("-demo")) { connections.open("repo"); return; }
     if (machines) machines.cycling = false;
     (source as DeckSource & { selectStop?: (stop: typeof id) => void }).selectStop?.(id);
     inspector.select(id);
@@ -97,8 +111,8 @@ const seed = Number(params.get("seed")) || 0;
 
   const mountCard = (cardMod?.mountCard as MountCard | undefined) ?? fallbackCard;
   const card = mountCard(document.getElementById("card-host")!, {
-    onApprove(id) { bus.emit({ type: "approve", cardId: id }); if (!inspector.answer(id, true)) source.approve(id); },
-    onLater(id) { bus.emit({ type: "later", cardId: id }); if (!inspector.answer(id, false)) source.later(id); },
+    onApprove(id) { if (id.startsWith("connection-")) { void connections.answer(id, true); return; } bus.emit({ type: "approve", cardId: id }); if (!inspector.answer(id, true)) source.approve(id); },
+    onLater(id) { if (id.startsWith("connection-")) { void connections.answer(id, false); return; } bus.emit({ type: "later", cardId: id }); if (!inspector.answer(id, false)) source.later(id); },
   });
   (juiceMod?.attachJuice as AttachJuice | undefined)?.(bus, document.body, (s) => engine.where(s));
 
@@ -122,7 +136,8 @@ const seed = Number(params.get("seed")) || 0;
       if (machines.machine !== focusedMachine) { engine.focus(machines.machine); focusedMachine = machines.machine; }
       updateMachineControls?.();
     }
-    const view = inspector.view(source.view());
+    connections.tick();
+    const view = connections.view(inspector.view(source.view()));
     engine.frame(view, dt);
     card.show(view.card);
     if (view.caption !== caption) { caption = view.caption; if (caption) toast.textContent = caption; }
