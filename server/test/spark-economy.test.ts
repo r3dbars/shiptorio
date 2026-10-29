@@ -6,10 +6,11 @@ const original = globalThis.fetch;
 afterEach(() => { globalThis.fetch = original; });
 const message = [{ role: "user" as const, content: "Review README at revision one" }];
 function provider() {
-  let calls = 0, release!: () => void;
+  let calls = 0, release!: () => void, started!: () => void;
+  const ready = new Promise<void>(resolve => { started = resolve; });
   const gate = new Promise<void>(resolve => { release = resolve; });
-  globalThis.fetch = (async () => { calls++; await gate; return Response.json({ choices: [{ message: { content: "same decision" } }], usage: { total_tokens: 100 } }); }) as unknown as typeof fetch;
-  return { release, calls: () => calls };
+  globalThis.fetch = (async () => { calls++; started(); await gate; return Response.json({ choices: [{ message: { content: "same decision" } }], usage: { total_tokens: 100 } }); }) as unknown as typeof fetch;
+  return { release, ready, calls: () => calls };
 }
 test("identical concurrent decisions share one paid call; later state is evaluated again", async () => {
   const env = sparkTestEnv(), p = provider();
@@ -58,7 +59,7 @@ test("duplicate issue-to-review notifications keep the same plan and verdict wit
       await new Promise(resolve => setTimeout(resolve, 1));
       return Response.json({choices:[{message:{content:JSON.stringify(reply)}}],usage:{total_tokens:100}});
     }) as unknown as typeof fetch;
-    const copies = () => shared ? [env,env] : [{...env},{...env}];
+    const copies = () => shared ? [env,env] : [{...env,planningSignal:new AbortController().signal},{...env,planningSignal:new AbortController().signal}];
     const issue = {title:"Clarify README checks",body:"Explain the existing checks.",labels:[]};
     const classified = await Promise.all(copies().map(e => triage(e,issue,["/"])));
     stage="plan";
@@ -86,4 +87,29 @@ test("a transient account lookup retries before any paid request", async () => {
   expect(lookups).toBe(2);
   expect(calls).toBe(1);
   expect((await budgetUsage(env,"owner")).calls).toBe(1);
+});
+
+
+test("fresh factory env wrappers share only an identical account and cancellation lifetime", async () => {
+  const env = sparkTestEnv(), p = provider();
+  const first = sparkChat(env,message);
+  const duplicate = sparkChat({...env,budgetAccount: async()=>"owner"},message);
+  const otherAccount = sparkChat({...env,budgetAccount:async()=>"other"},message);
+  const otherSignal = sparkChat({...env,planningSignal:new AbortController().signal},message);
+  p.release();
+  await Promise.all([first,duplicate,otherAccount,otherSignal]);
+  expect(p.calls()).toBe(3);
+});
+
+
+test("a newly paused factory or zero budget cannot join an in-flight decision", async () => {
+  const env = sparkTestEnv(), p = provider();
+  const first=sparkChat(env,message);
+  await p.ready;
+  await env.DB.prepare("INSERT INTO admin_controls(scope,paused) VALUES('*',1)").run();
+  await expect(sparkChat({...env},message)).rejects.toThrow("paused");
+  await env.DB.prepare("DELETE FROM admin_controls").run();
+  await expect(sparkChat({...env,SPARK_DAILY_CALLS:'0'},message)).rejects.toThrow("exhausted");
+  p.release(); await first;
+  expect(p.calls()).toBe(1);
 });
