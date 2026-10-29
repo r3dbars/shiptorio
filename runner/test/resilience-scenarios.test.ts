@@ -59,13 +59,16 @@ nativeTest('killing Codex mid-proposal fails cleanly, keeps pairing and accepts 
   await fixture(async(root,_work,home,executable)=>{
     const j=assignment(Date.now()),workspace=await recoverWorkspace(root,j);await mkdir(workspace.work);await Bun.write(resolve(workspace.work,'README.md'),'Original documentation.\n');await workspace.checkpoint('initialized');
     const pair={repo:j.repo,token:'fixture-pairing',expires:Date.now()+86400000};await savePairing(pair,root);
-    await Bun.write(executable,'#!/bin/sh\necho $$ > "$HOME/child-pid"\nprintf "partial edit proposal\\n"\nexec sleep 30\n');
+    await Bun.write(executable,'#!/bin/sh\nprintf "partial edit proposal\\n"\nprintf ready > "$HOME/child-ready"\nwhile [ ! -f "$HOME/kill-now" ]; do sleep 0.01; done\nkill -KILL $$\n');
     let writes=0;
     const attempt=assembleCodex({root:workspace.directory,work:workspace.work,home,executable,timeout:5000,job:j,files:[{path:'README.md',content:'Original documentation.\n'}],verification:{run:async()=>{writes++;throw Error('incomplete output');},close:async()=>{}}});
     const settled=attempt.then(()=>null,error=>error);
     const end=Date.now()+3000;
-    while(!await Bun.file(resolve(home,'child-pid')).exists()&&Date.now()<end)await Bun.sleep(10);
-    const pid=Number(await Bun.file(resolve(home,'child-pid')).text());expect(pid).toBeGreaterThan(0);process.kill(pid,'SIGKILL');
+    while(!await Bun.file(resolve(home,'child-ready')).exists()&&Date.now()<end)await Bun.sleep(10);
+    expect(await Bun.file(resolve(home,'child-ready')).text()).toBe('ready');
+    // The process's PID is namespace-local under Linux bubblewrap. Ask the same
+    // real process to receive SIGKILL inside its boundary instead of killing a host PID.
+    await Bun.write(resolve(home,'kill-now'),'kill');
     const failure=await settled;expect(failure).toBeInstanceOf(RunnerExecutionFailure);expect(runnerFailureSummary(failure)).toContain('Codex stopped');expect(writes).toBe(0);
     expect(await Bun.file(resolve(workspace.work,'README.md')).text()).toBe('Original documentation.\n');
     await Bun.write(resolve(root,'.work',`${j.id}.receipt.json`),JSON.stringify({jobId:j.id,lease:j.lease,ok:false,summary:runnerFailureSummary(failure),checks:[]}));
