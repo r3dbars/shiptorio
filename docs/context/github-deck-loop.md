@@ -83,3 +83,22 @@ Player check:
 - Confirm the rocket launches after GitHub confirms the merge.
 
 The live acceptance check also found a false review rejection: a failed tree read had been replaced by a list containing only the PR's changed files. Spark therefore saw `README.md` but was told `package.json` did not exist. Review now requires a complete tree and distinguishes failed file reads from confirmed missing files. Unavailable evidence pauses review without creating a rework scar. An authenticated writer may retry a rejected AI review only against the same currently green PR head; previous evidence remains, and no build or merge is authorized by that retry.
+
+
+## Live bottleneck projection (batch 1029, #47)
+
+The existing budgeted Meta diagnosis is projected onto a current station and the oldest
+matching item. The snapshot and patches carry `liveBottleneck` (`stop`, optional `itemId`,
+short `reason`, `source: spark|fallback`). A stale, missing or unmappable diagnosis uses
+stable current-work rules. This projection performs no extra provider call and inherits
+the existing 400-call / 1-million-token budget and diagnosis limits.
+
+The deck focuses the selected station and shows the short reason between decision cards.
+An open card keeps its existing explanation and plan details; the caption stays hidden
+while that card owns the bottom of the screen. Healthy human waits stay yellow, not red.
+A new focus waits for in-flight cargo to reach its machine before adopting another item.
+
+Caption text comes from trusted state/action templates; issue titles, issue bodies and
+model prose cannot supply routing instructions or overwrite the explanation. First
+reconnect snapshots derive the pick immediately, without waiting for another model turn.
+Local protocol fixtures verify presentation; they do not claim a fresh live Meta call.

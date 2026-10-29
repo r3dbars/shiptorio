@@ -163,12 +163,14 @@ export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckV
 
   const deck = (s.deck?.length ? s.deck : s.move ? [s.move] : []).filter((m) => !opts.hidden?.has(m.id));
   const flow = opts.visualFlow === true;
+  // A focus is guidance, not a red fault. Discard a pick whose work has disappeared.
+  const focus = flow && s.liveBottleneck && (!s.liveBottleneck.itemId || s.items.some(it => it.id === s.liveBottleneck!.itemId && it.state !== "launched")) ? s.liveBottleneck : null;
   const candidates = s.items.filter(it => workStop(s, it));
   const ongoing = candidates.filter(it => it.state !== 'launched');
   const selectable = ongoing.length ? ongoing : candidates;
-  const active = flow ? candidates.find(it => it.id === opts.activeItemId) ?? selectable.sort((a, b) => b.updatedAt - a.updatedAt)[0] : undefined;
+  const active = flow ? candidates.find(it => it.id === opts.activeItemId) ?? candidates.find(it => it.id === focus?.itemId) ?? selectable.sort((a, b) => b.updatedAt - a.updatedAt)[0] : undefined;
   const activeStop = active && workStop(s, active);
-  const relevant = active ? deck.filter(m => m.itemId === active.id || isSetupCard(m)) : deck;
+  const relevant = focus?.itemId ? deck.filter(m => m.itemId === focus.itemId || isSetupCard(m)) : active ? deck.filter(m => m.itemId === active.id || isSetupCard(m)) : deck;
   const move = (opts.selectedStop && pickCard(relevant.filter(m => cardStop(s, m) === opts.selectedStop))) || pickCard(relevant);
   // green means you handed it over (beat 4), so CI and AI review, which never asked you, stay plain working / idle
   const handed = handedStops(s);
@@ -217,10 +219,10 @@ export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckV
   const shipped = s.metrics?.rockets ?? s.items.filter((it) => it.state === "launched").length;
   const status = activeStop ? s.pipeline?.find(p => p.id === activeStop && p.itemIds.includes(active!.id))?.state ?? 'working' : '';
   const work = active && activeStop ? { id: active.id, title: active.title, stop: activeStop, badge: crate(active, false).badge, status } : undefined;
-  const caption = !flow ? (card ? null : handed.size ? "Shippy has this. Fix the next jam." : "Software is a factory.") : work ? `${work.badge} · ${work.title} · ${STOP_LABEL[work.stop]}${status === 'waiting_player' ? ' needs your approval' : ' is working'}` : `${intake.length} issues waiting in Repo. Choose one to start.`;
+  const caption = focus?.reason ?? (!flow ? (card ? null : handed.size ? "Shippy has this. Fix the next jam." : "Software is a factory.") : work ? `${work.badge} · ${work.title} · ${STOP_LABEL[work.stop]}${status === 'waiting_player' ? ' needs your approval' : ' is working'}` : `${intake.length} issues waiting in Repo. Choose one to start.`);
   // Keep the existing one-shot level-up celebration even while its first automatic crate starts work.
   const leveledUp = (s.learned ?? []).some(l => now >= l.since && now - l.since < HAPPY_MS);
-  return { stops, jam, attention: [...attention], card, intake, work, shippy: work && !card && !leveledUp ? { at: work.stop, pose: work.stop === 'builder' ? 'weld' : 'inspect' } : shippyOf(s, stops, jam, card, opts, now), shipped, caption };
+  return { stops, jam, focus: focus?.stop, attention: [...attention], card, intake, work, shippy: work && !card && !leveledUp ? { at: work.stop, pose: work.stop === 'builder' ? 'weld' : 'inspect' } : shippyOf(s, stops, jam, card, opts, now), shipped, caption };
 }
 
 function shippyOf(s: FactoryState, stops: Stop[], jam: StopId | null, card: CardView | null, opts: DeckOpts, now: number): ShippyView {

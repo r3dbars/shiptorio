@@ -80,7 +80,7 @@ import { layoutMap } from "./map";
 import { initialFactoryState, reconcileFactoryGitHubAccess } from "./factory-initialization";
 import { inventoryCommand } from "./factory-inventory";
 import { gameMaster, heuristicTriage, readGoals, judgeOrbit, judgePermit, pickPower, pickResearch, pickFiles, planLocalTask, proposeExperiment, sparkConfigured, sparkModel, triage, writeFix, type GameMasterBrief, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
-import { emptyBrain, recordThought, scoreShip } from "./brain";
+import { projectLiveBottleneck, emptyBrain, recordThought, scoreShip } from "./brain";
 import { RepositoryReadUnavailable, type SparkStep, type Toolbox } from "./spark-tools";
 import { ciReport, codeSearch, factoryBrief, issueComments, signalsBrief, treePaths } from "./spark-context";
 import { issueRevision, RunnerHarness, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
@@ -443,11 +443,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const previous = s.move;
     s.deck = deck; s.move = deck[0] ?? null;
     s.learned = learning ? learnedList(this.deckBook!) : [];
+    s.liveBottleneck = projectLiveBottleneck(s, jobs, now);
     await this.logDeck(deck);
     await this.accountPut("openMoves", this.openMoves);
     await this.accountPut("deckBook", this.deckBook);
     await this.save();
-    this.broadcast({ type: "patch", patch: { bottleneck: s.bottleneck, learned: s.learned, pipeline: projectPipeline(s, jobs, presenceFresh) } });
+    this.broadcast({ type: "patch", patch: { bottleneck: s.bottleneck, liveBottleneck: s.liveBottleneck, learned: s.learned, pipeline: projectPipeline(s, jobs, presenceFresh) } });
     // Unchanged decisions need no new transport frame. Every frame we do publish
     // retains broadcast's fresh session/membership checks; tick and queue telemetry
     // keep flowing even when the cards are unchanged.
@@ -512,7 +513,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       await this.accountPut("brainMemory", result.memory);
       const main = result.memory.current && cache.signals.find(x => x.id === result.memory.current!.bottleneck.signalIds[0]);
       const holdingBack = result.memory.current ? { ...result.memory.current.bottleneck, severity: main ? Math.min(1, signalWeight(main, now)) : 0 } : null;
-      if (JSON.stringify(holdingBack) !== JSON.stringify(s.holdingBack ?? null)) { s.holdingBack = holdingBack; await this.save(); this.broadcast({ type: "patch", patch: { holdingBack } }); }
+      if (JSON.stringify(holdingBack) !== JSON.stringify(s.holdingBack ?? null)) {
+        s.holdingBack = holdingBack;
+        s.liveBottleneck = projectLiveBottleneck(s, await this.runnerJobs(), Date.now());
+        await this.save();
+        this.broadcast({ type: "patch", patch: { holdingBack, liveBottleneck: s.liveBottleneck } });
+      }
       for (const c of result.cleared) this.log("info", `Unblocked: ${c.title}.`);
       if (result.decided) {
         const log = await this.ctx.storage.get<Diagnosis[]>("brainDiagnoses") ?? [];
@@ -3349,7 +3355,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       // Derived on reconnect from durable jobs, rather than a stored/optimistic step counter.
       const [jobs, presence] = await Promise.all([this.runnerJobs(), this.ctx.storage.get<{ harnesses: string[]; seenAt: number }>("runnerPresence")]);
       const pipeline = projectPipeline(state, jobs, !!presence?.harnesses.length && Date.now() - presence.seenAt < 20000);
-      const snapshot = this.redactor.value(structuredClone({ type: "snapshot", state: { ...state, pipeline } } satisfies ServerToWeb));
+      const snapshot = this.redactor.value(structuredClone({ type: "snapshot", state: { ...state, pipeline, liveBottleneck: projectLiveBottleneck(state, jobs, Date.now()) } } satisfies ServerToWeb));
       server.send(await measureSocket(timing, "do_frame", () => this.browserFrames.frame(snapshot, false)));
     }
     else server.send(JSON.stringify({ type: "log", level: "warn", text: "No factory yet. Is the GitHub App installed on this repo?", at: Date.now() }));

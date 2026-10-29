@@ -775,3 +775,12 @@ describe("runner decisions remain reachable among durable third-defer escalation
     expect(f.data.get("runnerJob:job-58")).toEqual(job);
   });
 });
+
+it("the first live snapshot projects the brain pick even for legacy saved state", async () => {
+  const now = Date.now();
+  const f = fixture([], { items: [{ id: "gh-16", title: "README checks", kind: "bug", source: "github_issue", district: "/", state: "working", attempts: 0, updatedAt: now }], holdingBack: { id: "factory:queue_jam:build", area: "ship", title: "Build is waiting", why: "Model prose is not copied", signalIds: ["factory:queue_jam:build"], confidence: 1, by: "spark", decidedAt: now, severity: 1 } });
+  expect(f.saved().liveBottleneck).toBeUndefined();
+  await f.checkin();
+  const snapshot = f.events.find((event): event is Extract<ServerToWeb, { type: "snapshot" }> => event.type === "snapshot")!;
+  expect(snapshot.state.liveBottleneck).toEqual({ stop: "builder", itemId: "gh-16", reason: "The coding engine is working on #16.", source: "spark" });
+});

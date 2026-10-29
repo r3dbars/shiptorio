@@ -8,6 +8,7 @@ import {
   Actor,
   Autonomy,
   Learned,
+  LiveBottleneckPick,
   AutonomyLevel,
   Belt,
   Bottleneck,
@@ -48,6 +49,7 @@ export const Patch = z.object({
   goals: Goals.optional(),
   bottleneck: Bottleneck.nullable().optional(),
   holdingBack: HoldingBack.nullable().optional(),
+  liveBottleneck: LiveBottleneckPick.nullable().optional(),
   autonomy: Autonomy.optional(), // full replacement when present
   learned: z.array(Learned).optional(), // full replacement when present
   metrics: Metrics.optional(),
