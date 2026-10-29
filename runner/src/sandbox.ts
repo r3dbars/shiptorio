@@ -2,6 +2,7 @@ import { assertLinuxSandbox, linuxSandbox } from "./sandbox-linux";
 import { mkdtemp, mkdir, realpath, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { museDirs } from "./policy";
 
 export interface SandboxResult { code: number; out: string; err: string; timedOut?: boolean }
 export interface CheckSandbox {
@@ -55,7 +56,7 @@ export async function checkSandbox(work: string, agent?: { home: string; executa
     PATH: [dirname(git), bin, dirname(runtime), ...(nodeRuntime ? [dirname(nodeRuntime)] : []), "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(":"),
     LANG: "en_US.UTF-8", TERM: "dumb", CI: "true", SHIPTORIO_CHECK_SANDBOX: "1",
     BUN_INSTALL_CACHE_DIR: join(privateRoot, ".bun-cache"),
-    ...(agent ? { CODEX_HOME: join(home, ".codex"), CLAUDE_CONFIG_DIR: join(home, ".claude"), CLAUDE_CODE_TMPDIR: temp } : {}),
+    ...(agent ? { CODEX_HOME: join(home, ".codex"), CLAUDE_CONFIG_DIR: join(home, ".claude"), CLAUDE_CODE_TMPDIR: temp, ...museDirs(home) } : {}),
     GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_TERMINAL_PROMPT: "0",
   };
   const profile = (install: boolean) => `(version 1)

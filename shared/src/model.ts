@@ -145,7 +145,7 @@ export const MachineType = z.enum([
 export type MachineType = z.infer<typeof MachineType>;
 
 // Who does the work inside an assembler (or splitter).
-export const Harness = z.enum(["spark", "claude_code", "codex", "cursor", "grok", "local"]);
+export const Harness = z.enum(["spark", "claude_code", "codex", "muse_code", "cursor", "grok", "local"]);
 export type Harness = z.infer<typeof Harness>;
 
 export const MachineState = z.enum(["idle", "working", "blocked"]);

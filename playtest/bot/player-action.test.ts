@@ -23,9 +23,9 @@ test("the fixture player requires a scoped visible card before planning or appro
   expect(fixtureCardIntent("Start issue", "Plan #1: Fix a test", ["plan_runner_job"])).toBe("plan-issue");
   expect(fixtureCardIntent("Start build", "Build #1: Fix a test", ["approve_runner_job"])).toBe("approve-build");
   expect(fixtureCardIntent("See issues", "Codex engine is ready")).toBe("open-inbox");
-  expect(fixtureCardIntent("Copy setup", "Connect your Codex engine")).toBe("connect-codex");
+  expect(fixtureCardIntent("Copy setup", "Connect your coding engine")).toBe("connect-codex");
   expect(fixtureCardIntent("Copy again", "Paste it into Terminal")).toBe("connect-codex");
-  expect(fixtureCardIntent("Please wait…", "Checking Codex…")).toBe("wait");
+  expect(fixtureCardIntent("Please wait…", "Checking your engine…")).toBe("wait");
   expect(() => fixtureCardIntent("Plan", "Delete your account")).toThrow();
   expect(() => fixtureCardIntent("Continue", "Unknown recommendation", ["send_customer_reply"])).toThrow();
   expect(() => fixtureCardIntent("Start build", "Build #1: Fix a test")).toThrow();

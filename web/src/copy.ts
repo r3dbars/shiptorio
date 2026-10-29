@@ -33,7 +33,7 @@ export const WORDS = {
 };
 
 /** Who's at an assembler, by harness. */
-export const HARNESS_NAME: Record<Harness, string> = { spark: "Planner", claude_code: "Claude Code", codex: "Codex", cursor: "Cursor", grok: "Grok", local: "Local model" };
+export const HARNESS_NAME: Record<Harness, string> = { spark: "Planner", claude_code: "Claude Code", codex: "Codex", muse_code: "Muse Code", cursor: "Cursor", grok: "Grok", local: "Local model" };
 
 export const LEVEL_LABEL: Record<AutonomyLevel, string> = { advisor: "Advisor", floor: "Floor", build: "Build", lights_out: "Lights out" };
 
@@ -575,7 +575,7 @@ export const RESEARCH = {
 export const RUNNER = {
   title: "Connect your machine",
   state: { online: "Connected", offline: "Idle", unpaired: "Unplugged", unknown: "Checking", error: "Blocked" } as Record<"online" | "offline" | "unpaired" | "unknown" | "error", string>,
-  agent: { codex: "Codex", claude_code: "Claude Code", local: "Local model" } as Record<string, string>,
+  agent: { codex: "Codex", muse_code: "Muse Code", claude_code: "Claude Code", local: "Local model" } as Record<string, string>,
   job: { planning: "Planning", awaiting_approval: "Waiting for your approval", ready: "Ready to build", running: "Building", completed: "PR opened", failed: "Stopped" } as Record<string, string>,
   unknownJob: "Unknown",
   /** The HUD light (ui/MachineLight.tsx): one line, is your machine on and what is it doing. */

@@ -2,6 +2,7 @@ import { fetchApprovedSource } from "./approved-source";
 import { runnerOrigin } from "./origin";
 import { freeSubscriptions, prepareAgentHome, subscriptionArgs, subscriptionSignedIn, subscriptionCredentialVersion } from "./subscriptions";
 import { assembleCodex } from "./codex-assembler";
+import { assembleMuse } from "./muse-assembler";
 import { probeAssemblerEdit } from "./edit-probe";
 import { codexDoctorFailure } from "./codex-diagnostic";
 import { mkdir, lstat, realpath, rm, mkdtemp } from "node:fs/promises";
@@ -15,7 +16,7 @@ import { loadConnections, persistRenewal, persistGrantRejection } from "./grant-
 
 
 import { atomicJson, Backoff, recoverWorkspace, replayReceipts, retryable } from "./recovery";
-import { AuthFailures, RunnerGrantRejected, runnerFailureSummary, runnerResponseError, maintainConnection, renewalDue, agentOffline, authExpired, diagnose, loginCommand, type Subscription } from "./health";
+import { AuthFailures, RunnerGrantRejected, runnerFailureSummary, runnerResponseError, maintainConnection, renewalDue, agentOffline, authExpired, diagnose, loginCommand, agentName, type Subscription } from "./health";
 import { tmpdir } from "node:os";
 const blocked = new Set<Subscription>();
 const authFailures = new AuthFailures();
@@ -46,12 +47,14 @@ const authHome = await prepareAgentHome(root, () => {
   claudeKeychainUnavailable = true;
   showError(new Error("private Keychain could not be unlocked"));
 });
-const harnessPath = (h: Exclude<Job["harness"], "local">) => Bun.which(h === "codex" ? "codex" : "claude");
+const harnessPath = (h: Exclude<Job["harness"], "local">) => Bun.which(h === "codex" ? "codex" : h === "muse_code" ? "muse" : "claude");
 const localFile = Bun.file(resolve(root, "local-model.json"));
 const local = localModelConfig(process.env, await localFile.exists() ? await localFile.json() : null);
 const localStatus = local ? await detectLocalModel(local) : null;
-const installedSubscriptions = (["codex", "claude_code"] as const).filter(h => harnessPath(h) && (!process.argv.includes("--codex-only") || h === "codex"));
-const busySubscriptions = new Set<"codex" | "claude_code">();
+// Players are offered Codex or Muse Code. Claude Code stays wired for development, behind an explicit opt-in.
+const offered: Subscription[] = ["codex", "muse_code", ...(process.env.SHIPTORIO_ENABLE_CLAUDE === "1" ? ["claude_code" as const] : [])];
+const installedSubscriptions = offered.filter(h => harnessPath(h) && (!process.argv.includes("--codex-only") || h === "codex"));
+const busySubscriptions = new Set<Subscription>();
 let available: Job["harness"][] = [...installedSubscriptions, ...(localStatus?.ok && !process.argv.includes("--codex-only") ? ["local" as const] : [])];
 
 if (process.argv[2] === "paths") {
@@ -78,44 +81,49 @@ if (process.argv[2] === "geothermal") {
   process.exit(0);
 }
 async function signedInHarness(h: Job["harness"]) {
-  if (h === "claude_code" && claudeKeychainUnavailable) return false;
+  if ((h === "claude_code" || h === "muse_code") && claudeKeychainUnavailable) return false;
   if (h === "local") return localStatus?.ok === true;
   const executable = harnessPath(h);
   return executable ? subscriptionSignedIn(h, executable, authHome) : false;
 }
 async function loginHarness(h: Job["harness"]) {
-  if (h === "claude_code" && claudeKeychainUnavailable) throw new Error("Repair the private Keychain before signing in to Claude; no personal Keychain fallback is allowed.");
+  if ((h === "claude_code" || h === "muse_code") && claudeKeychainUnavailable) throw new Error(`Repair the private Keychain before signing in to ${h === "muse_code" ? "Muse Code" : "Claude"}; no personal Keychain fallback is allowed.`);
   if (h === "local") throw new Error("Local models do not need subscription login");
-  console.log(`Finish signing in to ${h === "codex" ? "Codex" : "Claude"} in the window that opens.`);
+  console.log(`Finish signing in to ${agentName(h)} in the window that opens.`);
   const child = Bun.spawn([harnessPath(h)!, ...subscriptionArgs(h, true)], { cwd: authHome, env: agentEnvironment(process.env, authHome), stdin: "inherit", stdout: "inherit", stderr: "inherit" });
-  if (await child.exited || !await signedInHarness(h)) throw new Error("Agent sign-in did not finish. Run shiptorio-runner login codex (or claude) and try again.");
+  const exited = await child.exited;
+  // Muse Code has no status command: a clean login exit is the evidence, recorded beside its credential file.
+  if (!exited && h === "muse_code") await Bun.write(resolve(authHome, ".config/muse/.shiptorio-login"), crypto.randomUUID(), { mode: 0o600 });
+  if (exited || !await signedInHarness(h)) throw new Error(`Agent sign-in did not finish. Run ${loginCommand(h)} and try again.`);
   // Keychain-only reauthentication need not change a credential file. Wake a watching runner's auth guard.
   if (h === "claude_code") await Bun.write(resolve(authHome, ".claude/.shiptorio-login"), crypto.randomUUID(), { mode: 0o600 });
 }
 if (process.argv[2] === "doctor") {
   const args = process.argv.slice(3).filter(arg => arg !== "--verbose");
-  if (args.length && (args.length !== 2 || args[0] !== "--edit" || args[1] !== "codex")) throw new Error("Usage: shiptorio-runner doctor [--edit codex]");
+  if (args.length && (args.length !== 2 || args[0] !== "--edit" || !["codex", "muse"].includes(args[1]))) throw new Error("Usage: shiptorio-runner doctor [--edit codex|muse]");
   const realEdit = args.length > 0;
-  if (realEdit) console.log("Codex will try one small test change without starting factory work.");
+  const editAgent: "codex" | "muse_code" = args[1] === "muse" ? "muse_code" : "codex";
+  if (realEdit) console.log(`${agentName(editAgent)} will try one small test change without starting factory work.`);
   const checks = await diagnose({ harnesses: available, pairs: await connections(), auth: signedInHarness,
-    editHarness: realEdit ? "codex" : undefined,
+    editHarness: realEdit ? editAgent : undefined,
     edit: async () => {
       let probeResult: import("./sandbox").SandboxResult | undefined;
       try {
         await probeAssemblerEdit(async context => {
-          const result = await assembleCodex({ root: context.root, work: context.work, home: authHome, executable: harnessPath("codex")!, timeout: 120000,
+          const assemble = editAgent === "muse_code" ? assembleMuse : assembleCodex;
+          const result = await assemble({ root: context.root, work: context.work, home: authHome, executable: harnessPath(editAgent)!, timeout: 120000,
             job: { plan: context.plan, allowedPaths: context.allowedPaths }, files: context.files, verification: context.verification });
           probeResult = result;
-          if (result.code || result.timedOut) throw new Error("Codex provider did not complete the edit probe");
+          if (result.code || result.timedOut) throw new Error(`${agentName(editAgent)} provider did not complete the edit probe`);
         });
       } catch (error) {
-        const diagnostic = codexDoctorFailure(probeResult, error);
+        const diagnostic = codexDoctorFailure(probeResult, error).replaceAll("Codex", agentName(editAgent));
         throw new Error(diagnostic);
       }
     },
     pairing: pair => api(pair, "renew", {}),
     sandbox: async h => {
-      if (h === "claude_code" && claudeKeychainUnavailable) throw new Error("Claude Code private Keychain unavailable; sandbox probe was not run.");
+      if ((h === "claude_code" || h === "muse_code") && claudeKeychainUnavailable) throw new Error("Agent private Keychain unavailable; sandbox probe was not run.");
       const dir = await mkdtemp(resolve(tmpdir(), "shiptorio-doctor-"));
       let boundary: CheckSandbox | undefined;
       try {
@@ -136,21 +144,21 @@ if (process.argv[2] === "doctor") {
       } finally { await boundary?.close(); await rm(dir, { recursive: true, force: true }); }
     } });
   for (const check of checks) console.log(verbose ? `${check.ok ? "PASS" : "FAIL"} ${check.check}: ${redactText(check.detail)}` : check.ok ? `${runnerCheckLabel(check.check)} passed.` : check.check.startsWith("sandbox:") ? `${runnerCheckLabel(check.check)} could not complete its safety check.\nshiptorio-runner doctor` : plainRunnerError(new Error(check.detail)));
-  if (!realEdit) console.log("Codex has not tried a test change yet.\nshiptorio-runner doctor --edit codex");
+  if (!realEdit) for (const h of installedSubscriptions.some(h => h === "muse_code") ? installedSubscriptions.filter(h => h !== "claude_code") : ["codex" as const]) console.log(`${agentName(h)} has not tried a test change yet.\nshiptorio-runner doctor --edit ${h === "muse_code" ? "muse" : "codex"}`);
   process.exit(checks.every(c => c.ok) ? 0 : 1);
 }
 if (["setup", "login"].includes(process.argv[2])) {
-  if (!available.length) throw new Error(`Install Codex CLI or Claude Code first, then rerun the installer. See ${base}/docs/runner`);
+  if (!available.length) throw new Error(`Install Codex CLI or Muse Code first, then rerun the installer. See ${base}/docs/runner`);
   if (process.argv[2] === "login") {
-    const h = process.argv[3] === "claude" ? "claude_code" : process.argv[3] === "codex" ? "codex" : null;
-    if (!h || !available.includes(h)) throw new Error("Use login codex or login claude, with that CLI installed");
+    const h = ({ claude: "claude_code", codex: "codex", muse: "muse_code" } as const)[process.argv[3] as "claude" | "codex" | "muse"] ?? null;
+    if (!h || !available.includes(h)) throw new Error("Use login codex or login muse, with that CLI installed");
     await loginHarness(h);
   }
   let ready = false;
   for (const h of available) {
     if (h === "local") { console.log("Your local model is ready."); ready = true; continue; }
     const loggedIn = await signedInHarness(h);
-    console.log(loggedIn ? `${h === "codex" ? "Codex" : "Claude"} is signed in and ready.` : `${h === "codex" ? "Codex" : "Claude"} needs you to sign in.\nshiptorio-runner login ${h === "codex" ? "codex" : "claude"}`);
+    console.log(loggedIn ? `${agentName(h)} is signed in and ready.` : `${agentName(h)} needs you to sign in.\n${loginCommand(h)}`);
     ready ||= loggedIn;
   }
   if (!ready && process.argv[2] === "setup") await loginHarness(available[0]);
@@ -237,12 +245,13 @@ async function execute(job: Job, pair: Pairing) {
         output = JSON.stringify(await runLocalAssembler(job, work, local!));
       } else {
         const context = await assemblerContext(sandbox, job.allowedPaths);
-        console.log(`${job.harness === "codex" ? "Codex" : "Claude"} is working on the approved change.`);
+        console.log(`${agentName(job.harness)} is working on the approved change.`);
         const executable = harnessPath(job.harness);
         if (!executable) throw new Error("Assigned harness is unavailable");
         const timeout = Math.max(1, Math.min(15 * 60 * 1000, job.deadline - Date.now()));
         let result;
         if (job.harness === "codex") result = await assembleCodex({ root: jobRoot, work, home: authHome, executable, timeout, job, files: context, verification: sandbox });
+        else if (job.harness === "muse_code") result = await assembleMuse({ root: jobRoot, work, home: authHome, executable, timeout, job, files: context, verification: sandbox });
         else {
           agentSandbox = await checkSandbox(jobRoot, { home: authHome, executable });
           result = await agentSandbox.run([executable, ...harnessArgs(job.harness, assemblerPrompt(job, context))], work, { timeout });

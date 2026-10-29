@@ -6,10 +6,13 @@ type Repo = { fullName: string };
 type Issue = { id: number; number: number; title: string; body: string };
 type Suggested = { number: number; because: string; by: 'spark' | 'fallback' };
 type Pane = 'repos' | 'issues' | 'power' | 'setup' | 'disconnect';
+// The two engines a player can plug in, in preference order. Claude Code stays a development-only runner option.
+const ENGINES = [['codex', 'Codex'], ['muse_code', 'Muse Code']] as const;
+const readyEngine = (status: RunnerStatus | null) => status?.online ? ENGINES.find(([h]) => status.harnesses.includes(h))?.[1] : undefined;
 type Options = { repo?: string; origin: string; path: string; fetch?: typeof fetch; navigate: (url: string) => void; askPassword?: (next: string) => void; copy: (text: string | Promise<string>) => Promise<void>; onStart?: (id: string) => void; now?: () => number };
 
 /** Browsing is read-only. Starting one issue requests a plan; a separate card approves the build.
- * Setup asks for as few taps as possible: one repo is used without asking, one tap copies the Codex line,
+ * Setup asks for as few taps as possible: one repo is used without asking, one tap copies the setup line,
  * and once that runner is online the first issue card comes up by itself. */
 export function createConnections(o: Options) {
   const request = o.fetch ?? fetch, now = o.now ?? Date.now;
@@ -18,7 +21,7 @@ export function createConnections(o: Options) {
   let locked = false; // shiptorio.dev shows the tutorial to anyone; the preview password comes before GitHub sign-in (password.ts)
   let repos: Repo[] = [], issues: Issue[] = [], suggested: Suggested | null = null, index = 0, page = 1, nextPage: number | null = null;
   let status: RunnerStatus | null = null, command = '', copied = false, copyFailed = false, expires = 0, nextPoll = 0;
-  let leaving = '', onboarding = false; // leaving: the one repo we're opening. onboarding: go straight to the inbox once Codex is ready.
+  let leaving = '', onboarding = false; // leaving: the one repo we're opening. onboarding: go straight to the inbox once an engine is ready.
   const repo = o.repo && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(o.repo) && !o.repo.split('/').some(part => part === '.' || part === '..') ? o.repo : undefined;
   const api = `/api/repos/${repo}`;
   // Only ever our own deck page: the current path is page input (//other.site/deck would leave the site).
@@ -82,8 +85,8 @@ export function createConnections(o: Options) {
     } catch (e) { if (current === revision) error = e instanceof Error ? e.message : 'Could not load connection.'; }
     finally { if (current === revision) { busy = false; refreshing = false; nextPoll = now() + (target === 'setup' ? 2000 : 5000); } }
     if (current !== revision || error || !status?.online || (target !== 'power' && target !== 'setup')) return;
-    // The runner just came online: no Check, no See issues. Show the first issue, or the one fix Codex still needs.
-    if (onboarding && status.harnesses.includes('codex') && !status.working) { onboarding = false; pane = 'issues'; revision++; index = 0; page = 1; await refresh(); }
+    // The runner just came online: no Check, no See issues. Show the first issue, or the one fix the engine still needs.
+    if (onboarding && readyEngine(status) && !status.working) { onboarding = false; pane = 'issues'; revision++; index = 0; page = 1; await refresh(); }
     else if (target === 'setup') { pane = 'power'; revision++; }
   }
   function open(target: 'repo' | 'power') {
@@ -96,7 +99,7 @@ export function createConnections(o: Options) {
     if (!pane) return null;
     let title = '', line = '', yes = 'Refresh', no = 'Close';
     if (leaving) { title = `Opening ${leaving}…`; line = 'Shippy reads its issues and opens PRs here.'; yes = 'Please wait…'; }
-    else if (busy) { title = pane === 'repos' ? 'Finding your repositories…' : pane === 'issues' ? 'Loading your issues…' : 'Checking Codex…'; line = 'This should only take a moment.'; yes = 'Please wait…'; }
+    else if (busy) { title = pane === 'repos' ? 'Finding your repositories…' : pane === 'issues' ? 'Loading your issues…' : 'Checking your engine…'; line = 'This should only take a moment.'; yes = 'Please wait…'; }
     else if (error) { title = login ? 'Sign in to your factory' : 'Connection needs attention'; line = login ? 'Sign in with GitHub so Shippy can see your repos. No coding starts yet.' : error; yes = login ? 'Sign in' : 'Try again'; }
     else if (pane === 'repos') {
       const r = repos[index]; title = r ? `Use ${r.fullName}?` : 'Connect your GitHub repo';
@@ -104,19 +107,19 @@ export function createConnections(o: Options) {
       yes = r ? 'Use this repo' : nextPage ? 'More repos' : 'Connect GitHub'; no = r && (repos.length > 1 || nextPage || page > 1) ? 'Next repo' : 'Close';
     } else if (pane === 'issues') {
       const issue = issues[index]; title = issue ? `#${issue.number}: ${issue.title}` : 'No open issues on this page';
-      line = issue && suggested?.number === issue.number ? `I'd start with #${issue.number}, because ${suggested.because}${suggested.by === 'spark' ? ' (Picked by Meta Muse Spark.)' : ''} Review the plan before Codex starts.`
-        : issue ? `${repo} · ${index + 1} of ${issues.length}. ${issue.body ? `${issue.body.slice(0, 120).trim()}${issue.body.length > 120 ? '…' : ''} ` : ''}Review the plan before Codex starts.` : `Issues are what the factory builds. Add one to ${repo} on GitHub, then refresh.`;
+      line = issue && suggested?.number === issue.number ? `I'd start with #${issue.number}, because ${suggested.because}${suggested.by === 'spark' ? ' (Picked by Meta Muse Spark.)' : ''} Review the plan before ${readyEngine(status) ?? 'your engine'} starts.`
+        : issue ? `${repo} · ${index + 1} of ${issues.length}. ${issue.body ? `${issue.body.slice(0, 120).trim()}${issue.body.length > 120 ? '…' : ''} ` : ''}Review the plan before ${readyEngine(status) ?? 'your engine'} starts.` : `Issues are what the factory builds. Add one to ${repo} on GitHub, then refresh.`;
       yes = issue ? 'Plan' : nextPage ? 'More issues' : 'Refresh'; no = issue ? 'Next issue' : 'Close';
     } else if (pane === 'setup') {
       title = copied ? 'Paste it into Terminal' : 'Copy the setup line';
-      line = copyFailed ? `Copy this into Terminal: ${command}` : 'Then press Return. Shippy moves on by itself once Codex is plugged in.';
+      line = copyFailed ? `Copy this into Terminal: ${command}` : 'Then press Return. Shippy moves on by itself once Codex or Muse Code is plugged in.';
       yes = copied ? 'Copy again' : 'Copy setup'; no = 'Close';
     } else if (pane === 'disconnect') {
-      title = 'Engine options'; line = 'Unplug this engine from the factory. Your Codex sign-in stays on your computer.'; yes = 'Unplug'; no = 'Close';
+      title = 'Engine options'; line = 'Unplug this engine from the factory. Your Codex or Muse Code sign-in stays on your computer.'; yes = 'Unplug'; no = 'Close';
     } else {
-      const ready = status?.online && status.harnesses.includes('codex');
-      title = !status?.paired ? 'Connect your Codex engine' : !status.online ? 'Codex engine is offline' : !ready ? 'Sign in to Codex' : status.working ? 'Engine is busy' : 'Codex engine is ready';
-      line = !status?.paired ? 'Codex writes the code on your computer, with your own subscription. One line in Terminal plugs it in.' : !status.online ? 'Run shiptorio-runner watch on your computer so the factory can hand Codex work.' : !ready ? 'Run shiptorio-runner login codex on your computer so Codex can write code for you.' : status.working ? `Working on ${status.working.title}.` : 'Codex is ready. Pick an issue so the factory has something to build.';
+      const ready = readyEngine(status);
+      title = !status?.paired ? 'Connect your coding engine' : !status.online ? 'Your engine is offline' : !ready ? 'Sign in to Codex or Muse Code' : status.working ? 'Engine is busy' : `${ready} engine is ready`;
+      line = !status?.paired ? 'Your own Codex or Meta Muse Code subscription writes the code, on your computer. One line in Terminal plugs it in.' : !status.online ? 'Run shiptorio-runner watch on your computer so the factory can hand your engine work.' : !ready ? 'Run shiptorio-runner login codex (or login muse) on your computer so it can write code for you.' : status.working ? `Working on ${status.working.title}.` : `${ready} is ready. Pick an issue so the factory has something to build.`;
       yes = !status?.paired ? 'Copy setup' : ready && !status.working ? 'See issues' : 'Refresh'; no = status?.paired ? 'Options' : 'Close';
     }
     return { id: `connection-${revision}-${displayRevision}-${pane}`, stop: pane === 'power' || pane === 'setup' || pane === 'disconnect' ? 'builder' : 'repo', title, line, yes, no, dots: null };
@@ -188,13 +191,13 @@ export function createConnections(o: Options) {
       catch (e) { if (generation === revision) error = e instanceof Error ? e.message : 'Disconnect failed'; }
       finally { if (generation === revision) busy = false; }
       if (generation + 1 === revision && !error) await refresh();
-    } else if (pane === 'power' && status?.online && status.harnesses.includes('codex') && !status.working) {
+    } else if (pane === 'power' && readyEngine(status) && !status?.working) {
       pane = 'issues'; revision++; index = 0; page = 1; await refresh();
     } else await refresh();
     return true;
   }
   if (repo && new URLSearchParams(o.path.split('?')[1]).get('onboard') === 'codex') { open('power'); onboarding = true; }
-  return { open, answer, card, engineReady: () => !!(status?.online && status.harnesses.includes('codex')), view(base: DeckView): DeckView {
+  return { open, answer, card, engineReady: () => !!readyEngine(status), view(base: DeckView): DeckView {
     const c = card();
     return c ? { ...base, card: c, shippy: { at: c.stop, pose: 'inspect' } } : base;
   }, tick() {

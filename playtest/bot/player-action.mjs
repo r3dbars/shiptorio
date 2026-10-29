@@ -21,8 +21,8 @@ export function fixtureCardIntent(label, title, actionTools = []) {
   } else if (text === "Start build") {
     if (/^Build #\d+:/i.test(title) && actionTools.includes("approve_runner_job")) return "approve-build";
   } else if (["Copy setup", "Copy again"].includes(text)) {
-    if (/Codex engine|setup line|Terminal/i.test(title)) return "connect-codex";
-  } else if (text === "See issues" && /Codex engine is ready/i.test(title)) return "open-inbox";
+    if (/Codex engine|coding engine|setup line|Terminal/i.test(title)) return "connect-codex";
+  } else if (text === "See issues" && /engine is ready/i.test(title)) return "open-inbox";
   else if (["Refresh", "Try again"].includes(text) && /engine|connection|issues|repo|inbox/i.test(title)) return "refresh";
   else if (["More issues", "More repos"].includes(text)) return "next-page";
   else if (text === "Continue" && actionTools.length && actionTools.every(tool => ["plan_runner_job", "approve_runner_job", "inspect_bottleneck", "run_missing_check", "request_rework"].includes(tool))) return "continue-work";

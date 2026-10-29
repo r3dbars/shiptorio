@@ -1,11 +1,11 @@
 # Shiptorio local runner
 
-Your Claude Code / Codex subscriptions stay on your computer. Spark proposes a plan;
+Your Codex or Meta Muse Code subscription stays on your computer. Spark proposes a plan;
 only a player-approved job can reach a runner. It publishes a PR branch, never main.
 
 ## Install (macOS and Linux; Windows through WSL2)
 
-Install git and either `claude` or `codex` first. Then:
+Install git and either `codex` or Meta's `muse` (Muse Code, from dev.meta.ai) first. Then:
 
 ```sh
 curl -fsSL https://shiptorio.com/install.sh | sh
@@ -122,7 +122,22 @@ replacements. The credential-free supervisor applies only exact approved regular
 matches after the agent exits. This avoids nested macOS Seatbelt application failures;
 the supervisor's existing scope, verification, frozen-patch and publication gates remain.
 
+## Muse Code power
+
+`shiptorio-runner login muse` runs Meta's `muse login` with `HOME` and `XDG_CONFIG_HOME`
+pinned to the private `.agent-home`, so its settings and sign-in never touch your own
+`~/.config/muse`. A Muse Code subscription or Meta API account both work; an exported
+`META_API_KEY` is never passed through. Jobs run `muse exec --json --disable-write
+--disable-shell --approval-mode never --no-session-log` inside the same outer OS sandbox
+as Codex. Muse Code has no output-schema flag, so the schema travels in the prompt and
+the supervisor rejects any tool call, unfinished turn or out-of-scope edit before
+applying the JSON proposal itself. `shiptorio-runner doctor --edit muse` runs one real
+edit in a disposable fixture.
+
 ## Claude Code and Codex power
+
+Claude Code is development-only: the runner offers it only with `SHIPTORIO_ENABLE_CLAUDE=1`.
+
 
 `shiptorio-runner login claude` runs Claude's subscription login with an explicit
 `CLAUDE_CONFIG_DIR` in the private `.agent-home/.claude` under the runner data root.

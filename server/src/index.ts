@@ -53,6 +53,7 @@ import { ensureInboundToken, isOperatorSupport, intercomWebhookUrl, normalizeEma
 import type { GitHubPayload } from "./sources/github";
 import { pairToken, readRunnerToken, expiredRunnerGrant, runnerGrantExpiry, type RunnerIdentity } from "./runner-auth";
 import { EnqueueRunner, RunnerHarness, RunnerReceipt } from "./runner-job";
+import { AUTH_HARNESSES, type AuthHarness } from "./runner-health";
 import { installationToken } from "./github";
 import { CODE_RE, DEVICE_TTL, JOIN_RE, newJoinCode, normalizeCode, secretHash, htmlEscape, runnerPage } from "./device-pairing";
 import { validProgress, emptyIsland, type Empire, type IslandSummary } from "@shiptorio/shared";
@@ -628,7 +629,7 @@ app.on(["GET", "POST"], "/runner/pair", async c => {
   const install = await installUrl(c.env).catch(() => null);
   const options = reachable.map(r => `<option value="${htmlEscape(r)}"></option>`).join("");
   const hint = reachable.length ? `<p><small>Pick one of your ${reachable.length} connected repos or type another.${install ? ` Not listed? <a href="${htmlEscape(install)}" target="_blank" rel="noopener">Install the app on it</a>.` : ""}</small></p>` : install ? `<p><small>No repos connected yet. <a href="${htmlEscape(install)}" target="_blank" rel="noopener">Install the app on a repo</a> first.</small></p>` : "";
-  return c.html(runnerPage("Connect your machine", `<p>Check that your terminal shows this exact code:</p><h2><code>${code}</code></h2><p>Only approve a code you just requested on your own computer.</p><form method="post"><label>Repository (owner/name)<input name="repo" required list="pair-repos" autocomplete="off" pattern="[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+" value="${htmlEscape(wanted)}" placeholder="you/your-repo"></label><datalist id="pair-repos">${options}</datalist>${hint}<button>Connect this repo</button></form><p>This replaces the previous machine for that repo. Pair again to add another repo to this machine. Your Claude and Codex sign-ins stay on your computer.</p>`), 200, headers);
+  return c.html(runnerPage("Connect your machine", `<p>Check that your terminal shows this exact code:</p><h2><code>${code}</code></h2><p>Only approve a code you just requested on your own computer.</p><form method="post"><label>Repository (owner/name)<input name="repo" required list="pair-repos" autocomplete="off" pattern="[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+" value="${htmlEscape(wanted)}" placeholder="you/your-repo"></label><datalist id="pair-repos">${options}</datalist>${hint}<button>Connect this repo</button></form><p>This replaces the previous machine for that repo. Pair again to add another repo to this machine. Your Codex and Muse Code sign-ins stay on your computer.</p>`), 200, headers);
 });
 app.get("/api/repos/:owner/:repo/runner/status", async c => {
   const user = await resolveUser(c.req.raw, c.env);
@@ -827,7 +828,7 @@ app.post("/api/runner/:owner/:repo/claim", async (c) => {
   const body = await c.req.text();
   if (body.length > 1024) return c.json({ error: "too large" }, 413);
   const raw = JSON.parse(body);
-  if (!Array.isArray(raw.harnesses) || raw.harnesses.length > 3 || raw.harnesses.some((h: unknown) => !RunnerHarness.safeParse(h).success)) return c.json({ error: "invalid harnesses" }, 400);
+  if (!Array.isArray(raw.harnesses) || raw.harnesses.length > 4 || raw.harnesses.some((h: unknown) => !RunnerHarness.safeParse(h).success)) return c.json({ error: "invalid harnesses" }, 400);
   return c.json({ job: await (await factory(c.env, identity.repo)).claimRunner(identity.pairId, raw.harnesses) });
 
 });
@@ -837,11 +838,11 @@ app.post("/api/runner/:owner/:repo/heartbeat", async c => {
   const body = await c.req.text();
   if (body.length > 1024) return c.json({ error: "too large" }, 413);
   let raw: { harnesses?: unknown; authRequired?: unknown }; try { raw = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
-  if (!Array.isArray(raw?.harnesses) || raw.harnesses.length > 3 || raw.harnesses.some((h: unknown) => !RunnerHarness.safeParse(h).success)) return c.json({ error: "invalid harnesses" }, 400);
+  if (!Array.isArray(raw?.harnesses) || raw.harnesses.length > 4 || raw.harnesses.some((h: unknown) => !RunnerHarness.safeParse(h).success)) return c.json({ error: "invalid harnesses" }, 400);
   const f = await factory(c.env, identity.repo);
   if (!await f.isRunnerPaired(identity.pairId)) return c.json({ error: "Runner pairing revoked", code: "runner_pair_revoked" }, 401);
-  if (raw.authRequired !== undefined && (!Array.isArray(raw.authRequired) || raw.authRequired.length > 2 || raw.authRequired.some((h: unknown) => h !== "codex" && h !== "claude_code"))) return c.json({ error: "invalid auth status" }, 400);
-  await f.heartbeatRunner(identity.pairId, raw.harnesses, raw.authRequired as ("codex" | "claude_code")[] | undefined); return c.json({ ok: true });
+  if (raw.authRequired !== undefined && (!Array.isArray(raw.authRequired) || raw.authRequired.length > AUTH_HARNESSES.length || raw.authRequired.some((h: unknown) => !AUTH_HARNESSES.includes(h as AuthHarness)))) return c.json({ error: "invalid auth status" }, 400);
+  await f.heartbeatRunner(identity.pairId, raw.harnesses, raw.authRequired as AuthHarness[] | undefined); return c.json({ ok: true });
 });
 
 app.post("/api/runner/:owner/:repo/renew", async (c) => {
