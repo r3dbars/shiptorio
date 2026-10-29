@@ -1,5 +1,9 @@
 # Claude project threads (as of 2026-10-26 ~20:40 UTC)
 
+## Browser signing key reuse (Codex, 2026-10-28)
+
+Session cookies and preview-form proofs now reuse the existing bounded, isolate-local HMAC key cache. Before: every sign/verification imported a key; after: concurrent checks with the same secret share one import. Cookie signatures, expiry, password rotation and fresh authorization checks remain unchanged. Focused session/gate/cache tests pass; full check and exact-head dev CI govern merge. This CPU reduction is not a claim that the connection latency target has been achieved.
+
 ## Hosted tester playthrough fixes (Codex, 2026-10-28)
 
 The hosted test-newbie run observed a real factory-socket launched transition and PR #7 merged inside the isolated fixture, but failed on the newly enabled overview's 403 and a stale button wait after Launch. Allow only the signed tester's read-only overview through the existing private fixture; production, mutations and repo overrides stay denied. The bot now ends an outstanding action when its authoritative Launch transition arrives; earlier action failures still fail. Focused boundary/action tests pass; full check, dev CI and a fresh hosted playthrough remain required. This is fixture proof, not a real GitHub/Codex ship.
