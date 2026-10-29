@@ -14,6 +14,7 @@ export function createJourney() {
       if (item === id && stop === STOPS[at]) { arrived = true; age = 0; }
     },
     view(base: LiveDeckView): LiveDeckView {
+      if (base.loading) return base; // the first snapshot sets the ship count, it isn't a ship
       const work = base.work;
       if (!seen) { shipped = base.shipped; seen = true; }
       if (!work) { pending = new Set(base.intake?.map(i => i.id)); id = null; shipped = base.shipped; return base; }

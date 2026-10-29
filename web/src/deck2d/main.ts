@@ -191,7 +191,8 @@ const seed = Number(params.get("seed")) || 0;
   // get a beat each nor go into the saved "today" count a signed-in player sees later.
   const live = !!liveState && (want === "live" || want === "replay");
   const payoff = createPayoff({ every: live, phase: (source as DeckSource & { phase?: () => string }).phase,
-    store: want === "live" && liveState ? { get: k => localStorage.getItem(k), set: (k, v) => localStorage.setItem(k, v) } : null });
+    // one count per factory: the saved ship total only means something for the repo it came from
+    store: want === "live" && liveState ? { get: k => localStorage.getItem(`${k}:${params.get("repo")}`), set: (k, v) => localStorage.setItem(`${k}:${params.get("repo")}`, v) } : null });
   bus.on(event => {
     payoff.event(event);
     if (event.type === 'crate-arrive') (source as DeckSource & { arrive?: (id: string, stop: StopId) => void }).arrive?.(event.id, event.stop);
