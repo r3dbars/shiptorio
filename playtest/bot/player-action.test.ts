@@ -39,3 +39,21 @@ test("a reconnect snapshot can approve its visible build before any separate dec
   expect(deck).toEqual([]);
   expect(fixtureDecisionDeck([move], { type: "snapshot", state: {} })).toEqual([]);
 });
+
+test("a replacement Launch card cannot receive a previous card's Later", async () => {
+  const { activateFixtureCard } = await import("./player-action.mjs");
+  let title = "Factory job budget reached", hold = false, connected = true, clicks = 0, focused = 0;
+  const button = { textContent: "Later", disabled: false, click: () => clicks++, focus: () => focused++ };
+  const element = { get isConnected() { return connected; }, classList: { contains: () => hold },
+    querySelector: (selector: string) => selector === ".ic-title" ? { textContent: title } : button };
+  const card = { evaluate: async (fn: Function, input: unknown) => fn(element, input) };
+  const expected = { title, label: "Later", hold };
+  title = "Ship PR #7"; hold = true;
+  expect(await activateFixtureCard(card, expected, "later")).toBe(false);
+  expect(clicks).toBe(0);
+  button.textContent = "Ship it";
+  expect(await activateFixtureCard(card, { title, label: "Ship it", hold }, "approve", true)).toBe(true);
+  expect(focused).toBe(1);
+  connected = false;
+  expect(await activateFixtureCard(card, { title, label: "Ship it", hold }, "approve", true)).toBe(false);
+});

@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { resolve, join } from "node:path";
 import { safeReportFailure, safeReportValue } from "./safe-report.mjs";
 import { localFactory } from "./local.mjs";
-import { playerAction, fixtureCardIntent, fixtureDecisionDeck } from "./player-action.mjs";
+import { playerAction, fixtureCardIntent, fixtureDecisionDeck, activateFixtureCard } from "./player-action.mjs";
 import { createLaunchTracker } from "./launch-tracker.mjs";
 import { botAdmissionPath, prepareBotPersona, deckFixtureIdentity, FIXTURE_INSTALL, isFixtureInstallPage } from "./setup.mjs";
 const args = process.argv.slice(2).filter(x => x !== "--");
@@ -88,8 +88,6 @@ try {
       if (Date.now() - lastChange > 60_000) { failures.push(`Stuck for 60 seconds at ${width}px: ${text.slice(0, 500)}`); await capture("stuck"); break; }
       const visible = async locator => (await locator.count()) && await locator.first().isVisible();
       const launch = page.locator(".ic-card:not(.ic-ghost).hold button.approve, button.alaunch");
-      const go = page.locator(".ic-card:not(.ic-ghost):not(.hold) button.approve, .acard button.ago, button.ci-act.do");
-      const later = page.locator(".ic-card:not(.ic-ghost) button.later, .acard button.alater, button.ci-act.later");
       const play = page.getByRole("button", { name: /^(Play|Skip|Enter the factory)$/i });
       const repo = page.getByRole("button", { name: new RegExp(`^(Use this repo|test-fixture/${persona})$`) });
       const installButton = page.getByRole("button", { name: "Install", exact: true });
@@ -97,10 +95,24 @@ try {
       const closeSheet = page.locator(".sheet").getByRole("button", { name: "Close", exact: true });
       const checkin = page.getByRole("button", { name: /^Check in/i });
       const menu = page.getByRole("button", { name: /^Menu:/ });
+      const card = await page.locator(".ic-card:not(.ic-ghost)").first().elementHandle();
+      const cardState = card ? await card.evaluate(element => ({
+        title: element.querySelector(".ic-title")?.textContent ?? "",
+        label: element.querySelector("button.approve")?.textContent ?? "",
+        later: element.querySelector("button.later")?.textContent ?? "",
+        hold: element.classList.contains("hold"),
+      })) : null;
+      const recordCard = (label, intent) => {
+        const move = wireDeck.find(move => move.title === cardState?.title);
+        actions.push({ width, title: cardState?.title, label, intent, moveId: move?.id ?? null,
+          tools: move?.options.find(option => option.recommended)?.actions.map(action => action.tool) ?? [], items: Object.fromEntries(wireItems) });
+      };
       let stuck = false;
       const completed = await playerAction(async () => {
-      if (await visible(launch)) {
-        await launch.first().focus(); await page.keyboard.down("Space");
+      if (cardState?.hold) {
+        if (!await activateFixtureCard(card, cardState, "approve", true)) return;
+        recordCard(cardState.label, "hold-launch");
+        await page.keyboard.down("Space");
         try { await launch.first().waitFor({ state: "hidden", timeout: 10000 }); }
         finally { await page.keyboard.up("Space"); }
         await capture("held-launch");
@@ -114,8 +126,9 @@ try {
         await page.goto(`${url.origin}/deck?source=live`);
         await page.locator('[data-deck-ready="1"]').waitFor({ timeout: 30000 });
         await capture("installed-fixture");
-      } else if (await visible(go) && /^Connect GitHub/.test(await go.first().innerText())) {
-        await Promise.all([page.waitForURL(current => isFixtureInstallPage(current, url.origin), { timeout: 30000, waitUntil: "domcontentloaded" }), go.first().click()]);
+      } else if (cardState && /^Connect GitHub/.test(cardState.label)) {
+        recordCard(cardState.label, "connect-github");
+        await Promise.all([page.waitForURL(current => isFixtureInstallPage(current, url.origin), { timeout: 30000, waitUntil: "domcontentloaded" }), activateFixtureCard(card, cardState)]);
         await capture("github-install");
       } else if (await visible(play)) { await play.first().click(); await capture("play"); }
       else if (await visible(repo)) {
@@ -131,19 +144,21 @@ try {
         await tab.getByRole("button", { name: "Install", exact: true }).click(); await tab.close(); await capture("installed-fixture");
         await repo.first().waitFor({ state: "visible", timeout: 60000 });
       } else if (await visible(closeSheet)) { await closeSheet.first().click(); await capture("return-to-factory"); }
-      else if (/Factory job budget reached/i.test(text) && await visible(later)) { friction(`${width}px: suggested plan hit the active-job budget; used Later to reach other work`); await later.first().click(); await capture("later-busy-plan"); }
-      else if (await visible(go)) {
-        const label = await go.first().innerText();
-        const title = await go.first().evaluate(button => button.closest(".ic-card")?.querySelector(".ic-title")?.textContent ?? "");
-        const move = wireDeck.find(move => move.title === title);
+      else if (cardState && /Factory job budget reached/i.test(cardState.title)) {
+        if (!await activateFixtureCard(card, { ...cardState, label: cardState.later }, "later")) return;
+        recordCard(cardState.later, "later-busy-plan");
+        friction(`${width}px: suggested plan hit the active-job budget; used Later to reach other work`);
+        await capture("later-busy-plan");
+      }
+      else if (cardState && !cardState.hold) {
+        const move = wireDeck.find(move => move.title === cardState.title);
         const option = move?.options.find(option => option.recommended);
-        const intent = fixtureCardIntent(label, title, option?.actions.map(action => action.tool) ?? []);
-        if (intent !== "wait") {
-          actions.push({ width, title, label, intent, moveId: move?.id ?? null, tools: option?.actions.map(action => action.tool) ?? [], items: Object.fromEntries(wireItems) });
-          await go.first().click(); await capture(intent);
+        const intent = fixtureCardIntent(cardState.label, cardState.title, option?.actions.map(action => action.tool) ?? []);
+        if (intent !== "wait" && await activateFixtureCard(card, cardState)) {
+          recordCard(cardState.label, intent);
+          await capture(intent);
         }
       }
-      else if (await visible(later)) { await later.first().click(); await capture("later"); }
       else if (await visible(checkin) && await checkin.first().isEnabled()) { friction(`${width}px: no direct card action was visible; opened Check in to find waiting work`); await checkin.first().click(); await capture("open-check-in"); }
       else if (await visible(menu) && await menu.first().getAttribute("aria-expanded") === "false") { friction(`${width}px: opened Menu to find the next player action`); await menu.first().click(); await capture("open-menu"); }
       else if (Date.now() - lastChange > 60_000) { failures.push(`Stuck for 60 seconds at ${width}px: ${text.slice(0, 500)}`); await capture("stuck"); stuck = true; }

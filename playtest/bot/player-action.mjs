@@ -36,3 +36,21 @@ export function fixtureDecisionDeck(previous, message) {
   if (message.type === "move_resolved") return previous.filter(move => move.id !== message.moveId);
   return message.type === "snapshot" ? [] : previous;
 }
+
+// Capture and activate the same DOM card in one browser evaluation. A new card
+// arriving between probes must never inherit an old action (especially Later).
+export async function activateFixtureCard(card, expected, side = "approve", focus = false) {
+  return card.evaluate((element, { expected, side, focus }) => {
+    const button = element.querySelector(`button.${side}`);
+    const current = {
+      title: element.querySelector(".ic-title")?.textContent ?? "",
+      label: button?.textContent ?? "",
+      hold: element.classList.contains("hold"),
+    };
+    if (!element.isConnected || !button || button.disabled ||
+        current.title !== expected.title || current.label !== expected.label || current.hold !== expected.hold)
+      return false;
+    if (focus) button.focus(); else button.click();
+    return true;
+  }, { expected, side, focus });
+}
