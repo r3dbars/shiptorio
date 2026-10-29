@@ -111,7 +111,8 @@ try { for (const [index,view] of views.entries()) {
       // No Check and no See issues: the deck notices the runner, builds the rest of the line, then shows the first issue.
       try{await card().getByRole('button',{name:'Plan',exact:true}).waitFor();}finally{clearInterval(beating);}
     });
-    await step('first-issue-card',async()=>{assert.match(await card().innerText(),/#1.*Checkout total/);});
+    // Shippy leads with his pick: the docs-only README issue beats the checkout bug (no Spark key here, so the fixed rule picks).
+    await step('first-issue-card',async()=>{assert.match(await card().innerText(),baseline?/#1.*Checkout total/:/#2: README[\s\S]*I'd start with #2, because/);});
     assert.ok(Date.now()-started<120000,'first issue must be reached in under two minutes');
     assert.deepEqual(errors,[],'no browser runtime errors');
     assert.ok(!requests.some(p=>p.endsWith('/start')),'browsing must not start a job');

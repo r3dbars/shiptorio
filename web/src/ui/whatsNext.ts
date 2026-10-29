@@ -3,7 +3,8 @@
 // Pure, so it's unit tested (web/test/whatsNext.test.ts) and works the same in sim and live.
 
 import { sciencePacks, techById, techStatus, TECHS, type FactoryState } from "@shiptorio/shared";
-import { ghostSpots } from "../map/ghosts";
+import { ghostSpots } from "../deck2d/rules/ghosts";
+import { mineUnlocked } from "../deck2d/rules/sim";
 import { lc } from "../sim/engine";
 import { PLAY } from "../copy";
 
@@ -38,11 +39,7 @@ const MINE_WHY: Record<string, string> = {
   sentry: "Live errors become ore, so the next fix comes from what's actually breaking.",
   posthog: "User signals weigh what gets built first, so the next fix is the one people feel.",
 };
-/** Mines unlock slowly: the first after 3 rockets, the next after 6, then 9. One new source at a time, never up front. */
-export function mineUnlocked(state: FactoryState): boolean {
-  const connected = (state.sources ?? []).filter((x) => x.state === "connected").length;
-  return (state.metrics?.rockets ?? 0) >= 3 * (connected + 1);
-}
+export { mineUnlocked };
 const IN_FLIGHT = new Set(["ore", "queued", "working", "inspecting", "rejected"]);
 const dir = (d: string) => (d === "/" ? "/" : `/${d}`);
 

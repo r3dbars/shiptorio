@@ -76,3 +76,9 @@ body.first-run .toast { width: calc(100% - 24px); white-space: normal; text-alig
 .deck-password .later { color: var(--ink); background: var(--iron-hi); box-shadow: inset 0 0 0 2px #5a4a3a; }
 .deck-password form[aria-busy="true"] .approve { opacity: .6; cursor: progress; }
 .deck-password input:focus-visible, .deck-password button:focus-visible { outline: 3px solid var(--brass-hi); outline-offset: 2px; }
+
+/* Tap a station: its "what is this" note (stations/whatis.ts). Same steel-and-brass as the first-run line; still, no fade. */
+.whatis { position: fixed; left: 0; top: 0; z-index: 15; width: max-content; max-width: min(260px, calc(100vw - 32px)); padding: 8px 10px;
+  font-size: 12px; line-height: 1.4; color: var(--ink); background: #121e2b; border: 2px solid #a36915; box-shadow: 0 3px 0 #000; cursor: pointer; }
+.whatis b { display: block; margin-bottom: 2px; font-weight: 400; color: #fdc727; }
+@media (min-width: 900px) and (min-height: 560px) { .whatis { font-size: 16px; max-width: 340px; padding: 10px 14px; } }

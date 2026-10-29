@@ -86,16 +86,23 @@ async function writeState(storage: Pick<Storage, "get" | "put" | "delete">, stat
   const previous = await storage.get<unknown>("state");
   const text = JSON.stringify(state), bytes = new TextEncoder().encode(text).byteLength;
   const chunks = bytes > INLINE_BYTES ? Math.ceil(text.length / CHUNK_CHARS) : 0;
+  // Storage is the source of truth for "unchanged": an identical inline snapshot, or an
+  // identical chunk, is not written again. Reads cost far less than writes.
+  const kept = isChunks(previous) ? Math.min(chunks, previous.chunks) : 0;
   for (let start = 0; start < chunks; start += STORAGE_BATCH_KEYS) {
+    const end = Math.min(start + STORAGE_BATCH_KEYS, chunks);
+    const stored = start < kept ? await storage.get<string>(Array.from({ length: Math.min(end, kept) - start }, (_, i) => chunkKey(start + i))) : undefined;
     const batch: Record<string, string> = {};
-    for (let i = start; i < Math.min(start + STORAGE_BATCH_KEYS, chunks); i++) {
+    for (let i = start; i < end; i++) {
       assertActive();
-      batch[chunkKey(i)] = text.slice(i * CHUNK_CHARS, (i + 1) * CHUNK_CHARS);
+      const part = text.slice(i * CHUNK_CHARS, (i + 1) * CHUNK_CHARS);
+      if (stored?.get(chunkKey(i)) !== part) batch[chunkKey(i)] = part;
     }
-    await storage.put(batch);
+    if (Object.keys(batch).length) await storage.put(batch);
   }
   assertActive();
-  await storage.put("state", chunks ? { format: CHUNK_FORMAT, chunks, bytes, schemaVersion: STATE_SCHEMA_VERSION } : state);
+  const head = chunks ? { format: CHUNK_FORMAT, chunks, bytes, schemaVersion: STATE_SCHEMA_VERSION } : state;
+  if (JSON.stringify(previous) !== (chunks ? JSON.stringify(head) : text)) await storage.put("state", head);
   if (isChunks(previous)) for (let start = chunks; start < previous.chunks; start += STORAGE_BATCH_KEYS) {
     assertActive();
     await storage.delete(Array.from({ length: Math.min(STORAGE_BATCH_KEYS, previous.chunks - start) }, (_, i) => chunkKey(start + i)));

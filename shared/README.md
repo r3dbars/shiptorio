@@ -9,7 +9,7 @@ A browser receives `{type: "snapshot", state}` first. A `{type: "patch", patch}`
 upserts items, machines and belts by ID. `removed` explicitly deletes those entities;
 `districts`, `power`, `science` and `trust` replace the corresponding state fields.
 `log` carries `level`, `text`, `at` and optionally `itemId`. These are the payloads
-used by `web/src/store.ts`; do not substitute a second revision-based protocol.
+used by `web/src/source/patch.ts` (applyPatch) and `web/src/store.ts`; do not substitute a second revision-based protocol.
 
 Player commands are `place_machine`, `remove_machine`, `connect_belt`, `set_module`,
 `route_item` and `launch_pr`. Only a verified merge webhook launches the rocket.

@@ -126,10 +126,14 @@ Full rules: [`docs/context/pixel-deck.md`](docs/context/pixel-deck.md).
 ## Accessibility
 
 Every control is a real `<button>` or `<a>` whose name contains its visible text. Respect
-`prefers-reduced-motion`. Text stays at 4.5:1 contrast or better.
+`prefers-reduced-motion`. Text stays at 4.5:1 contrast or better. `node web/test/a11y/audit.mjs` (dev server up) runs
+axe on the deck's story and sim cards at phone and desktop; `web/test/deck2d-a11y.test.ts` covers the card's keyboard
+and names.
 
 ## Older docs
 
-`PLAN.md`, `docs/ARCHITECTURE.md`, `docs/ART.md`, `docs/LOOP.md`, `docs/GAMEPLAY*.md`, `briefs/` and the HTML art
-prototypes in `docs/` describe the 3D map era. Read them for background only; this file and the docs above win.
+`docs/PRODUCT.md`, `docs/LOOP.md`, `docs/ART.md`, `docs/GAMEPLAY*.md`, `docs/ATTENTION.md`, `docs/SIMPLE-UI.md`
+and the HTML art prototypes in `docs/` describe the 3D map era (each carries a banner). The day-one plan,
+architecture, build mode and lane briefs moved to `docs/context/archive/`. Read them for background only; this
+file and the docs above win.
 The public docs site is `docs/site/*.md` (served at /docs); keep it true when you change player-facing behavior.

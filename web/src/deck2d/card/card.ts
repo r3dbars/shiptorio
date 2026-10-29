@@ -184,6 +184,7 @@ export const mountCard: MountCard = (host, handlers) => {
   let live: Face | null = null; // the card you can answer right now
   const answered = new Set<string>();
   let answeredAt = -Infinity;
+  let answeredGuide = false; // Shippy talking (tour, first run): no queue of work, so no "All caught up" after it
   let caughtUp: { root: HTMLElement; timer: ReturnType<typeof setTimeout> } | null = null;
   let drag: { pointer: number; x0: number; y0: number; dx: number; dy: number; vx: number; lastX: number; t: number; w: number } | null = null;
   let holding: { timer: ReturnType<typeof setTimeout>; f: Face } | null = null; // a hold card's Approve being held
@@ -243,6 +244,7 @@ export const mountCard: MountCard = (host, handlers) => {
     const f = live;
     answered.add(card.id);
     answeredAt = performance.now();
+    answeredGuide = card.guide === "shippy";
     live = null;
     shown = null;
     drag = null;
@@ -360,7 +362,7 @@ export const mountCard: MountCard = (host, handlers) => {
         live = mountLive(card);
         return;
       }
-      if (!opts?.quiet && performance.now() - answeredAt < AFTER_ANSWER_MS && !caughtUp) {
+      if (!opts?.quiet && !answeredGuide && performance.now() - answeredAt < AFTER_ANSWER_MS && !caughtUp) {
         const root = el("section", "ic-card ic-in after ic-empty");
         root.append(el("h2", "ic-title", "All caught up"), el("p", "ic-line", "Nothing is waiting on you."));
         if (PX) pixelLayer(root, cardScale, paintPlate);

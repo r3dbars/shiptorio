@@ -28,3 +28,9 @@ test("lazy source never queues an approval for replay and does not forward after
   source.close(); source.send(approval);
   expect([sends, closes]).toEqual([1, 1]);
 });
+
+test("the scenario list the deck reads without the sim matches the sim's own", async () => {
+  const { SCENARIOS } = await import("../src/sim/engine");
+  const { SCENARIO_NAMES } = await import("../src/source/config");
+  expect([...SCENARIO_NAMES]).toEqual(Object.keys(SCENARIOS));
+});

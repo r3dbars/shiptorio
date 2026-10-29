@@ -4,7 +4,7 @@
 // No card open, the row is the "what's next" pick (ui/whatsNext.ts), so the game never goes quiet after a rocket.
 
 import { useState, type ReactNode } from "react";
-import { openUnlockLink } from "./unlockLink";
+import { openUnlockLink } from "../deck2d/rules/unlockLink";
 import { because } from "./because";
 import type { Bottleneck, Move, Station, WebToServer } from "@shiptorio/shared";
 import { lc } from "../sim/engine";

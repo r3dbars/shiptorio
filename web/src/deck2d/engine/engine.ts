@@ -11,6 +11,7 @@ import { stationSize, type StationId } from "../stations";
 import { advanceBeltDistance, beltConnectionAt } from "./flow";
 import { needsAttention, type AttentionView } from "../stations/attention";
 import { anchoredCenter, frameShot, pixelZoom, settleCamera, SHOT_RATE, wholeScale } from "./camera";
+import { DIM, dimPixels } from "./dim";
 
 // stations/ (its own thread) draws each machine in pixel code; until it lands, pixel mode shows the snapped webp.
 type DrawStation = (cx: CanvasRenderingContext2D, id: StopId, state: string, t: number, x: number, feetY: number, scale?: number, attention?: boolean) => void;
@@ -56,10 +57,14 @@ export interface Engine {
   seeAll(on: boolean): void;
   /** True once the camera has arrived where the current view (or its `shot`) wants it. */
   settled(): boolean;
+  /** Highlight one station (four brass corners), or null for none. */
+  pick(id: StopId | "engine" | null): void;
+  /** A station's box on screen in CSS px (top-centre x/y, bottom y), or null when it isn't tappable right now. */
+  anchor(id: StopId | "engine"): { x: number; y: number; bottom: number } | null;
   readonly portrait: boolean;
 }
 
-export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus, shippy: ShippyModule, layers: DeckLayer[] = [], options: { onMachineSelect?: (id: StopId) => void; onPowerSelect?: () => void } = {}): Engine {
+export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus, shippy: ShippyModule, layers: DeckLayer[] = [], options: { onMachineSelect?: (id: StopId) => void; onPowerSelect?: () => void; onTapEmpty?: () => void } = {}): Engine {
   const owned = new Set(layers.flatMap((l) => l.replaces ?? []));
   const slot = (s: LayerSlot) => { for (const l of layers) l.draw(cx, s); };
   const screen = cv.getContext("2d")!;
@@ -172,6 +177,37 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   { const f = fitAll(); Object.assign(cam, f); }
   let first = true, arrived = false, lastShot: Shot | null | undefined;
 
+  // What a tap can land on, in world units: a built station, the boiler, or the rocket once its island is up.
+  type Box = { x0: number; y0: number; x1: number; y1: number };
+  function boxOf(id: StopId | "engine", v: DeckView): Box | null {
+    if (id === "engine") return { x0: BOILER.x - BOILER_W * ART_PX / 2, x1: BOILER.x + BOILER_W * ART_PX / 2, y0: BOILER.base - BOILER_H * ART_PX, y1: BOILER.base };
+    const s = v.stops.find(x => x.id === id);
+    if (!s?.built || layers.some(l => l.owns?.(s))) return null;
+    if (id === "launch") return islandUp && rocket.mode === "ready" ? { x0: STOP_X.launch - 70, x1: STOP_X.launch + 70, y0: LAUNCH_Y - 210, y1: LAUNCH_Y + 30 } : null;
+    const size = stationSize(id as StationId), feet = BELT_Y + LOOK[id].drop;
+    return { x0: STOP_X[id] - size.w * ART_PX / 2 - 15, x1: STOP_X[id] + size.w * ART_PX / 2 + 15, y0: feet - size.h * ART_PX - 10, y1: feet + 25 };
+  }
+  let picked: StopId | "engine" | null = null; // the station whose "what is this" note is open
+  const toScreen = (x: number, y: number) => {
+    if (!px) return { x: W / 2 + (x - cam.x) * cam.s, y: H / 2 + (y - cam.y) * cam.s };
+    const [ox, oy] = px.toWorld(0, 0), [ux] = px.toWorld(1, 0); // world units per CSS px, from the blit itself
+    const per = ux - ox;
+    return { x: (x - ox) / per, y: (y - oy) / per };
+  };
+  // Four brass corners around the picked station: still, 1 art px lines with a soot edge. Calm: nothing pulses.
+  function pickedDraw(v: DeckView) {
+    const b = picked && boxOf(picked, v);
+    if (!b || !px) return;
+    const P = ART_PX, arm = 6 * P, x0 = snap(b.x0 + 10), x1 = snap(b.x1 - 10), y0 = snap(b.y0 + 5), y1 = snap(b.y1 - 20);
+    // each corner = two arms (x, y, w, h); the soot pass draws them one art px bigger all round
+    const arms = [[x0, y0, 1, 1], [x1, y0, -1, 1], [x0, y1, 1, -1], [x1, y1, -1, -1]].flatMap(([x, y, dx, dy]) => [
+      [dx > 0 ? x : x - arm + P, y, arm, P], [x, dy > 0 ? y : y - arm + P, P, arm]]);
+    for (const [c, o] of [[PALETTE.soot[0], P], [PALETTE.brass[4], 0]] as const) {
+      cx.fillStyle = c;
+      for (const [x, y, w, h] of arms) cx.fillRect(x - o, y - o, w + 2 * o, h + 2 * o);
+    }
+  }
+
   // drag to pan, pinch or wheel to zoom
   const ptrs = new Map<number, [number, number]>(); let pinch = 0, moved = 0;
   cv.addEventListener("pointerdown", (e) => { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, [e.clientX, e.clientY]); moved = 0; });
@@ -194,14 +230,11 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   const up = (e: PointerEvent) => {
     if (e.type === "pointerup" && moved < 6 && ptrs.size === 1 && prev) {
       const [x, y] = px ? px.toWorld(e.clientX, e.clientY) : [cam.x + (e.clientX - W / 2) / cam.s, cam.y + (e.clientY - H / 2) / cam.s];
-      const hit = prev.stops.find(s => {
-        if (!s.built || s.id === "launch" || layers.some(l => l.owns?.(s))) return false;
-        const size = stationSize(s.id as StationId), feet = BELT_Y + LOOK[s.id].drop;
-        return Math.abs(x - STOP_X[s.id]) <= size.w * ART_PX / 2 + 15 && y >= feet - size.h * ART_PX - 10 && y <= feet + 25;
-      });
-      const boilerHit = Math.abs(x - BOILER.x) <= BOILER_W * ART_PX / 2 && y >= BOILER.base - BOILER_H * ART_PX && y <= BOILER.base;
-      if (boilerHit) options.onPowerSelect?.();
+      const inside = (b: Box | null) => !!b && x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1;
+      const hit = prev.stops.find(s => inside(boxOf(s.id, prev!)));
+      if (inside(boxOf("engine", prev))) options.onPowerSelect?.();
       else if (hit) options.onMachineSelect?.(hit.id);
+      else options.onTapEmpty?.();
     }
     ptrs.delete(e.pointerId); pinch = 0;
     if (moved < 6 && e.clientX < 110 && e.clientY < 110) { cam.manual = 0; cam.pin = null; } // tap Shippy: fly to what he's looking at
@@ -327,25 +360,11 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   }
   // Justin (10-29): the sky, city and cloud sea were as bright as the deck, so the platform didn't pop. In pixel
   // mode the background pictures are dimmed the pixel-art way: every pixel snaps to its nearest palette color, then
-  // steps darker on that color's own ramp (DIM shades, one more on the long sun ramp, whose steps are small),
+  // steps darker on that color's own ramp (dim.ts: DIM shades, one more on the long sun ramp, whose steps are small),
   // so hues and detail stay and only the brightness drops. scripts/art/dim-sky.py bakes it into <name>-dim.webp so the
   // first frame doesn't spend ~1.5s on a phone doing it; without that file it's done here once and cached. ?px=0 keeps
   // the old bright pictures.
-  const DIM = 1;
-  const SUN = Object.keys(PALETTE).indexOf("sun"), ramps = Object.values(PALETTE).map((r) => r.map((h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16))));
-  const darker = new Map<number, number[]>();
-  function stepDown(r: number, g: number, b: number) {
-    const key = (r << 16) | (g << 8) | b;
-    let c = darker.get(key);
-    if (!c) {
-      let best = Infinity, ri = 0, ci = 0;
-      ramps.forEach((ramp, a) => ramp.forEach(([pr, pg, pb], n) => {
-        const e = (pr - r) ** 2 + (pg - g) ** 2 + (pb - b) ** 2; if (e < best) { best = e; ri = a; ci = n; }
-      }));
-      c = ramps[ri][Math.max(0, ci - DIM - (ri === SUN ? 1 : 0))]; darker.set(key, c);
-    }
-    return c;
-  }
+  const darker = new Map<number, number>();
   const dimmed = new Map<string, HTMLCanvasElement>();
   function dimArt(name: string): HTMLCanvasElement | HTMLImageElement | null {
     if (!px) return img(name);
@@ -356,7 +375,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
       c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = im.naturalHeight;
       const g = c.getContext("2d")!; g.drawImage(im, 0, 0);
       const data = g.getImageData(0, 0, c.width, c.height), d = data.data;
-      for (let i = 0; i < d.length; i += 4) if (d[i + 3]) [d[i], d[i + 1], d[i + 2]] = stepDown(d[i], d[i + 1], d[i + 2]);
+      dimPixels(d, darker);
       g.putImageData(data, 0, 0); dimmed.set(name, c);
     }
     return c;
@@ -612,6 +631,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     crates.forEach(crate);
     for (const id of STOPS) station(v, id);
     slot("stations");
+    pickedDraw(v);
     if (px && live.work) {
       const c = crates.get(live.work.id);
       if (c) {
@@ -635,6 +655,13 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     focus(stop) { cam.pin = stop; cam.manual = 0; },
     seeAll(on) { cam.all = on; cam.manual = 0; },
     settled() { return arrived; },
+    pick(id) { picked = id; },
+    anchor(id) {
+      const b = prev && boxOf(id, prev);
+      if (!b) return null;
+      const top = toScreen((b.x0 + b.x1) / 2, b.y0), bottom = toScreen(b.x0, b.y1);
+      return { x: top.x, y: top.y, bottom: bottom.y };
+    },
     get portrait() { return portrait(); },
   };
 }

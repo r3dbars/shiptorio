@@ -68,9 +68,9 @@ replaces that repo's previous machine credential.
 **Runner code changes require a local reinstall.** Stop watch and rerun the installer to update. Existing pairings survive the update. A website update does not replace a running local helper. After closing
 the terminal, restart with `~/.local/bin/shiptorio-runner watch`.
 
-In the game, **Power → Connect your machine** shows online/offline, last seen,
+On the deck, tap the boilers at the back to open the engine card. It shows online/offline, last seen,
 detected agents and latest job. A newly selected live repo opens this card.
-Claude Code and Codex appear as separate power plants. Each shows ready, running or
+Claude Code and Codex appear separately. Each shows ready, running or
 offline. Subscription usage remaining is not measured here; your plan's limits still apply.
 
 Before each job the runner checks which subscriptions are signed in and idle. If

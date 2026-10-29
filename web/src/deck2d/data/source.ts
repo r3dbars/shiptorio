@@ -4,9 +4,10 @@
 // (docs/LEARN.md: Approve fills a dot, Later empties them).
 
 import { continueOption, type FactoryState, type Move, type ServerToWeb, type WebToServer } from "@shiptorio/shared";
-import { connect as connectFactory, readConfig, type Source, type SourceConfig } from "../../source";
-import { applyPatch } from "../../store";
-import { openUnlockLink } from "../../ui/unlockLink";
+import { readConfig, type Source, type SourceConfig } from "../../source/config";
+import { connectLazy as connectFactory } from "../../source/connect";
+import { applyPatch } from "../../source/patch";
+import { openUnlockLink } from "../rules/unlockLink";
 import type { DeckSource, StopId } from "../contract";
 import { cardStop, deckView, isSetupCard, itemStop, type LiveDeckView } from "./view";
 import { createJourney } from "./journey";

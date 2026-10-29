@@ -1,4 +1,4 @@
-// Black Iron 48 (art/palette/black-iron-48.json, docs/PIXEL-PLAN.md): every station pixel is one of these.
+// Black Iron 48 (art/palette/black-iron-48.json, docs/context/pixel-deck.md): every station pixel is one of these.
 // Ramps go dark to light. One meaning per color: brass-4 glow = waiting on you, jam = actually stuck,
 // ok = done/automatic, energy = powered and running (and Shippy). Brass trim is jewelry, never a signal.
 // When the hub's contract exports the palette, import it from there instead and drop this copy.
