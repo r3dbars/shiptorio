@@ -42,3 +42,39 @@ export function scoreShip(brain: Brain | undefined, itemId: string): Brain | und
   if (!brain?.score?.open.includes(itemId)) return brain;
   return { ...brain, score: { ...brain.score, shipped: brain.score.shipped + 1, open: brain.score.open.filter(id => id !== itemId) } };
 }
+
+import { liveBottleneckCandidates, type BottleneckJob, type LiveBottleneckCandidate } from "./bottleneck";
+import type { FactoryState, LiveBottleneckPick } from "@shiptorio/shared";
+
+const PICK_MAX_AGE_MS = 30 * 60_000;
+const PICK_STOP: Record<string, LiveBottleneckPick["stop"]> = {
+  intake: "repo", triage: "planner", build: "builder", inspect: "checks", "ci-1": "checks", "verify-1": "checks",
+  "review-1": "review", pad: "gate", "gate-1": "gate", release: "launch", impact: "launch",
+};
+
+/** Match only known signal IDs from the existing brain. Never parse issue/model prose as routing. */
+function applies(signalId: string, candidate: LiveBottleneckCandidate): boolean {
+  const [source, kind, ...parts] = signalId.split(":");
+  const scope = parts.join(":");
+  if (source === "factory" && kind === "queue_jam") return candidate.stop === PICK_STOP[scope];
+  if (source === "factory" && ["no_agent", "no_power"].includes(kind)) return candidate.stop === "builder";
+  if (source === "factory" && kind === "rework_loop") return candidate.action === "blocked" || candidate.action === "request_rework";
+  if (source === "repo" && kind === "approve_queue") return ["approve_runner_job", "request_merge"].includes(candidate.action) || candidate.stop === "gate";
+  if (source === "repo" && ["issues_untriaged", "backlog_growing", "repo_missing"].includes(kind)) return candidate.stop === "repo";
+  if (source === "ci" && ["ci_slow", "ci_flaky", "ci_red_main", "ci_queue", "ci_blocking", "ci_missing"].includes(kind)) return candidate.stop === "checks";
+  return false;
+}
+
+/** Zero additional model calls: project the existing budgeted brain's current pick onto real work.
+ * Its oldest applicable candidate wins; unknown/stale picks use the stable queue fallback.
+ * Wording is generated from actual actions, not copied from untrusted issue or model text.
+ */
+export function projectLiveBottleneck(state: FactoryState, jobs: readonly BottleneckJob[] = [], now = Date.now()): LiveBottleneckPick | null {
+  const candidates = liveBottleneckCandidates(state, jobs);
+  if (!candidates.length) return null;
+  const brain = state.holdingBack;
+  const current = brain?.by === "spark" && brain.decidedAt <= now && now - brain.decidedAt <= PICK_MAX_AGE_MS;
+  const chosen = current ? brain.signalIds.map(id => candidates.filter(c => applies(id, c)).sort((a, b) => a.since - b.since || a.id.localeCompare(b.id))[0]).find(Boolean) : undefined;
+  const candidate = chosen ?? candidates[0];
+  return { stop: candidate.stop, ...(candidate.itemId ? { itemId: candidate.itemId } : {}), reason: candidate.reason, source: chosen ? "spark" : "fallback" };
+}
