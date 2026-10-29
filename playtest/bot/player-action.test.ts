@@ -16,3 +16,15 @@ test("the fixture player never approves destructive connection or account action
   for (const label of ["Open inbox", "Start issue", "Start build", "Ship it", "Refresh"])
     expect(() => assertSafePrimaryAction(label)).not.toThrow();
 });
+
+test("the fixture player requires a scoped visible card before planning or approving", async () => {
+  const { fixtureCardIntent } = await import("./player-action.mjs");
+  expect(fixtureCardIntent("Plan →", "#1: Fix a test")).toBe("plan-issue");
+  expect(fixtureCardIntent("Start issue", "Plan #1: Fix a test", ["plan_runner_job"])).toBe("plan-issue");
+  expect(fixtureCardIntent("Start build", "Build #1: Fix a test", ["approve_runner_job"])).toBe("approve-build");
+  expect(fixtureCardIntent("Open inbox", "Codex engine is ready")).toBe("open-inbox");
+  expect(fixtureCardIntent("Please wait…", "Checking Codex…")).toBe("wait");
+  expect(() => fixtureCardIntent("Plan", "Delete your account")).toThrow();
+  expect(() => fixtureCardIntent("Continue", "Unknown recommendation", ["send_customer_reply"])).toThrow();
+  expect(() => fixtureCardIntent("Start build", "Build #1: Fix a test")).toThrow();
+});
