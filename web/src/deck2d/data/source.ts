@@ -65,6 +65,7 @@ export function createLiveSource(cfg: SourceConfig = readConfig(), opts: { onPow
 
   return {
     view: () => {
+      if (activeItemId && journey.finished() === activeItemId) activeItemId = null;
       const base = deckView(state, { now: now(), pulled, completed, hidden, selectedStop, activeItemId, visualFlow: cfg.kind === "live" });
       activeItemId = base.work?.id ?? null;
       return cfg.kind === "live" ? journey.view(base) : base;

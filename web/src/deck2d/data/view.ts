@@ -153,7 +153,7 @@ export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckV
   const candidates = s.items.filter(it => workStop(s, it));
   const ongoing = candidates.filter(it => it.state !== 'launched');
   const selectable = ongoing.length ? ongoing : candidates;
-  const active = flow ? selectable.find(it => it.id === opts.activeItemId) ?? selectable.sort((a, b) => b.updatedAt - a.updatedAt)[0] : undefined;
+  const active = flow ? candidates.find(it => it.id === opts.activeItemId) ?? selectable.sort((a, b) => b.updatedAt - a.updatedAt)[0] : undefined;
   const activeStop = active && workStop(s, active);
   const relevant = active ? deck.filter(m => m.itemId === active.id || isSetupCard(m)) : deck;
   const move = (opts.selectedStop && pickCard(relevant.filter(m => cardStop(s, m) === opts.selectedStop))) || pickCard(relevant);
