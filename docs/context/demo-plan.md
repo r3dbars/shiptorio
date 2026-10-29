@@ -89,4 +89,14 @@ Visual deck polish stays with Justin's local Codex (`codex/deck-visuals`) and Cl
 | 62 | Keyboard and screen reader basics | web/src/deck2d/main.ts (aria/keyboard only) |
 | 63 | Trim the admin page | server/src/{admin,admin-view,admin-god-page,admin-god,ops}.ts |
 
-Status 18:10: #43 → PR #618, #44 → #615, #45 → #616, #46 → #617. #47 and #48 not started yet.
+| 64 | Faster to the first frame on a cold visit | server/src/{browser-socket,session,accounts,account-data,private-socket-timing}.ts |
+| 65 | GitHub calls: fewer, calmer | server/src/{github,github-cache,github-concurrency}.ts |
+| 66 | Meta calls: fewer and cheaper | server/src/{spark,spark-tools,spark-support,budget,spend,quotas}.ts |
+| 67 | The runner keeps going | runner/src/{pairing,recovery,health,workspace,codex-assembler,subscriptions}.ts |
+| 68 | Security pass before the demo | server/src/{security,webhook-body,redact,injection-policy,rate-limit,auth,authorization}.ts |
+| 69 | Dead code sweep (server) | server/src/{ore,geothermal,orbit,growth,unlocks,levels,permits,taps,taps-admin,support,waitlist,map,iron-page,ironPage,engine,diagnose,starterIssue,test-delegation}.ts, signals/*, sources/* |
+| 70 | Dead code sweep (old web UI) | web/src/{ui,buildout,sim,sound,judge,map}/**, App.tsx, store.ts, old CSS |
+
+Claude threads (2026-10-29 18:26): "Polish the station and belt art" owns station drawing + belt art; "Write the 2-minute demo video script" owns docs/context/demo-script.md.
+
+Status 18:30: merged #46 (#617), #45 (#616). Open: #43 (#618), #44 (#615), #48 (#621 draft), #57 (#622 draft). Others in progress.
