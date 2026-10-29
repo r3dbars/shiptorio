@@ -37,6 +37,14 @@ Waiting on Justin:
 - Tap Launch on Testing #19, #20; the runner plugins-off paste.
 - Hold Ship it on Testing PR #27 in the live deck.
 
+## #43: which Testing issues teach the same build permission
+
+For the live level-up take, use first-time issues whose reviewed **Start build** plan writes only root README/CHANGELOG/CONTRIBUTING prose (`.md`, `.txt`, `.rst`, `.adoc`) and/or prose files under `docs/`. Those plans share `build|district:docs|approve_runner_job` inside the repository, even if triage calls the issue's district `/` or `docs`. Three accepted Start build cards teach this permission; the next matching plan can dispatch automatically to the already-paired runner. Starting a plan is a separate permission and still asks unless independently learned.
+
+A plan that also edits code/config (for example `package.json`) keeps its original district scope and does not use the docs permission. Rework, existing PRs, scars and base refreshes always require a fresh decision. Gate never learns auto-merge. “Ask me again” removes the permission and streak. The existing `learned` list and timestamp mark the Builder automatic; no new renderer contract is needed.
+
+Verification boundaries: fixture tests exercise the real approval and runner-claim methods, including lease/reconnect behavior. A new four-issue run on shiptorio.dev is still player acceptance; fixture success is not a claim that four live jobs ran.
+
 ## The five moves
 
 1. **Finish one real ship on camera.** PR #27 merged from the deck, rocket flies. Then 3 more same-kind Testing
@@ -82,11 +90,3 @@ Visual deck polish stays with Justin's local Codex (`codex/deck-visuals`) and Cl
 | 63 | Trim the admin page | server/src/{admin,admin-view,admin-god-page,admin-god,ops}.ts |
 
 Status 18:10: #43 → PR #618, #44 → #615, #45 → #616, #46 → #617. #47 and #48 not started yet.
-
-## #43: which Testing issues teach the same build permission
-
-For the live level-up take, use first-time issues whose reviewed **Start build** plan writes only root README/CHANGELOG/CONTRIBUTING prose (`.md`, `.txt`, `.rst`, `.adoc`) and/or prose files under `docs/`. Those plans share `build|district:docs|approve_runner_job` inside the repository, even if triage calls the issue's district `/` or `docs`. Three accepted Start build cards teach this permission; the next matching plan can dispatch automatically to the already-paired runner. Starting a plan is a separate permission and still asks unless independently learned.
-
-A plan that also edits code/config (for example `package.json`) keeps its original district scope and does not use the docs permission. Rework, existing PRs, scars and base refreshes always require a fresh decision. Gate never learns auto-merge. “Ask me again” removes the permission and streak. The existing `learned` list and timestamp mark the Builder automatic; no new renderer contract is needed.
-
-Verification boundaries: fixture tests exercise the real approval and runner-claim methods, including lease/reconnect behavior. A new four-issue run on shiptorio.dev is still player acceptance; fixture success is not a claim that four live jobs ran.
