@@ -714,8 +714,8 @@ app.get("/api/repos", async (c) => {
       fullName: repo.full_name,
       blurb: repo.default_branch ? `Default branch: ${repo.default_branch}` : "Connected GitHub repository",
     })) });
-  } catch {
-    log("warn", "github.repositories_unavailable");
+  } catch (error) {
+    log("warn", "github.repositories_unavailable", { error });
     c.header("Retry-After", "5");
     return c.json({ error: "Could not load your repositories. Try again shortly.", code: "repository_discovery_unavailable" }, 503);
   }
