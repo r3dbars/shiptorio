@@ -813,7 +813,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       `🧠 **Shiptorio planned this${job.reworkPr ? " rework" : ""}** with Meta Muse Spark (\`${sparkModel(this.env)}\`)`,
       triage ? `**Triage:** ${triage.outcome}. ${triage.reason}` : "",
       steps ? `**How it got there** (one tool call per turn, read-only):\n${steps}` : "",
-      `**Plan for ${job.harness === "codex" ? "Codex" : "Claude Code"}:**\n\n${job.plan}`,
+      `**Plan for ${harnessLabel(job.harness)}:**\n\n${job.plan}`,
       job.allowedPaths.length ? `**Allowed files:** ${job.allowedPaths.map(p => `\`${p}\``).join(", ")}` : "",
       job.needsApproval ? "_Nothing builds until the player approves this plan in Shiptorio._" : "",
     ].filter(Boolean).join("\n\n");
@@ -1198,7 +1198,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         if (!sparkConfigured(this.env)) throw new Error("No planner key");
         pick = await this.think("route", { title: item.title, itemId: item.id }, () => pickPower({ ...this.sparkEnv(), planningSignal: signal }, {
           title: item.title, kind: item.kind, plan: job.plan ?? "", files: job.allowedPaths,
-          plants: allowed.map(h => h === "local" ? { harness: h, name: "Geothermal (your computer)", cost: "free", strength: "small model, fine for docs and tiny fixes" } : { harness: h, name: `Solar (${h === "codex" ? "ChatGPT" : "Claude"})`, cost: "spends weekly subscription usage", strength: "strong coding agent" }),
+          plants: allowed.map(h => h === "local" ? { harness: h, name: "Geothermal (your computer)", cost: "free", strength: "small model, fine for docs and tiny fixes" } : { harness: h, name: `Solar (${h === "codex" ? "ChatGPT" : h === "muse_code" ? "Meta Muse Code" : "Claude"})`, cost: "spends weekly subscription usage", strength: "strong coding agent" }),
         }), out => ({ outcome: `Routed to ${harnessLabel(out.harness)}`, reason: out.why || guard.reason }));
       } catch { pick = ruleRoute(c, available); }
     }
@@ -2637,7 +2637,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (jobs.some(j => j.refreshBase && j.headSha === headSha && j.status !== "completed") && !jobs.some(j => j.status === "completed" && j.headSha === headSha)) {
         return;
       }
-      const builder = job?.harness === "codex" ? "Codex" : job?.harness === "claude_code" ? "Claude Code" : job?.harness === "local" ? "Local model" : "the planner";
+      const builder = job?.harness === "codex" ? "Codex" : job?.harness === "muse_code" ? "Muse Code" : job?.harness === "claude_code" ? "Claude Code" : job?.harness === "local" ? "Local model" : "the planner";
       const lane = laneOf(files.map((f) => f.filename)) ?? undefined;
       const currentInLane = async () => {
         if (!current()) return;
@@ -2799,7 +2799,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         // A scarred job never goes back to geothermal: the retry takes a subscription.
         const subs = (await this.ctx.storage.get<{ harnesses: RunnerJob["harness"][] }>("runnerPresence"))?.harnesses.filter(h => h !== "local") ?? [];
         const builder = last !== "local" ? last : subs[0] ?? "codex";
-        await this.publishGauntletMove(reworkMove(item, now, builder as "codex" | "claude_code"));
+        await this.publishGauntletMove(reworkMove(item, now, builder as "codex" | "claude_code" | "muse_code"));
         continue;
       }
     }
@@ -3792,7 +3792,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
         });
         if (!s.move) {
-          s.move = { id: crypto.randomUUID(), title: "Your computer writes the code. Plug it in to start building.", why: "The factory plans the work. Claude Code or Codex on your computer writes the code: paste one line, once.", stage: "resources", itemId: item.id, createdAt: now, options: [{ id: "connect", label: "Connect a local agent", recommended: true, actions: [{ tool: "connect_source", args: { kind: "claude" }, reason: "No subscription builder is connected." }] }] };
+          s.move = { id: crypto.randomUUID(), title: "Your computer writes the code. Plug it in to start building.", why: "The factory plans the work. Codex or Meta Muse Code on your computer writes the code: paste one line, once.", stage: "resources", itemId: item.id, createdAt: now, options: [{ id: "connect", label: "Connect a local agent", recommended: true, actions: [{ tool: "connect_source", args: { kind: "claude" }, reason: "No subscription builder is connected." }] }] };
           await this.publishDecision(s.move);
         }
         continue;

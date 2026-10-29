@@ -97,7 +97,7 @@ function impliedBottleneckMove(state: FactoryState, now: number): Move | null {
   return {
     id: `bottleneck:${jam.stationId ?? jam.stage}`,
     title: resources ? "Your computer writes the code. Plug it in to start building." : jam.summary,
-    why: resources ? "Claude Code or Codex on your computer builds the changes. Paste one line, once." : `${jam.wip} ${jam.wip === 1 ? "item is" : "items are"} waiting here. Review what will move the line forward.`,
+    why: resources ? "Codex or Meta Muse Code on your computer builds the changes. Paste one line, once." : `${jam.wip} ${jam.wip === 1 ? "item is" : "items are"} waiting here. Review what will move the line forward.`,
     stage: jam.stage, focus: jam.stationId ?? jam.stage, kind: "unblock", createdAt: now,
     // Read-only fallback: the planner/DO must turn this review into an actual proposal.
     // Never fabricate a build, permit or merge decision from deterministic ranking.

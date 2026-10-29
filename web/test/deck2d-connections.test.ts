@@ -62,8 +62,8 @@ test('login preserves the return path', async () => {
   const f = setup([new Response('', { status: 401 })]); f.ui.open('repo'); await settle(); await f.yes();
   expect(f.navigations[0]).toContain('/auth/login?next=%2Fdeck');
 });
-test('Codex readiness requires Codex, not merely another signed-in agent', async () => {
-  for (const [harnesses, word] of [[['claude_code'], 'Sign in to Codex'], [['codex'], 'Codex engine is ready']] as const) {
+test('engine readiness requires Codex or Muse Code, not merely another signed-in agent', async () => {
+  for (const [harnesses, word] of [[['claude_code'], 'Sign in to Codex or Muse Code'], [['codex'], 'Codex engine is ready'], [['muse_code'], 'Muse Code engine is ready'], [['muse_code', 'codex'], 'Codex engine is ready']] as const) {
     const f = setup([{ paired: true, online: true, harnesses }]); f.ui.open('power'); await settle(); expect(f.ui.card()?.title).toBe(word);
   }
 });
@@ -109,7 +109,7 @@ test('confirmed disconnect revokes the pairing then refreshes status', async () 
   const f = setup([{paired:true,online:true,harnesses:['codex']},{ok:true},{paired:false,online:false,harnesses:[]}]);
   f.ui.open('power'); await settle(); await f.no(); await f.yes();
   expect(f.calls[1]).toEqual({url:'/api/repos/owner/repo/runner/disconnect',method:'POST'});
-  expect(f.ui.card()?.title).toBe('Connect your Codex engine');
+  expect(f.ui.card()?.title).toBe('Connect your coding engine');
 });
 test('missing server GitHub credentials stay on the deck instead of sending the player to a broken login', async () => {
   const f = setup([new Response('',{status:401}),{githubConfigured:false}]); f.ui.open('repo'); await settle();
@@ -128,6 +128,11 @@ test('rate-limit errors remain visible rather than being cleared by status polli
 });
 
 
+test('a Muse Code engine also opens the first issue card by itself', async () => {
+  const ui = createConnections({repo:'owner/repo',origin:'https://shiptorio.dev',path:'/deck?source=live&repo=owner%2Frepo&onboard=codex',navigate:()=>{},copy:async()=>{},fetch:(async url=>Response.json(String(url).includes('/status')?{paired:true,online:true,harnesses:['muse_code']}:{issues:[{id:1,number:16,title:'README',body:''}],nextPage:null})) as typeof fetch});
+  await settle();await settle();expect(ui.card()?.yes).toBe('Plan');expect(ui.card()?.line).toContain('before Muse Code starts');
+  expect(ui.engineReady()).toBe(true);
+});
 test('choosing a repo leads to Codex, then directly to the first issue card', async () => {
   const calls: string[] = [];
   const ui = createConnections({repo:'owner/repo',origin:'https://shiptorio.dev',path:'/deck?source=live&repo=owner%2Frepo&onboard=codex',navigate:()=>{},copy:async()=>{},fetch:(async url=>{calls.push(String(url));return Response.json(String(url).includes('/status')?{paired:true,online:true,harnesses:['codex']}:{issues:[{id:1,number:16,title:'README',body:''}],nextPage:null});}) as typeof fetch});
