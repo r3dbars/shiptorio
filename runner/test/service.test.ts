@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { pairingConfig, serviceConnectionOrigin } from "../src/service-config";
@@ -22,6 +22,15 @@ test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1")("bundled background run
     expect(err).toBe("");
     expect(code).toBe(0);
     expect(JSON.parse(out).root).toBe(root);
+    const bin = resolve(directory, "bin");
+    await mkdir(bin);
+    for (const name of ["codex", "claude"]) await writeFile(resolve(bin, name), "#!/bin/sh\nexit 0\n", { mode: 0o700 });
+    const onlyCodex = Bun.spawn([process.execPath, resolve(directory, "runner.mjs"), "paths", "--codex-only"], {
+      cwd: directory, env: { PATH: `${bin}:/usr/bin:/bin`, HOME: directory, SHIPTORIO_RUNNER_ROOT: root }, stdout: "pipe", stderr: "pipe",
+    });
+    const selected = JSON.parse(await new Response(onlyCodex.stdout).text());
+    expect(await onlyCodex.exited).toBe(0);
+    expect(selected.harnesses).toEqual(["codex"]); // Even when Claude is installed, it cannot trigger sign-in prompts or claim jobs.
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
