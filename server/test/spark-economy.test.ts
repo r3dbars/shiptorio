@@ -113,3 +113,26 @@ test("a newly paused factory or zero budget cannot join an in-flight decision", 
   p.release(); await first;
   expect(p.calls()).toBe(1);
 });
+
+test("aborting shared callers does not cancel a different request lifetime", async () => {
+  const env=sparkTestEnv(), a=new AbortController(), b=new AbortController();
+  let started=0, ready!:()=>void;
+  const waitReady=new Promise<void>(resolve=>{ready=resolve;});
+  const finish:Array<()=>void>=[];
+  globalThis.fetch=((_url:unknown,init?:RequestInit)=>new Promise<Response>((resolve,reject)=>{
+    init?.signal?.addEventListener('abort',()=>reject(init.signal?.reason),{once:true});
+    finish.push(()=>resolve(Response.json({choices:[{message:{content:'decision'}}],usage:{total_tokens:100}})));
+    if(++started===2)ready();
+  })) as unknown as typeof fetch;
+  const first=sparkChat({...env,planningSignal:a.signal},message);
+  const duplicate=sparkChat({...env,planningSignal:a.signal},message);
+  const separate=sparkChat({...env,planningSignal:b.signal},message);
+  const settled=Promise.allSettled([first,duplicate,separate]);
+  await waitReady;
+  a.abort(new Error('Run canceled'));
+  finish.forEach(resolve=>resolve());
+  const results=await settled;
+  expect(results.map(r=>r.status)).toEqual(['rejected','rejected','fulfilled']);
+  expect(started).toBe(2);
+  expect((await budgetUsage(env,'owner')).calls).toBe(2);
+});
