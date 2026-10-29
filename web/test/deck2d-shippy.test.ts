@@ -8,7 +8,8 @@ function run(s: ReturnType<typeof createShippy>, view: ShippyView, seconds: numb
 }
 
 test("Shippy unfolds out of the corner, walks to the stop, works it, and folds back home", () => {
-  const s = createShippy(noArt, { reducedMotion: true });
+  // The screen-corner box is the non-pixel look; pixel mode (now the default) has its own test below.
+  const s = createShippy(noArt, { reducedMotion: true, pixel: false });
   run(s, { at: "corner", pose: "folded" }, 0.5);
   expect(s.state).toMatchObject({ corner: "home", world: "off" });
 
@@ -28,7 +29,7 @@ test("Shippy unfolds out of the corner, walks to the stop, works it, and folds b
 });
 
 test("a call back to the deck mid-leap drops him straight back down", () => {
-  const s = createShippy(noArt, { reducedMotion: true });
+  const s = createShippy(noArt, { reducedMotion: true, pixel: false });
   run(s, { at: "builder", pose: "walking" }, 8);
   expect(s.state.world).toBe("stand");
   s.update(1 / 60, { at: "corner", pose: "folded" });
@@ -56,4 +57,36 @@ test("pixel mode: home is on the deck floor, he never leaves the floor between h
   go({ at: "corner", pose: "folded" }, 10);
   expect(s.state).toMatchObject({ corner: "home", world: "off", x: home });
   expect(seen.has("drop") || seen.has("leave")).toBe(false);
+});
+
+test("pixel mode: called back mid-walk home, he turns around on the floor instead of folding", () => {
+  const s = createShippy(noArt, { reducedMotion: true, pixel: true });
+  run(s, { at: "checks", pose: "lever" }, 10);
+  expect(s.state).toMatchObject({ world: "stand", x: STOP_X.checks + 150 });
+  run(s, { at: "corner", pose: "folded" }, 1);
+  expect(s.state.world).toBe("walk");
+  run(s, { at: "review", pose: "lever" }, 10);
+  expect(s.state).toMatchObject({ corner: "gone", world: "stand", x: STOP_X.review + 150 });
+});
+
+test("pixel mode: home poses (peek, alarm, happy) play in the box on the floor without leaving it", () => {
+  const s = createShippy(noArt, { reducedMotion: true, pixel: true });
+  for (const pose of ["peek", "alarmed", "happy", "folded"] as const) {
+    run(s, { at: "corner", pose }, 1);
+    expect(s.state).toMatchObject({ corner: "home", world: "off", pose });
+  }
+});
+
+test("pixel mode: never jumps or drops through a whole busy story", () => {
+  const s = createShippy(noArt, { reducedMotion: true, pixel: true });
+  const views: ShippyView[] = [
+    { at: "corner", pose: "peek" }, { at: "builder", pose: "walking" }, { at: "gate", pose: "alarmed" },
+    { at: "corner", pose: "folded" }, { at: "review", pose: "lever" }, { at: "corner", pose: "happy" },
+  ];
+  for (const v of views) for (let t = 0; t < 2.5; t += 1 / 60) {
+    s.update(1 / 60, v);
+    expect(["drop", "leave"]).not.toContain(s.state.world);
+  }
+  run(s, { at: "corner", pose: "folded" }, 12);
+  expect(s.state).toMatchObject({ corner: "home", world: "off", x: STOP_X.repo - 150 });
 });
