@@ -357,6 +357,8 @@ Prompt packs for Justin live in the Claude project's files under `shiptorio/code
 
 ## Spark spend and factory budgets (Codex, 2026-10-26; PR #255)
 
+- #66 follow-up: transient account lookups retry before paid calls; equivalent factory wrappers share only pending requests with the same account and cancellation lifetime. Current pause/zero budgets still refuse joining.
+
 - Checkpoint: Friday cost/power guardrails. `codex/spark-spend` adds migration `0012_spark_spend.sql` (checked against #150's gapless-number guard).
 - D1 records each factory's UTC day, calls, measured input/output/cache tokens and estimated USD. Default daily budget: **$5 per factory**; the stable payer can change it in whole cents, including $0 to pause.
 - Before each Meta attempt, reserve UTF-8 input upper bound plus capped output at Spark 1.3 standard rates. Concurrent reservations are atomic. Reported usage settles once; missing usage/errors keep a conservative reservation and show as unmeasured. Existing account call/token limits remain in force. Unknown model prices fail closed.
