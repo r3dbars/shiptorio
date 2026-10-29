@@ -227,15 +227,15 @@ try {
     await page.waitForURL((u) => u.pathname === "/deck" && u.searchParams.get("source") === "live");
     await page.locator("[data-deck-ready]").waitFor({ timeout: UI_TIMEOUT });
   });
-  await step("Shippy's tour shows, then skip to Create my factory", async () => {
+  await step("Shippy's tour shows, then skip to Build mine", async () => {
     const first = page.locator('.ic-card:not(.ic-ghost)[data-card^="tour-"]');
     await first.waitFor({ timeout: UI_TIMEOUT });
     assert.match(await first.innerText(), /Shippy/);
     await first.locator(".later").click();
-    await card().getByRole("button", { name: "Create my factory", exact: true }).waitFor({ timeout: UI_TIMEOUT });
+    await card().getByRole("button", { name: "Build mine", exact: true }).waitFor({ timeout: UI_TIMEOUT });
   });
   await step("sign in with GitHub (real, not the sandbox)", async () => {
-    await card().getByRole("button", { name: "Create my factory", exact: true }).click();
+    await card().getByRole("button", { name: "Build mine", exact: true }).click();
     // A brand-new account has no repo yet, so the deck asks to connect one.
     await card().getByRole("button", { name: "Connect GitHub", exact: true }).waitFor({ timeout: UI_TIMEOUT });
     signedIn = true;
