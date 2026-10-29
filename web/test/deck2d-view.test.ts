@@ -6,6 +6,8 @@ import type { Source, SourceConfig } from "../src/source";
 import { createLiveSource } from "../src/deck2d/data/source";
 import { createWatchSource, isWatchMode } from "../src/deck2d/data/watch";
 import { deckView, FIRST_LINE, itemStop } from "../src/deck2d/data/view";
+import { createBuild } from "../src/deck2d/build/build";
+import { createBus } from "../src/deck2d/contract";
 
 const base = (over: Partial<FactoryState> = {}): FactoryState => ({
   repo: "r3dbars/testing", baseBranch: "main", districts: [], belts: [], items: [], power: [], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0, tick: 0,
@@ -39,6 +41,7 @@ test("watch mode builds, fails, repairs, launches, and resets without a click", 
     if (job?.state === "rejected") expect(src.view().jam).toBe("builder");
     if (job?.state === "working" && job.attempts > 1) repaired = true;
     if (src.view().shipped > 0) launched = true;
+    expect(src.view().stops.every(s => s.built)).toBe(true);
     if (launched && src.view().shipped === 0) { reset = true; break; }
     expect(src.view().card).toBeNull();
   }
@@ -47,6 +50,39 @@ test("watch mode builds, fails, repairs, launches, and resets without a click", 
   expect(repaired).toBe(true);
   expect(launched).toBe(true);
   expect(reset).toBe(true);
+  expect(timers.size).toBe(0);
+});
+
+test("closing while a watch reset is pending leaves no simulator running", () => {
+  const src = createWatchSource();
+  advance(0);
+  src.reset();
+  src.close();
+  advance(0);
+  expect(timers.size).toBe(0);
+});
+
+test("every reset frame keeps built stations until the replacement snapshot is ready", () => {
+  const src = createWatchSource();
+  const build = createBuild({ get: () => null } as never, createBus(), { reduced: true });
+  advance(0); // The simulator publishes its first snapshot in a microtask.
+  const frame = () => {
+    src.step?.(1 / 60);
+    const view = src.view();
+    build.update(1 / 60, view);
+    expect(view.stops.every(s => s.built)).toBe(true);
+    expect(view.stops.some(s => s.locked)).toBe(false);
+    expect(view.stops.some(s => build.owns(s))).toBe(false);
+  };
+  frame();
+  src.reset();
+  // Draw before queued snapshot delivery: this used to draw four CONNECT tarps.
+  frame();
+  src.reset(); // A repeated reset must not replace the pending connection.
+  frame();
+  advance(0);
+  frame();
+  src.close();
   expect(timers.size).toBe(0);
 });
 
