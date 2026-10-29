@@ -1,3 +1,4 @@
+import { quotaEditor } from "./admin-god-page";
 import { configuredAdmin } from "./admin-policy";
 import { currentUser } from './accounts';
 import type { Env } from './index';
@@ -110,7 +111,12 @@ export async function adminSignup(request: Request, env: Env): Promise<Response>
   const login = (await currentUser(env,request.headers.get('cookie'),new URL(request.url)))?.login || null;
   if (!login || !isAdmin(env,login) || !await signupAllowed(env,login)) return new Response('Admin only',{status:403});
   if (request.method === 'POST' && request.headers.get('origin') !== new URL(request.url).origin) return new Response('Invalid origin',{status:403});
-  if (request.method !== 'POST') return new Response(null,{status:302,headers:{...headers,Location:'/admin'}}); // retired page; admission POSTs still serve existing operations
+  if (request.method !== 'POST') {
+    const target = new URL(request.url).searchParams.get('login')?.trim().toLowerCase() ?? '';
+    if (githubLogin(target)) return new Response(await quotaEditor(env.DB, target), {headers});
+    return new Response(null,{status:302,headers:{...headers,Location:'/admin'}});
+  }
+  let editedLogin: string | undefined;
   // Bounded retention work on admin visits rather than a sweep on every public request.
   await env.DB.batch([
     env.DB.prepare('DELETE FROM signup_counters WHERE rowid IN (SELECT rowid FROM signup_counters WHERE expires_at < ? LIMIT 100)').bind(Date.now()),
@@ -137,7 +143,8 @@ export async function adminSignup(request: Request, env: Env): Promise<Response>
         ...(form.has('spark_calls') && form.has('spark_tokens') ? [env.DB.prepare('UPDATE signup_allowlist SET spark_calls_daily=?,spark_tokens_daily=? WHERE login=?').bind(calls,tokens,target)] : []),
       ]);
 
+      if (action === 'limits') editedLogin = target;
     } else return new Response('Choose a valid GitHub login',{status:400});
   }
-  return new Response(null,{status:302,headers:{...headers,Location:'/admin'}});
+  return new Response(null,{status:editedLogin ? 303 : 302,headers:{...headers,Location:editedLogin ? `/admin/signup?login=${encodeURIComponent(editedLogin)}` : '/admin'}});
 }

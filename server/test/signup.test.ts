@@ -183,3 +183,42 @@ test('configured owner has uncapped resources and a 200-run floor with no allowl
   expect((await runQuotaStatus({ ...e, ADMIN_LOGINS: 'someone-else' }, 'r3dbars')).limit).toBe(20);
   expect((await runQuotaStatus({ ...e, ADMIN_LOGINS: undefined }, 'r3dbars')).limit).toBe(20);
 });
+
+test('Raise limit opens only the selected account and a native save returns to persisted quotas',async()=>{
+  const e=env(), admin=await signedInCookie(e,'r3dbars');
+  await e.DB.prepare("INSERT INTO signup_allowlist(login,approved_by,updated_at,factories,repos,runs_daily,spark_calls_daily,spark_tokens_daily) VALUES('quota-player','r3dbars',0,4,5,20,30,4000),('other-account','r3dbars',0,1,1,1,1,1)").run();
+  const get=()=>app.fetch(req('/admin/signup?login=quota-player',admin),e as never);
+  const page=await get();
+  expect(page.status).toBe(200);
+  expect(page.headers.get('referrer-policy')).toBe('same-origin');
+  expect(page.headers.get('cache-control')).toBe('no-store');
+  const html=await page.text();
+  expect(html).toContain('Account limits');
+  expect(html).toContain('quota-player');
+  expect(html).not.toContain('other-account');
+  expect(html).not.toContain('Abuse flags');
+  expect(html).not.toContain('Create one-use invite');
+  expect(html).toContain('name="runs" type="number" min="0" max="99999" value="20"');
+  expect(html).toContain('action="/admin/signup?login=quota-player"');
+  for(let i=0;i<3;i++) expect(await runQuota(e as never,'quota-player')).toBe(true);
+  const saved=await app.fetch(req('/admin/signup?login=quota-player',admin,{action:'limits',login:'quota-player',factories:'6',repos:'7',runs:'25',spark_calls:'50',spark_tokens:'8000'}),e as never);
+  expect(saved.status).toBe(303);
+  expect(saved.headers.get('location')).toBe('/admin/signup?login=quota-player');
+  const refreshed=await (await get()).text();
+  expect(refreshed).toContain('name="runs" type="number" min="0" max="99999" value="25"');
+  expect(refreshed).toContain('name="factories" type="number" min="0" max="99999" value="6"');
+  expect(await runQuotaStatus(e as never,'quota-player')).toMatchObject({used:3,limit:25});
+  expect(await e.DB.prepare("SELECT spark_calls_daily,spark_tokens_daily FROM signup_allowlist WHERE login='quota-player'").first()).toEqual({spark_calls_daily:50,spark_tokens_daily:8000});
+});
+
+test('focused quota editor keeps admin, Origin and input validation boundaries',async()=>{
+  const e=env(), admin=await signedInCookie(e,'r3dbars'), player=await signedInCookie(e,'player');
+  expect((await app.fetch(req('/admin/signup?login=player',player),e as never)).status).toBe(403);
+  expect((await app.fetch(req('/admin/signup?login=player'),e as never)).status).toBe(403);
+  const form={action:'limits',login:'player',runs:'25'};
+  expect((await app.fetch(req('/admin/signup?login=player',admin,form,'https://evil.example'),e as never)).status).toBe(403);
+  expect((await app.fetch(req('/admin/signup?login=player',admin,{...form,spark_calls:'bad',spark_tokens:'10'}),e as never)).status).toBe(400);
+  expect(await e.DB.prepare("SELECT 1 FROM signup_allowlist WHERE login='player'").first()).toBeNull();
+  const invalid=await app.fetch(req('/admin/signup?login=%22%3E%3Cscript%3E',admin),e as never);
+  expect(invalid.status).toBe(302);expect(invalid.headers.get('location')).toBe('/admin');
+});

@@ -465,6 +465,8 @@ links the successful Deploy run, including D1 migration application and live smo
 
 ## Live quota admin form recovery (Codex, 2026-10-26)
 
+- 2026-10-29, Codex: repaired the #63 regression by restoring only the focused Raise limit form, keeping admin authorization, native same-origin save, validation and recorded usage; no retired waitlist/abuse panels restored.
+
 - 2026-10-29, Codex #63: trim admin to factories, pause/resume, kill switches and spend; retire unused pages after authorization while retaining operational admission POSTs and all security guards. PR #632.
 
 Follow-up [PR #284](https://github.com/r3dbars/shiptorio/pull/284) to #269 on `codex/quota-admin-origin`: verified Deploy run 40432397609
