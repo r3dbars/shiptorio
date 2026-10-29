@@ -5,7 +5,7 @@ import { gzipSync } from "node:zlib";
 // Cold startup of the 2D deck: deck.html's entry chunk and everything it imports statically. Dynamic imports
 // (the simulator, the live socket, story/data/shippy layers) load after the first frame and are not counted.
 // Updated from the measured optimized build; do not silently raise this on regressions.
-const BASELINE_GZIP_BYTES = 33_091;
+const BASELINE_GZIP_BYTES = 56_045; // after #718 moved the first frame's modules into the entry on purpose
 const LIMIT = Math.ceil(BASELINE_GZIP_BYTES * 110 / 100);
 const DIST = resolve(import.meta.dir, "../web/dist");
 type Chunk = { file: string; imports?: string[] };
