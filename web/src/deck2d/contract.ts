@@ -60,6 +60,7 @@ export interface CardView {
   yes?: string; // button labels, default "Approve" / "Later" (e.g. "Show me my repo" / "Replay")
   no?: string;
   hold?: boolean; // ships real code (a merge): needs a held press or a full swipe, never a flick
+  guide?: "shippy"; // verified Meta-guided recommendation; ordinary setup/status cards stay plain
   setup?: boolean; // a "plug in an agent" / connect card rather than a decision on work
 }
 
