@@ -28,3 +28,13 @@ test("live learned snapshot marks the fourth crate's Builder automatic without a
 test("forgetting the class clears the automatic treatment on the same live crate", () => {
   expect(deckView({ ...state, learned: [] }, { now }).stops.find(s => s.id === "builder")).toMatchObject({ automated: false, state: "working" });
 });
+
+test("the crate Shippy started itself says so: one caption, camera parked on it, no card", () => {
+  const ran = { ...state, learned: [{ ...state.learned![0], items: ["gh-4"] }] };
+  const live = deckView(ran, { now: now + 5000, visualFlow: true });
+  expect(live.card).toBeNull();
+  expect(live.work).toMatchObject({ id: "gh-4", auto: true });
+  expect(live.caption).toBe("Shippy's got these now. #4 started with no card.");
+  // a crate the player started by hand keeps the plain status line
+  expect(deckView(state, { now: now + 5000, visualFlow: true }).caption).toBe("#4 · Document the README checks · Builder is working");
+});
