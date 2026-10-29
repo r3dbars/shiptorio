@@ -54,7 +54,7 @@ test("quota telemetry warns at 80%, stops at the cap, and resets at midnight wit
   expect((await quotaStatus(env, 'owner/repo', { id: 1, login: 'admin' })).quotas[0].status).toBe('stopped');
 });
 
-test("one-tap admin link selects existing limits; saving raises Spark and run quotas immediately", async () => {
+test("retired quota page redirects while operational admin quota POSTs remain compatible", async () => {
   const { env } = await fixture();
   env.ADMIN_LOGINS = 'admin';
   const adminCookie = await signedInCookie(env, 'admin', [], 3);
@@ -63,10 +63,9 @@ test("one-tap admin link selects existing limits; saving raises Spark and run qu
   const account = await budgetAccount(env.DB, 'owner/repo');
   await expect(reserveSpark(env, account, 1)).rejects.toThrow('exhausted');
   const page = await adminSignup(new Request('https://shiptorio.test/admin/signup?login=owner', { headers: { cookie: adminCookie } }), env);
-  const html = await page.text();
-  expect(html).toContain('value="owner" required'); expect(html).toContain('value="5"');
+  expect(page.status).toBe(302); expect(page.headers.get('location')).toBe('/admin');
   const response = await adminSignup(new Request('https://shiptorio.test/admin/signup', { method: 'POST', headers: { cookie: adminCookie, origin: 'https://shiptorio.test' }, body: new URLSearchParams({ action: 'limits', login: 'owner', runs: '30', factories: '3', repos: '3', spark_calls: '500', spark_tokens: '1000000' }) }), env);
-  expect(response.status).toBe(200);
+  expect(response.status).toBe(302);
   await expect(reserveSpark(env, account, 1)).resolves.toMatchObject({ account });
   const q = await quotaStatus(env, 'owner/repo', { id: 1, login: 'owner' });
   expect(q.quotas.slice(0, 3).map(q => q.limit)).toEqual([30, 500, 1000000]);

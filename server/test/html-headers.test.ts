@@ -48,7 +48,7 @@ test("public HTML, docs, legal, signup and authenticated HTML retain the central
     ["/connect/sentry?repo=example/shop", cookie, 200],
     ["/connect/posthog?repo=example/shop", cookie, 200],
     ["/connect/support?repo=example/shop", cookie, 200],
-    ["/admin", cookie, 200], ["/admin/signup", cookie, 200], ["/admin/flags", cookie, 200],
+    ["/admin", cookie, 200], ["/admin/flags", cookie, 200],
   ];
   for (const [path, auth, status] of cases) {
     const response = await app.fetch(new Request(origin + path, { headers: auth ? { cookie: auth } : {} }), env);

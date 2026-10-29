@@ -1,15 +1,12 @@
-import { pausedForGitHubAccess } from "./github-lifecycle";
 import { GOD_FORM, GOD_JS } from "./admin-god-page";
 import { configuredAdmin } from "./admin-policy";
 import { spendReport } from "./spend";
 import { budgetReport } from "./budget";
 import type { Hono } from 'hono';
-import * as Sentry from '@sentry/cloudflare';
 import type { Env } from './index';
 import type { Factory } from './factory';
-import { currentTrace, recentLogs, report } from './telemetry';
+import { currentTrace } from './telemetry';
 import { currentUser } from './accounts';
-import { testerLinks } from "./test-users";
 import { ironPage } from './ironPage';
 
 // Deliberately independent of ALLOWED_LOGINS: adding a player never grants diagnostics.
@@ -22,29 +19,16 @@ export function adminRoutes(app: Hono<any>, factory: (env: Env, repo: string) =>
     c.header('X-Content-Type-Options', 'nosniff');
     await next();
   });
-  app.get('/admin', async c => c.req.query('format') === 'json' ? c.json({ ...await budgetReport(c.env), spend: await spendReport(c.env.DB) }) : c.html(ADMIN_HTML.replace("</body>", `${testerLinks(c.env, new URL(c.req.url))}</body>`)));
+  app.get('/admin', async c => c.req.query('format') === 'json' ? c.json({ ...await budgetReport(c.env), spend: await spendReport(c.env.DB) }) : c.html(ADMIN_HTML));
   app.get('/admin/god.js', c=>{c.header('Content-Type','application/javascript; charset=utf-8');return c.body(GOD_JS)});
   app.get('/admin/app.js', c => { c.header('Content-Type', 'application/javascript; charset=utf-8'); return c.body(ADMIN_JS); });
   app.get('/admin/data', async c => {
     const env = c.env as Env;
-    const repos = await env.DB.prepare('SELECT full_name FROM repos ORDER BY full_name').all<{ full_name: string }>();
-    const selected = c.req.query('repo');
-    if (selected && !repos.results.some(r => r.full_name === selected)) return c.json({ error: 'unknown factory' }, 404);
-    const [events, errors, spark, webhooks] = await Promise.all((['events', 'errors', 'spark', 'webhooks'] as const).map(group => recentLogs(env, group, selected)));
-    return c.json({ release: env.BUILD_SHA, sentryConfigured: !!env.SHIPTORIO_SENTRY_DSN,
-      repos: repos.results.map(r => r.full_name),
-      pausedForAccess: await pausedForGitHubAccess(env.DB),
-      snapshot: selected ? await (await factory(env, selected)).debugSnapshot() : null,
-      errors, events, spark, webhooks, budget: await budgetReport(env), spend: await spendReport(env.DB),
-
-      note: 'Last 50 events per category and factory; KV may take up to 60 seconds to propagate. Retention: 7 days.' });
+    return c.json({ budget: await budgetReport(env), spend: await spendReport(env.DB) });
   });
   app.post('/admin/force-error', async c => {
     if (c.req.header('origin') !== new URL(c.req.url).origin) return c.json({ error: 'invalid origin' }, 403);
-    if (!c.env.SHIPTORIO_SENTRY_DSN) return c.json({ error: 'SHIPTORIO_SENTRY_DSN is not configured' }, 503);
-    const eventId = report(new Error('Shiptorio observability verification'), 'admin.forced_error');
-    const flushed = await Sentry.flush(5000);
-    return c.json({ eventId, requestId: currentTrace()?.requestId, flushed }, flushed ? 200 : 502);
+    return c.redirect('/admin',302);
   });
   // This DSN belongs to Shiptorio itself. It is a public ingestion key, never an auth token.
   app.get('/api/telemetry/config', async c => {
@@ -53,12 +37,11 @@ export function adminRoutes(app: Hono<any>, factory: (env: Env, repo: string) =>
       userId: user?.login ?? null, requestId: currentTrace()?.requestId });
   });
 }
-export const ADMIN_HTML = ironPage({ title: 'Diagnostics', eyebrow: 'Internal · diagnostics', wide: true, home: '/admin',
-  head: '<script type="module" src="/admin/app.js"></script><script type="module" src="/admin/god.js"></script>',
-  body: `<h1>Shiptorio diagnostics</h1><p><a href="/admin/flags">Feature flags</a> · <a href="/admin/signup">Signup and abuse</a></p>${GOD_FORM}<h2>Runtime diagnostics</h2><p id="status">Loading…</p><div class="row"><label style="flex:1 1 240px">Factory <select id="repo"><option value="">All events</option></select></label> <button id="refresh" class="ghost">Refresh</button> <button id="force" class="danger">Send verification error to Sentry</button></div><div id="content"></div>` });
+export const ADMIN_HTML = ironPage({ title: 'Admin', eyebrow: 'Internal', wide: true, home: '/admin',
+  head: '<script type="module" src="/admin/app.js"></script><script type="module" src="/admin/god.js"></script><style>#god-form{display:grid;gap:12px;max-width:640px}.spend-row{padding:12px 0;border-top:1px solid #594128;overflow-wrap:anywhere}.spend-row h3{margin:0 0 8px}#content{display:grid;gap:12px}section{min-width:0}</style>',
+  body: `<h1>Shiptorio admin</h1>${GOD_FORM}<section><h2>Kill switches</h2><p><a href="/admin/flags">Manage feature flags</a></p></section><section><h2>Spend today</h2><p id="status" role="status">Loading spend…</p><button id="refresh" class="ghost">Refresh spend</button><div id="content"></div></section>` });
 const ADMIN_JS = `
-const repo=document.querySelector('#repo'), status=document.querySelector('#status');
-async function refresh(){try{const res=await fetch('/admin/data?repo='+encodeURIComponent(repo.value));if(!res.ok)throw Error('Request failed: '+res.status);const data=await res.json();if(repo.options.length===1)for(const name of data.repos){const option=document.createElement('option');option.value=option.textContent=name;repo.append(option)}status.textContent='Release '+data.release+' • Sentry '+(data.sentryConfigured?'configured':'not configured')+' • '+data.pausedForAccess+' factories paused for GitHub access • '+data.note;const content=document.querySelector('#content');content.replaceChildren();const spendSection=document.createElement('section'),heading=document.createElement('h2');heading.textContent='AI spend · today (UTC)';spendSection.append(heading);const note=document.createElement('p');note.textContent='Estimated USD · muse-spark-1.3 · $1.25/M input, $0.15/M cached, $4.25/M output. Unmeasured calls keep their reserved estimate.';spendSection.append(note);const wrap=document.createElement('div');wrap.style.overflowX='auto';const table=document.createElement('table');table.style.width='100%';const header=table.createTHead().insertRow();for(const label of ['Factory','Calls','Tokens in','Tokens out','Est. $','Daily budget $','Unmeasured']){const th=document.createElement('th');th.textContent=label;th.style.textAlign='left';header.append(th)}const body=table.createTBody();for(const row of data.spend){const tr=body.insertRow();for(const value of [row.repo,row.calls,row.input_tokens,row.output_tokens,(row.nano_usd/1e9).toFixed(4),(row.daily_budget_nano_usd/1e9).toFixed(2),row.unmeasured_calls]){const td=tr.insertCell();td.textContent=String(value)}}if(!data.spend.length){const p=document.createElement('p');p.textContent='No paid AI calls today.';spendSection.append(p)}wrap.append(table);spendSection.append(wrap);content.append(spendSection);for(const [key,value] of Object.entries(data)){if(!['budget','snapshot','errors','events','spark','webhooks'].includes(key))continue;const section=document.createElement('section'),h=document.createElement('h2'),pre=document.createElement('pre');h.textContent=key==='spark'?'AI activity':key;pre.textContent=JSON.stringify(value,null,2);section.append(h,pre);content.append(section)}}catch(e){status.textContent=e.message}}
-document.querySelector('#refresh').onclick=refresh;repo.onchange=refresh;
-document.querySelector('#force').onclick=async()=>{const res=await fetch('/admin/force-error',{method:'POST'});status.textContent=JSON.stringify(await res.json());};refresh();
+const status=document.querySelector('#status');
+async function refresh(){try{const res=await fetch('/admin/data');if(!res.ok)throw Error('Admin access required');const data=await res.json(),content=document.querySelector('#content');content.replaceChildren();status.textContent='Estimated AI spend today (UTC).';if(!data.spend.length){status.textContent='No paid AI calls today.';return}for(const row of data.spend){const section=document.createElement('article');section.className='spend-row';const h=document.createElement('h3');h.textContent=row.repo;const p=document.createElement('p');p.textContent=row.calls+' calls · '+row.input_tokens+' input tokens · '+row.output_tokens+' output tokens';const cost=document.createElement('p');cost.textContent='$'+(row.nano_usd/1e9).toFixed(4)+' estimated · $'+(row.daily_budget_nano_usd/1e9).toFixed(2)+' daily budget'+(row.unmeasured_calls?' · '+row.unmeasured_calls+' calls awaiting measurement':'');section.append(h,p,cost);content.append(section)}}catch(e){status.textContent=e.message}}
+document.querySelector('#refresh').onclick=refresh;refresh();
 `;

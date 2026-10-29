@@ -13,17 +13,20 @@ export function tapsRoutes(app: Hono<any>) {
   const admin = async (c: any) => configuredAdmin(c.env, (await currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url)))?.login ?? null);
   app.get("/admin/taps", async c => {
     if (!(await admin(c))) return c.json({ error: "admin login required" }, 403);
+    return c.redirect("/admin",302); // retired surface; keep the existing admin gate
     c.header("Cache-Control", "no-store");
     return c.html(TAPS_HTML);
   });
   app.get("/admin/taps/app.js", async c => {
     if (!(await admin(c))) return c.json({ error: "admin login required" }, 403);
+    return c.redirect("/admin",302); // retired surface; keep the existing admin gate
     c.header("Content-Type", "application/javascript; charset=utf-8");
     return c.body(TAPS_JS);
   });
   // ?rows=1 adds the raw rows, the export the brain eval harness replays.
   app.get("/admin/taps/data", async c => {
     if (!(await admin(c))) return c.json({ error: "admin login required" }, 403);
+    return c.redirect("/admin",302); // retired surface; keep the existing admin gate
     c.header("Cache-Control", "no-store");
     const days = Math.min(90, Math.max(1, Number(c.req.query("days")) || 7));
     const repo = c.req.query("repo") || undefined;
