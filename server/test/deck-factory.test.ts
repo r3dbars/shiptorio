@@ -598,12 +598,12 @@ describe("real runner proposals survive a deck full of passive source alerts", (
 describe("the factory learns what the player approves (docs/LEARN.md)", () => {
   type Job = Record<string, unknown>;
   /** Three plan approvals in /web, each Continued by the player, so "Approving plans in /web" is learned. */
-  async function taught() {
+  async function taught(docs = false) {
     const { issueRevision } = await import("../src/runner-job");
-    const items = [1, 2, 3, 4].map(n => ({ id: `gh-${n}`, kind: "bug" as const, source: "github_issue" as const, title: `Fix bug ${n}`, body: "A scoped fix", district: "web", state: "queued" as const, attempts: 0, updatedAt: 1 }));
+    const items = [1, 2, 3, 4].map(n => ({ id: `gh-${n}`, kind: "bug" as const, source: "github_issue" as const, title: `Fix bug ${n}`, body: "A scoped fix", district: docs ? (n % 2 ? "/" : "docs") : "web", state: "queued" as const, attempts: 0, updatedAt: 1 }));
     const approval = (n: number) => card(`approval-${n}`, { title: `Plan for bug ${n}`, kind: "build", stage: "build", itemId: `gh-${n}`, options: [{ id: "approve", label: "Approve plan", recommended: true, actions: [{ tool: "approve_runner_job", args: { jobId: `job-${n}` }, reason: "Player approves the scoped plan" }] }] });
     const f = fixture([1, 2, 3].map(approval), { items });
-    const job = async (n: number, extra: Job = {}) => f.data.set(`runnerJob:job-${n}`, { id: `job-${n}`, repo: "r3dbars/demo", itemId: `gh-${n}`, harness: "codex", allowedPaths: ["web/src/a.ts"], branch: `shiptorio/runner-${n}`, status: "awaiting_approval", approvalMoveId: `approval-${n}`,
+    const job = async (n: number, extra: Job = {}) => f.data.set(`runnerJob:job-${n}`, { id: `job-${n}`, repo: "r3dbars/demo", itemId: `gh-${n}`, harness: "codex", allowedPaths: docs ? [n % 2 ? "README.md" : "docs/setup.md"] : ["web/src/a.ts"], branch: `shiptorio/runner-${n}`, status: "awaiting_approval", approvalMoveId: `approval-${n}`,
       inputRevision: await issueRevision(`Fix bug ${n}`, JSON.stringify({ body: "A scoped fix", failure: "", scars: [] })), ...extra });
     for (const n of [1, 2, 3]) await job(n);
     await f.checkin();
@@ -647,6 +647,12 @@ describe("the factory learns what the player approves (docs/LEARN.md)", () => {
     expect(f.saved().learned).toEqual([]);
   });
 
+  it("three README/docs plans teach one permission even across root and docs triage labels", async () => {
+    const { f, fourth } = await taught(true);
+    expect(f.saved().learned?.map(l => l.key)).toEqual(["build|district:docs|approve_runner_job"]);
+    expect(await fourth()).toMatchObject({ status: "ready", approvedBy: "autonomy", allowedPaths: ["docs/setup.md"] });
+  });
+
   it("a runner reconnect auto-approves the fourth plan, takes one lease, and never merges", async () => {
     const { generateKeyPairSync } = await import("node:crypto");
     const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -678,6 +684,8 @@ describe("the factory learns what the player approves (docs/LEARN.md)", () => {
       expect(first?.lease).toBeTruthy();
       expect(f.saved().deck?.some(m => m.id === "approval-4")).toBe(false);
       expect(await f.factory.claimRunner("pair", ["codex"])).toBeNull();
+      const restarted = new Factory((f.factory as unknown as { ctx: unknown }).ctx as never, internal.env as never);
+      expect(await restarted.claimRunner("pair", ["codex"])).toBeNull();
       const stored = f.data.get("runnerJob:job-4") as Record<string, unknown>;
       expect(stored.lease).toBe(first?.lease);
       expect(f.saved().items.find(i => i.id === "gh-4")?.attempts).toBe(1);

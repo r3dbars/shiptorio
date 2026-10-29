@@ -14,6 +14,12 @@ const state = FactoryState.parse({
 test("live learned snapshot marks the fourth crate's Builder automatic without an approval card", () => {
   const view = deckView(state, { now });
   expect(view.card).toBeNull();
+  const live = deckView(state, { now, visualFlow: true });
+  expect(live.card).toBeNull();
+  expect(live.shippy).toEqual({ at: "builder", pose: "happy" });
+  expect(deckView(state, { now: now + 5000, visualFlow: true }).shippy).toEqual({ at: "builder", pose: "weld" });
+  expect(live.work).toMatchObject({ id: "gh-4", stop: "builder", badge: "#4" });
+  expect(live.stops.find(s => s.id === "builder")).toMatchObject({ automated: true, state: "auto" });
   expect(view.stops.find(s => s.id === "builder")).toMatchObject({ automated: true, state: "auto", items: [{ id: "gh-4", title: "Document the README checks" }] });
   expect(view.shippy).toEqual({ at: "builder", pose: "happy" });
   expect(deckView(state, { now: now + 5000 }).shippy).toEqual({ at: "builder", pose: "weld" });
