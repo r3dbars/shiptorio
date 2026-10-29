@@ -12,7 +12,7 @@ set -euo pipefail
 BRANCH="${DECK_BRANCH:-dev}"
 PORT="${DECK_PORT:-5191}"
 DIR="${DECK_DIR:-$HOME/shiptorio-deck}"
-PAGE="/deck.html?px=1"  # px=1: localhost defaults the pixel look off, Justin wants it on
+PAGE="/deck.html"  # the pixel deck is the default now (?px=0 = old painted look)
 
 say() { printf '\033[1;33m▸ %s\033[0m\n' "$*"; }
 

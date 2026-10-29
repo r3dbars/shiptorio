@@ -74,6 +74,13 @@ It never ends. There is always a bottleneck, always something to optimize, alway
 Start with code: issues, errors, PRs, the repo loop. Then grow into the rest of the business loop:
 marketing, customer acquisition, customer retention. Same game, more districts.
 
+## The game surface: the 2D pixel deck (Justin, 2026-10-29)
+
+"I want this to be the permanent one going forward." The 2D pixel-art deck in `web/src/deck2d/` is THE game
+surface, on by default everywhere (`?px=0` still shows the old painted look; the 3D shaft is parked). Claude
+threads and Codex iterate on this same deck, not on copies or variants. The rules for working on it are in
+[`docs/context/pixel-deck.md`](context/pixel-deck.md).
+
 ## Current focus: a great player experience (Justin, 2026-10-27 10:50)
 
 "Focus less on the judges and just focus more on making this web app a great experience." The game itself is the
