@@ -63,7 +63,7 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
 } {
   const o = {
     size: 90, speed: 380, standDx: 150, entryX: STOP_X.repo - 150,
-    floorAt: (_x: number) => FLOOR_Y + 22, // just in front of the belt, so he never walks through a machine
+    floorAt: (_x: number) => FLOOR_Y + (pixelOn() ? 38 : 22), // just in front of the belt, so he never walks through a machine (pixel mode: on the wider front floor)
     reducedMotion: globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false,
     pixel: pixelOn(),
     ...options,
