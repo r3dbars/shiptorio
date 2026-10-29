@@ -126,8 +126,9 @@ try {
         await page.locator('[data-deck-ready="1"]').waitFor({ timeout: 30000 });
         await capture("installed-fixture");
       } else if (cardState && /^Connect GitHub/.test(cardState.label)) {
+        if (!await activateFixtureCard(card, cardState)) return;
         recordCard(cardState.label, "connect-github");
-        await Promise.all([page.waitForURL(current => isFixtureInstallPage(current, url.origin), { timeout: 30000, waitUntil: "domcontentloaded" }), activateFixtureCard(card, cardState)]);
+        await page.waitForURL(current => isFixtureInstallPage(current, url.origin), { timeout: 30000, waitUntil: "domcontentloaded" });
         await capture("github-install");
       } else if (await visible(play)) { await play.first().click(); await capture("play"); }
       else if (await visible(repo)) {
