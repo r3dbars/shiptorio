@@ -39,6 +39,33 @@ function fixture(items: Item[] = [], extraEnv: Record<string, unknown> = {}) {
 
 }
 
+it("runner polling never holds the exclusive lock while preparing or refreshing player cards", async () => {
+  const f = fixture();
+  f.data.set("runnerPair", "pair");
+  const internal = f.factory as unknown as {
+    ctx: { blockConcurrencyWhile<T>(fn: () => Promise<T>): Promise<T> };
+    offerRunnerPlan(): Promise<void>; refreshDecisions(): Promise<void>;
+  };
+  const original = internal.ctx.blockConcurrencyWhile.bind(internal.ctx);
+  let locked = false, offers = 0, refreshes = 0;
+  internal.ctx.blockConcurrencyWhile = fn => original(async () => {
+    locked = true; try { return await fn(); } finally { locked = false; }
+  });
+  internal.offerRunnerPlan = async () => { expect(locked).toBe(false); offers++; };
+  internal.refreshDecisions = async () => { expect(locked).toBe(false); refreshes++; };
+  expect(await f.factory.claimRunner("pair", ["codex"])).toBeNull();
+  expect(offers).toBe(1);
+  expect(refreshes).toBeGreaterThan(0);
+  expect(f.data.get("runnerPair")).toBe("pair");
+});
+
+it("starting an inbox issue keeps one PR on the line and never starts another build behind it", async () => {
+  const f = fixture([{ id:'gh-16', title:'README', kind:'cleanup', source:'github_issue', district:'/', state:'inspecting', attempts:1, updatedAt:1, prNumber:27 }]);
+  expect(await f.factory.startInboxIssue(28, 'r3dbars')).toEqual({ waitingFor:27 });
+  expect([...f.data.keys()].some(k=>k.startsWith('runnerJob:'))).toBe(false);
+  for (const n of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) await expect(f.factory.startInboxIssue(n, 'r3dbars')).rejects.toThrow('Invalid issue');
+});
+
 // Observe the real patch/scheduler boundaries without replacing their effects.
 function inventoryFixture() {
   const f = fixture();

@@ -25,7 +25,7 @@ async function fixture() {
     FACTORY: { idFromName: (name: string) => name, get: (name: string) => {
       if (name.startsWith("security:")) return { securityLimit: async () => ({ allowed: true, retryAfter: 0 }) };
       calls++;
-      return { runnerJobs: async () => [], ensure: async () => {}, pairRunner: async () => "pair", recordRunnerGrant: async () => {}, revokeRunner: async () => {}, isRunnerPaired: async () => true };
+      return { startInboxIssue: async () => ({ waitingFor: 27 }), runnerJobs: async () => [], ensure: async () => {}, pairRunner: async () => "pair", recordRunnerGrant: async () => {}, revokeRunner: async () => {}, isRunnerPaired: async () => true };
     } },
   };
   const cookie = `${await signedInCookie(env, "reader", ["owner/repo"], 42)}; ${(await makeSessionCookie(`${secret}:${password}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=")}`;
@@ -48,7 +48,7 @@ test("read and triage can view jobs but cannot pair, revoke, enqueue or manage c
     f.permission(role); f.grants.clear();
     expect((await f.request("/api/repos/owner/repo/runner/jobs")).status).toBe(200);
     const before = f.calls();
-    for (const path of ["/api/repos/owner/repo/runner/pair", "/api/repos/owner/repo/runner/revoke", "/api/repos/owner/repo/runner/jobs", "/connect/sentry?repo=owner/repo", "/connect/posthog?repo=owner/repo", "/connect/support?repo=owner/repo"]) {
+    for (const path of ["/api/repos/owner/repo/runner/pair", "/api/repos/owner/repo/runner/revoke", "/api/repos/owner/repo/runner/jobs", "/api/repos/owner/repo/issues/16/start", "/connect/sentry?repo=owner/repo", "/connect/posthog?repo=owner/repo", "/connect/support?repo=owner/repo"]) {
       expect((await f.request(path, "POST", "{}")).status).toBe(403);
     }
     expect((await f.request("/connect/support?repo=owner/repo")).status).toBe(403);
@@ -91,3 +91,16 @@ test("runner grants and existing sockets lose mutation authority after downgrade
   expect(closed).toBe(3);
   expect((data.get("state") as typeof state).goal).toBeUndefined();
 }, 30000);
+
+
+test("starting an inbox issue requires a same-origin writer and reports the existing PR", async () => {
+  const f = await fixture(); f.permission("write");
+  const response = await f.request("/api/repos/owner/repo/issues/16/start", "POST");
+  expect(response.status).toBe(409);
+  expect(await response.json()).toEqual({error:"Finish PR #27 before starting another issue."});
+  const before = f.calls();
+  const forged = await app.fetch(new Request("https://shiptorio.com/api/repos/owner/repo/issues/16/start", {method:"POST",headers:{cookie:f.cookie,origin:"https://unrelated.example"}}), f.env as never);
+  expect(forged.status).toBe(403);
+  expect((await f.request("/api/repos/owner/repo/issues/0/start", "POST")).status).toBe(400);
+  expect(f.calls()).toBe(before);
+},30000);
