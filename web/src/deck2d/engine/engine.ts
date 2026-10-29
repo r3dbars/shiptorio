@@ -312,10 +312,17 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     }
     cx.globalAlpha = 1;
   }
-  function belt() {
+  function belt(v: DeckView) {
     const segs = islandUp ? SEGS : SEGS.slice(0, 1);
     if (px) {
-      for (const g of segs) pd.beltRun(cx, g.ax, g.ay, g.bx, g.by, islandUp ? g.len : Math.min(g.len, deckEnd() - 100 - g.ax), t, SPEED * 0.35);
+      const blocked = v.stops.filter((s) => s.built && (s.state === "jammed" || s.id === v.jam)).map((s) => {
+        const i = STOPS.indexOf(s.id), x = STOP_X[s.id];
+        const left = i > 0 ? (STOP_X[STOPS[i - 1]] + x) / 2 : x - 200;
+        const right = i < STOPS.length - 1 ? (x + STOP_X[STOPS[i + 1]]) / 2 : x + 200;
+        return { left: Math.min(left, x - s.items.length * GAP - 60), right };
+      });
+      const blockedAt = (x: number) => blocked.some((zone) => x >= zone.left && x <= zone.right);
+      for (const g of segs) pd.beltRun(cx, g.ax, g.ay, g.bx, g.by, islandUp ? g.len : Math.min(g.len, deckEnd() - 100 - g.ax), t, SPEED * 0.35, blockedAt);
       return;
     }
     const b = img("belt"); if (!b) return;
@@ -444,7 +451,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     else if (px) cx.drawImage(boilerFrame(t), snap(BOILER.x - (BOILER_W * ART_PX) / 2), snap(BOILER.base - BOILER_H * ART_PX), BOILER_W * ART_PX, BOILER_H * ART_PX);
     else put("boiler-on", 112, 182, 168);
     if (!owned.has("orb")) glow(ORB.x, ORB.y, 100, "120,240,255", 0.32, true); // steady; nothing ambient pulses
-    belt();
+    belt(v);
     slot("line");
     rocketDraw();
     crates.forEach(crate);

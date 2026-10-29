@@ -14,8 +14,8 @@ const BELT_H = 12;
 const SEG = 14; // one belt plate, art px
 /** One belt run from (ax, ay) to (bx, by) in world units, plates moving right. Slopes become 1-px stairs.
  * 3/4 view like Justin's mockups, top to bottom: soot, lit brass back rail, a 6-row dark track of riveted plates with
- * bold brass chevrons, the brass front lip, the riveted iron front face, soot. */
-export function beltRun(cx: CanvasRenderingContext2D, ax: number, ay: number, bx: number, by: number, len: number, t: number, speed: number) {
+ * green running chevrons (red in a blocked bay), status-lit lips, iron front face, soot. */
+export function beltRun(cx: CanvasRenderingContext2D, ax: number, ay: number, bx: number, by: number, len: number, t: number, speed: number, blockedAt: (worldX: number) => boolean = () => false) {
   const x0 = g(ax), x1 = g(ax + (bx - ax) * Math.min(1, len / Math.hypot(bx - ax, by - ay)));
   const shift = Math.floor((t * speed) / P);
   // cast shadow on the floor first (light layer, sun from the upper right: it falls down-left)
@@ -25,23 +25,24 @@ export function beltRun(cx: CanvasRenderingContext2D, ax: number, ay: number, bx
   for (let x = x0; x < x1; x++) {
     const f = (x - x0) / Math.max(1, g(bx) - x0), y = g(ay + (by - ay) * f) - Math.floor(BELT_H / 2);
     const end = x === x0 || x === x1 - 1, post = x % 28 === 0;
+    const blocked = blockedAt(x * P), signal = blocked ? C.jam : C.ok;
     px(cx, x, y, 1, 1, C.soot[0]);
     // back rail: brass, lit on top, with a post every 28 px
-    px(cx, x, y + 1, 1, 1, end || post ? C.brass[5] : C.brass[3]);
+    px(cx, x, y + 1, 1, 1, end || post ? signal[2] : signal[1]);
     // the track: 6 rows of dark iron plate, lighter at the back (it faces the sun), darker at the front
     const k = ((x - shift) % SEG + SEG) % SEG; // position inside the moving plate
-    const tr = [C.iron[2], C.iron[2], C.iron[1], C.iron[1], C.iron[1], C.iron[0]];
+    const tr = blocked ? [C.jam[0], C.jam[0], C.iron[1], C.iron[1], C.jam[0], C.iron[0]] : [C.iron[2], C.iron[2], C.iron[1], C.iron[1], C.iron[1], C.iron[0]];
     for (let r = 0; r < 6; r++) px(cx, x, y + 2 + r, 1, 1, tr[r]);
     if (k === 0) { px(cx, x, y + 2, 1, 6, C.soot[0]); } // plate seam
     if (k === 1) { px(cx, x, y + 2, 1, 6, C.iron[3]); px(cx, x, y + 3, 1, 1, C.brass[4]); px(cx, x, y + 6, 1, 1, C.brass[2]); } // lit plate edge + rivets
-    // two bold chevrons per plate, 4 rows tall: ">>" in brass, lit on top, shaded below
+    // Two moving status arrows per plate: both states keep flowing to the right.
     for (const c0 of [4, 9]) {
       const d = k - c0;
-      if (d === 0 || d === 1) { px(cx, x, y + 3, 1, 1, C.sun[5]); px(cx, x, y + 6, 1, 1, C.brass[2]); }
-      if (d === 1 || d === 2) { px(cx, x, y + 4, 1, 1, C.sun[6]); px(cx, x, y + 5, 1, 1, C.brass[3]); }
+      if (d === 0 || d === 1) { px(cx, x, y + 3, 1, 1, signal[2]); px(cx, x, y + 6, 1, 1, signal[1]); }
+      if (d === 1 || d === 2) { px(cx, x, y + 4, 1, 1, signal[2]); px(cx, x, y + 5, 1, 1, signal[1]); }
     }
     // front lip, brass, then the iron front face with rivets and a rust run under some of them
-    px(cx, x, y + 8, 1, 1, end ? C.brass[4] : C.brass[2]);
+    px(cx, x, y + 8, 1, 1, end ? signal[2] : signal[0]);
     const rv = x % 7 === 3;
     px(cx, x, y + 9, 1, 1, rv ? C.brass[4] : C.iron[1]);
     px(cx, x, y + 10, 1, 1, rv && x % 21 === 3 ? C.copper[0] : C.iron[0]);
