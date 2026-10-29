@@ -1,12 +1,14 @@
 // props/ (thread "Push the 2D deck art further"): in pixel mode (?px=1) the deck itself is drawn in code: the hull
-// (hull.ts: floor, rails, lanterns, skirt, rocks, the core orb, the vents) plus the moving bits here: slow steam out
-// of the two vents and the twin boiler (bakeoff/boiler2d.ts) on the back of the floor. The platform's width follows
+// (hull.ts: floor, rails, lanterns; underside.ts: rim band, boulders, crystals, the engine at the middle) plus the
+// moving bits here: the engine core's light, slow light in the crystals, a few loose stones drifting under the rock
+// (same as the launch island's) and the twin boiler (bakeoff/boiler2d.ts) on the back of the floor. The platform's width follows
 // view.deck (small / medium / large); while it grows, the hull is re-rendered a column at a time out to the new edge.
 // ?px=0 keeps the old picture deck: this layer then replaces nothing and draws nothing.
 import { ART_PX, DECK_DX, HULL, PALETTE, snap, type CreateLayer, type DeckLayer, type DeckView, type LayerSlot } from "../contract";
 import { pixelOn } from "../../flags";
 import { BOILER_H, BOILER_W, boilerFrame } from "../../bakeoff/boiler2d";
-import { A, PAD, TOP, VENT_MOUTH, hullCanvas, hullHighlights, orbFrame, orbX, rockBottom, ventXs } from "./hull";
+import { CORE, PAD, TOP, coreAt, coreLight, hullCanvas, hullHighlights, rockBottom } from "./hull";
+import { stone } from "./underside";
 
 type Size = "small" | "medium" | "large";
 /** Built width per size, world units: each size ends just past its last station (small: Builder, medium: Review);
@@ -15,7 +17,8 @@ const WIDTH: Record<Size, number> = DECK_DX ? { small: 1700, medium: 2450, large
 const NEXT: Record<Size, Size> = { small: "medium", medium: "large", large: "large" };
 /** The twin boiler stands on the back of the floor behind Repo and Planner (same spot as engine's BOILER). */
 const BOILER = { x: DECK_DX ? 280 : 240, base: 182 };
-const STEAM = [PALETTE.iron[4], PALETTE.haze[2], PALETTE.haze[3], PALETTE.white[0], PALETTE.white[0]];
+/** Loose stones: [fraction along the deck, size, art px below the rock] */
+const STONES = [[0.05, 4, 9], [0.13, 5, 18], [0.21, 3, 8], [0.3, 4, 15], [0.39, 3, 10], [0.61, 4, 11], [0.68, 3, 18], [0.76, 5, 10], [0.85, 3, 14], [0.93, 4, 9]] as const;
 const COL = 16; // art px: the hull grows one plate-ish column at a time
 
 export const createLayer: CreateLayer = () => {
@@ -31,25 +34,7 @@ export const createLayer: CreateLayer = () => {
     return Math.floor(((a + (b - a) * k) / ART_PX) / COL) * COL || a / ART_PX;
   }
 
-  function steam(ctx: CanvasRenderingContext2D, w: number) {
-    // slow puffs out of each mouth, sinking and drifting a little left, swelling and fraying as they go (no fades)
-    const P = ART_PX;
-    ventXs(w).forEach((vx, i) => {
-      for (let k = 0; k < 4; k++) {
-        const q = (t / 5.5 + k / 4 + i * 0.37) % 1, r = 3 + q * 6;
-        const cx = vx - 0.5 - q * 4 + Math.sin(q * 6 + i) * 1.2, cy = VENT_MOUTH + q * 30;
-        for (let y = Math.floor(cy - r); y <= cy + r; y++) for (let x = Math.floor(cx - r); x <= cx + r; x++) {
-          const dx = (x + 0.5 - cx) / r, dy = (y + 0.5 - cy) / r, d = dx * dx + dy * dy;
-          if (d > 0.85 + 0.15 * Math.sin(Math.atan2(dy, dx) * 3 + k)) continue;
-          if (q > 0.65 && d > 0.35 && ((x + y) & 1)) continue; // older puffs fray to a checker at the edge, then they're gone
-          if (q > 0.88 && ((x + y) & 1)) continue;
-          const v = 0.55 + 0.35 * (dx * 0.5 - dy * 0.6) - d * 0.15 - q * 0.2;
-          ctx.fillStyle = STEAM[Math.max(0, Math.min(4, Math.round(v * 4)))];
-          ctx.fillRect(x * P, y * P, P, P);
-        }
-      }
-    });
-  }
+  const stones = STONES.map(([, size], i) => stone(size, i));
 
   const layer: DeckLayer = {
     replaces: ["deck", "boiler", "orb"],
@@ -70,19 +55,15 @@ export const createLayer: CreateLayer = () => {
         ctx.fillStyle = PALETTE.energy[light];
         ctx.fillRect(seam.x * ART_PX, seam.y * ART_PX, ART_PX, ART_PX);
       }
-      // A few detached slivers hover beyond the stepped cliffs, like the launch island.
-      for (let i = 0; i < 12; i++) {
-        const x = Math.round(w * (i + 0.5) / 12 + (still ? 0 : Math.sin(t * 0.35 + i) * 2));
-        if (Math.abs(x - orbX(w)) < 34) continue;
-        const y = Math.round(rockBottom(x, w) + 8 + i % 3 * 4 + (still ? 0 : Math.sin(t * 0.5 + i * 2) * 2));
-        ctx.fillStyle = PALETTE.iron[0]; ctx.fillRect(x * ART_PX, y * ART_PX, 4 * ART_PX, 5 * ART_PX);
-        ctx.fillStyle = PALETTE.iron[2]; ctx.fillRect((x + 1) * ART_PX, (y - 1) * ART_PX, 2 * ART_PX, 4 * ART_PX);
-        ctx.fillStyle = PALETTE.steel[1]; ctx.fillRect((x + 3) * ART_PX, (y + 1) * ART_PX, ART_PX, 2 * ART_PX);
-      }
+      // A few loose stones float just under the rock, bobbing a px or two, like the launch island's.
+      STONES.forEach(([at, , below], i) => {
+        const im = stones[i], x = Math.round(w * at), bob = still ? 0 : Math.round(Math.sin(t * 0.45 + i * 1.7) * 1.5);
+        const y = rockBottom(x, w) + below + bob;
+        ctx.drawImage(im, (x - (im.width >> 1)) * ART_PX, (y - (im.height >> 1)) * ART_PX, im.width * ART_PX, im.height * ART_PX);
+      });
       const phase = still ? 3 : Math.floor(t * (blocked ? 4 : 2)) % 8;
-      const core = orbFrame(blocked, phase);
-      ctx.drawImage(core, snap((orbX(w) - 38) * ART_PX), (A.skirt - 2) * ART_PX, core.width * ART_PX, core.height * ART_PX);
-      steam(ctx, w);
+      const core = coreLight(blocked, phase), at = coreAt(w);
+      ctx.drawImage(core, (at.x - CORE / 2) * ART_PX, (at.y - CORE / 2) * ART_PX, CORE * ART_PX, CORE * ART_PX);
       const b = boilerFrame(t);
       ctx.drawImage(b, snap(BOILER.x - (BOILER_W * ART_PX) / 2), snap(BOILER.base - BOILER_H * ART_PX), BOILER_W * ART_PX, BOILER_H * ART_PX);
       ctx.imageSmoothingEnabled = was;
