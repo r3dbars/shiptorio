@@ -110,8 +110,7 @@ launch   22      17 and up        rises after "checks"     (step "launch")
 - `STEP_FLOOR[step]`: the floor a journey step's site sits on. `floorsFor(next)`: what stands when the player is on
   step `next` (`'look'`/null = all). `floorToBuild(prev, next)`: the floor to raise before `next` plays, or null.
 - `buildFloor(I, id, opts)` → `FloorRun` `{ update(dt) → done?, finish(), cancel(), done: Promise, progress }`, the
-  same shape as construct.ts. ~6 s; reduced motion 1 s fade. Dev page: `web/floorbuild.html?floor=checks` (`&at=3.2` holds
-  a moment for shots). Its props (crane, girders, scaffold, welders) are one `floorbuild:<id>` group, 18 draw calls, gone
+  same shape as construct.ts. ~6 s; reduced motion 1 s fade. Its props (crane, girders, scaffold, welders) are one `floorbuild:<id>` group, 18 draw calls, gone
   at the end.
 
 ## Light + look

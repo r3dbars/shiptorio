@@ -2,7 +2,7 @@ import { ART_PX, STOP_X } from "../contract";
 import { IDX } from "../stations/palette";
 import { Px, shift } from "../stations/px";
 import { GOLD, noise, tone, type Ramp } from "../stations/shade";
-import { CU, tube } from "../../bakeoff/boiler2d";
+import { CU, tube } from "./boiler2d";
 
 // Back-floor dressing (hub ask, 2026-10-28): the deck behind the line is a working floor, not an empty plate. A copper
 // main runs out of the boiler along the back rail and drops into every machine; one fat feed pipe goes from the boiler
