@@ -1,4 +1,5 @@
 // Dev preview for the iron card: deals a little scripted deck, three trust dots toward automatic, then runs dry.
+// ?card=<id> shows just one of the real card kinds below (story, flow, setup, live) so every kind can be shot side by side.
 import type { CardView } from "../contract";
 import { mountCard } from "./card";
 
@@ -7,14 +8,32 @@ const DECK = (): CardView[] => [
   { id: "a", title: "Approve fix for checkout bug?", dots: { have: 0, need: 3 }, line: "Approve 2 more like this and it's automatic.", stop: "review" },
   { id: "b", title: "Approve fix for login typo?", dots: { have: 1, need: 3 }, line: "Approve 1 more like this and it's automatic.", stop: "review" },
   { id: "c", title: "Approve fix for broken link?", dots: { have: 2, need: 3 }, line: "Approve this one and it's automatic.", stop: "review" },
-  { id: "d", title: "Connect your error tracker?", dots: null, line: "Then the factory sees bugs on its own.", stop: "repo", yes: "Connect", no: "Not now" } as CardView,
-  { id: "e", title: "Ship the checkout fix?", dots: null, line: "This merges real code. Hold to ship.", stop: "launch", yes: "Ship it", hold: true } as CardView,
+  { id: "d", title: "Connect your error tracker?", dots: null, line: "Then the factory sees bugs on its own.", stop: "repo", yes: "Connect", no: "Not now" },
+  { id: "e", title: "Ship the checkout fix?", dots: null, line: "This merges real code. Hold to ship.", stop: "launch", yes: "Ship it", hold: true },
 ];
-let deck = DECK();
+// One of each kind the deck really deals, with the longest words those kinds use (story/, data/view.ts, data/connections.ts).
+const KINDS: Record<string, CardView> = {
+  story: DECK()[0],
+  "story-end": { id: "story-end", title: "That's your repo. Want to see the real one?", dots: null, line: "Connect GitHub and this deck runs on your real code.", stop: "launch", yes: "See my repo", no: "Replay" },
+  flow: { id: "flow", title: "Plan for #42: Checkout total ignores the coupon code", dots: { have: 1, need: 3 }, line: "Shippy: The total skips the discount when the cart has more than one item. Files: web/src/cart.ts Approve 2 more like this and it's automatic.", stop: "planner", yes: "Start build", no: "Later", guide: "shippy" },
+  launch: { id: "launch", title: "Ship the checkout fix?", dots: null, line: "Shippy: Checks passed. This merges real code.", stop: "launch", yes: "Ship it", no: "Later", hold: true },
+  "setup-power": { id: "connection-setup-power", title: "Connect your Codex engine", dots: null, line: "Shippy: Connect the local runner to use your Codex subscription. Connecting never starts a coding job.", stop: "builder", yes: "Set up Codex", no: "Close", setup: true },
+  "setup-copy": { id: "connection-setup-copy", title: "Connect your Codex subscription", dots: null, line: "Copy this into Terminal: curl -fsSL https://shiptorio.dev/runner/install.sh | sh -s -- --join 7f3a9c2e1b4d5f60a8b7c6d5e4f3a2b1", stop: "builder", yes: "Copy setup", no: "Check", setup: true },
+  "setup-busy": { id: "connection-setup-busy", title: "Finding your repositories…", dots: null, line: "This should only take a moment.", stop: "repo", yes: "Please wait…", no: "Close", setup: true },
+  "setup-issue": { id: "connection-setup-issue", title: "#128: Search results flicker when you type fast on a slow phone", dots: null, line: "r3dbars/testing · 1 of 12. Typing quickly in the search box makes the list jump between old and new results before it settles… Start issue prepares a plan. Codex waits for your approval.", stop: "repo", yes: "Start issue", no: "Next", setup: true },
+  signin: { id: "connection-signin", title: "Sign in to your factory", dots: null, line: "Sign in with GitHub to choose your repository. No coding starts yet.", stop: "repo", yes: "Sign in", no: "Close", setup: true },
+  live: { id: "live", title: "Approve fix for checkout bug?", dots: { have: 2, need: 3 }, line: "Approve this one and it's automatic.", stop: "review", yes: "Continue", no: "Later" },
+};
+const only = new URLSearchParams(location.search).get("card");
+let deck = only === "empty" ? [] : only && KINDS[only] ? [KINDS[only]] : DECK();
 const say = (s: string) => (log.textContent = s);
 const card = mountCard(document.body, {
   onApprove(id) { say(`approved ${id}`); deck = deck.filter((c) => c.id !== id); setTimeout(() => card.show(deck[0] ?? null), 120); },
   onLater(id) { say(`later ${id}`); deck = deck.filter((c) => c.id !== id); setTimeout(() => card.show(deck[0] ?? null), 120); },
 });
-card.show(deck[0] ?? null);
+if (only === "empty") {
+  // "All caught up" only shows right after an answer, so answer a throwaway card first
+  card.show(KINDS.story);
+  setTimeout(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft" })), 50);
+} else card.show(deck[0] ?? null);
 document.getElementById("again")!.addEventListener("click", () => { deck = DECK(); card.show(deck[0]); });
