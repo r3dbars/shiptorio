@@ -610,12 +610,12 @@ describe("the factory learns what the player approves (docs/LEARN.md)", () => {
     const meter = (id: string) => f.saved().deck?.find(m => m.id === id)?.learn;
     const internal = f.factory as unknown as { openMoves: Move[] | null; state: FactoryState; env: { CACHE: unknown }; runLearned(): Promise<void>; broadcastQueue: Promise<void> };
     /** A fourth plan arrives, then one tick of learned work runs. */
-    const fourth = async (extra: Job = {}, item: Record<string, unknown> = {}) => {
+    const fourth = async (extra: Job = {}, item: Record<string, unknown> = {}, waitForRunner = false) => {
       await job(4, extra);
       if (Object.keys(item).length) internal.state.items = internal.state.items.map(i => i.id === "gh-4" ? { ...i, ...item } : i);
       f.data.set("openMoves", [...(f.data.get("openMoves") as Move[]), approval(4)]);
       internal.openMoves = null;
-      await internal.runLearned();
+      if (!waitForRunner) await internal.runLearned();
       await internal.broadcastQueue;
       return f.data.get("runnerJob:job-4") as Job;
     };
@@ -645,6 +645,54 @@ describe("the factory learns what the player approves (docs/LEARN.md)", () => {
     // Ask me again: the dots come back.
     await f.send({ type: "unlearn", key: "build|district:web|approve_runner_job" });
     expect(f.saved().learned).toEqual([]);
+  });
+
+  it("a runner reconnect auto-approves the fourth plan, takes one lease, and never merges", async () => {
+    const { generateKeyPairSync } = await import("node:crypto");
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const { f, fourth } = await taught();
+    await fourth({ runAccount: "test-player", baseSha: "a".repeat(40), baseBranch: "main" }, {}, true);
+    for (const n of [1, 2, 3]) {
+      const job = f.data.get(`runnerJob:job-${n}`) as Record<string, unknown>;
+      f.data.set(`runnerJob:job-${n}`, { ...job, status: "completed" });
+    }
+    f.data.set("runnerPair", "pair");
+    const internal = f.factory as unknown as { env: Record<string, any> };
+    const previousDB = internal.env.DB;
+    internal.env = credentialEnv({ ...internal.env, DB: { prepare(sql: string) {
+      if (sql.includes("card_taps")) return previousDB.prepare(sql);
+      return { bind: () => ({ first: async () => ({ token_version: 0, status: "active", installation_id: 1, id: 1, login: "test-player", user_id: 1, count: 1, enabled: 1, runs_daily: 20 }), all: async () => ({ results: [] }), run: async () => ({ success: true }) }) };
+    } } });
+    internal.env.GITHUB_APP_ID = "learned-runner-test";
+    internal.env.GITHUB_APP_PRIVATE_KEY = privateKey.export({ format: "pem", type: "pkcs8" }).toString();
+    const previousFetch = globalThis.fetch;
+    const writes: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input); if (init?.method === "POST") writes.push(url);
+      if (url.includes("/access_tokens")) return Response.json({ token: "fixture-installation-token", expires_at: new Date(Date.now() + 3600000).toISOString() });
+      throw new Error(`Unexpected learned dispatch request ${url}`);
+    }) as typeof fetch;
+    try {
+      const first = await f.factory.claimRunner("pair", ["codex"]);
+      expect(first).toMatchObject({ id: "job-4", status: "running", approvedBy: "autonomy", allowedPaths: ["web/src/a.ts"] });
+      expect(first?.lease).toBeTruthy();
+      expect(f.saved().deck?.some(m => m.id === "approval-4")).toBe(false);
+      expect(await f.factory.claimRunner("pair", ["codex"])).toBeNull();
+      const stored = f.data.get("runnerJob:job-4") as Record<string, unknown>;
+      expect(stored.lease).toBe(first?.lease);
+      expect(f.saved().items.find(i => i.id === "gh-4")?.attempts).toBe(1);
+      expect(writes.every(url => url.includes("/access_tokens"))).toBe(true);
+    } finally { globalThis.fetch = previousFetch; }
+  });
+
+  it("a different scope still asks, and forgetting restores the next approval card", async () => {
+    const other = await taught();
+    expect(await other.fourth({}, { district: "api" })).toMatchObject({ status: "awaiting_approval" });
+    const reset = await taught();
+    await reset.f.send({ type: "unlearn", key: "build|district:web|approve_runner_job" });
+    expect(await reset.fourth()).toMatchObject({ status: "awaiting_approval" });
+    await reset.f.checkin();
+    expect(reset.f.saved().deck?.some(m => m.id === "approval-4")).toBe(true);
   });
 
   for (const [name, job, item] of [

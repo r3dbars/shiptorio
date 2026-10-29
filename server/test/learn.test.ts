@@ -87,3 +87,26 @@ describe("learning what the player approves", () => {
     expect(dismissNote(card("plan_runner_job"), scope)).toContain("try a smaller or different version");
   });
 });
+
+it("README and docs-only approvals share a reviewed scope; code and mixed changes do not", async () => {
+  const { learnScope } = await import("../src/learn");
+  const c = card("approve_runner_job");
+  const scopeFor = (files: string[]) => learnScope(c, "district:/", [{ approvalMoveId: c.id, allowedPaths: files }]);
+  expect(scopeFor(["README.md"])).toBe("district:docs");
+  expect(scopeFor(["docs/setup.md", "docs/guide.rst"])).toBe("district:docs");
+  expect(scopeFor(["README.md", "package.json"])).toBe("district:/");
+  expect(scopeFor(["docs/worker.ts"])).toBe("district:/");
+  expect(scopeFor(["docs/../server/secrets.md"])).toBe("district:/");
+  expect(scopeFor([])).toBe("district:/");
+  expect(learnScope(card("plan_runner_job"), "district:/", [{ approvalMoveId: c.id, allowedPaths: ["README.md"] }])).toBe("district:/");
+});
+
+it("resetting a learned class revokes automation as well as its streak", () => {
+  const book = emptyDeckBook(), c = card("approve_runner_job"), key = learnKey(c, scope);
+  for (let n = 0; n < 3; n++) learnFromYes(book, c, scope, n, true, "justin");
+  noteAutoRun(book, "gh-7", key);
+  resetLearn(book, "build", scope);
+  expect(isLearned(book, key)).toBe(false);
+  expect(book.autoRuns).toEqual([]);
+  expect(learnMeter(book, c, scope, true)).toBeUndefined();
+});
