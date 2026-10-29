@@ -19,3 +19,7 @@ Removed only symbols with no runtime imports, calls or namespace consumers anywh
 Before is the parent commit; after is the cleanup. The expected result is no visible change. Both 1280×720 and 390×844 are captured for the deck, the old `?px=0` UI, and the judge welcome/running views. Deck/px0 use `scripts/shots/deck.mjs`; the judge capture additionally clicks its existing Play button before waiting for its canvas. Browser reports are beside the screenshots. These local fixtures make no live jobs or writes.
 
 Same-base builds (parent `e21ad197`) reduce emitted CSS from 182,268 to 179,503 bytes (41,029 to 40,620 gzip). Emitted JS falls by 12 bytes; the removed widgets were already tree-shaken, so initial JS remains 767,450 gzip bytes. Full check: 1,891 pass, 2 existing platform skips, 0 fail. No new tests were needed for unreachable code removal; the existing route, simulator and UI tests remain green.
+
+## Integration with the new card style
+
+After PR #654 merged (`85ed87db`), this branch was rebased and both deck viewports were captured again in `after-card-654/`. The title spacing, desktop width, button ellipsis and removed fallback styles remain exactly as that PR supplies them. This cleanup does not modify any `deck2d` source or stylesheet.
