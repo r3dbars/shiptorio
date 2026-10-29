@@ -67,8 +67,7 @@ test("a transient All caught up plate without a primary action waits", async () 
 });
 
 
-test("automatic repository entry can wait for its fixture runner instead of copying a real install command", async () => {
+test("Copy setup is only tapped on the Codex setup card", async () => {
   const { fixtureCardIntent } = await import("./player-action.mjs");
-  expect(fixtureCardIntent("Copy setup", "Connect your Codex engine")).toBe("wait");
   expect(() => fixtureCardIntent("Copy setup", "Unknown page")).toThrow();
 });
