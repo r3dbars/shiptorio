@@ -18,6 +18,8 @@ Session cookies and preview-form proofs now reuse the existing bounded, isolate-
 
 ## Hosted tester playthrough fixes (Codex, 2026-10-28)
 
+- 2026-10-29 (#48 follow-up): player bot waits for the isolated staging install redirect and completed install navigation, so it cannot race the provider form or cancel its POST.
+
 - 2026-10-29 Codex (`codex/ci-demo-reliability`, #48): audit of promotion/nightly failures, current-deck player bot coverage, and a strict postdeploy guest-deck smoke. No product logic or production promotion changes; final same-head full-suite runs remain required before readiness.
 
 The hosted test-newbie run observed a real factory-socket launched transition and PR #7 merged inside the isolated fixture, but failed on the newly enabled overview's 403 and a stale button wait after Launch. Allow only the signed tester's read-only overview through the existing private fixture; production, mutations and repo overrides stay denied. The bot now ends an outstanding action when its authoritative Launch transition arrives; earlier action failures still fail. Focused boundary/action tests pass; full check, dev CI and a fresh hosted playthrough remain required. This is fixture proof, not a real GitHub/Codex ship.
