@@ -13,6 +13,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { chromium, devices } from '@playwright/test';
 
+const CITY = process.env.CITY_MOCKUP === '1';
 const PATH = process.env.DECK_PATH || '/deck.html?seed=1';
 const CLIP_S = process.env.CLIP ? (Number(process.env.CLIP) > 1 ? Number(process.env.CLIP) : 30) : 0;
 const VIEWS = [
@@ -97,7 +98,7 @@ async function run(browser, base, view) {
   await mkdir(dir, { recursive: true });
   const context = await browser.newContext(view.options);
   const page = await context.newPage();
-  const clip = CLIP_S ? await startClip(context, page, dir) : null;
+  let clip = !CITY && CLIP_S ? await startClip(context, page, dir) : null;
   const errors = [];
   const apiMisses = new Set();
   // Plain `vite` has no worker behind /api, so those misses are expected; set STRICT=1 to count them.
@@ -111,14 +112,34 @@ async function run(browser, base, view) {
   await page.goto(`${base}${PATH}`);
   await until(() => ready(page), 30_000, 'deck ready');
   const readyMs = Date.now() - t0;
+  if (CITY && PATH.includes('conveyor-demo')) {
+    await page.getByRole('button', { name: 'Start', exact: true }).click();
+  }
   await sleep(300);
   await page.screenshot({ path: join(dir, '00-first.png') });
   await sleep(3000);
   await page.screenshot({ path: join(dir, '01-settled.png') });
   await page.screenshot({ path: join(dir, '02-full.png'), fullPage: true });
+  if (CITY) {
+    await page.screenshot({ path: join(dir, 'station.png') });
+    if (CLIP_S) clip = await startClip(context, page, dir);
+    await sleep(1000);
+    await page.getByRole('button', { name: 'Zoom out', exact: true }).click();
+    await page.waitForFunction(() => document.body.dataset.deckZoom === 'line');
+    await sleep(1000);
+    await page.screenshot({ path: join(dir, 'line.png') });
+    await page.getByRole('button', { name: 'Zoom out', exact: true }).click();
+    await page.waitForFunction(() => document.body.dataset.deckZoom === 'city');
+    await sleep(1000);
+    await page.screenshot({ path: join(dir, 'city.png') });
+    if (CLIP_S) await sleep(Math.max(0, CLIP_S * 1000 - 3000));
+    if (clip) { await clip.stop(view.name); clip = null; }
+    await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
+    await page.waitForFunction(() => document.body.dataset.deckZoom === 'station');
+  }
   const colors = await canvasColors(page);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-  if (CLIP_S) await sleep(CLIP_S * 1000 - 3300);
+  if (CLIP_S && !CITY) await sleep(CLIP_S * 1000 - 3300);
   const problems = [...errors];
   if (colors >= 0 && colors < 4) problems.push(`canvas looks blank (${colors} colors)`);
   if (overflow > 1) problems.push(`page is ${overflow}px wider than the screen`);

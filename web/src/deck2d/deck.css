@@ -69,3 +69,10 @@ body.first-run .toast { width: calc(100% - 24px); white-space: normal; text-alig
 .deck-password .later { color: var(--ink); background: var(--iron-hi); box-shadow: inset 0 0 0 2px #5a4a3a; }
 .deck-password form[aria-busy="true"] .approve { opacity: .6; cursor: progress; }
 .deck-password input:focus-visible, .deck-password button:focus-visible { outline: 3px solid var(--brass-hi); outline-offset: 2px; }
+
+/* The city is scenery, with just one caption-font label under each island. */
+.city-labels { position: fixed; inset: 0; pointer-events: none; }
+.city-labels span { position: absolute; transform: translateX(-50%); font-size: 14px; white-space: nowrap; color: #c0988e; text-shadow: 0 2px #0a0604; }
+.city-labels span:last-child { color: #fdec9a; }
+body[data-deck-zoom="city"] .shippy-tools { display: none; }
+@media (prefers-reduced-motion: reduce) { .toast { transition: none; } }

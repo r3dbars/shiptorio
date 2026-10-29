@@ -1,3 +1,4 @@
+import type { CityLayer, ZoomLevel } from "../city";
 import {
   ART_PX, BELT_Y, DECK_DX, DECK_END, HULL, snap, FLOOR_Y, LAUNCH_Y, LOOK, PALETTE, PALETTE_48, STOPS, STOP_X,
   type ArtLoader, type DeckBus, type DeckLayer, type DeckView, type Item, type LayerSlot, type Shot, type ShippyModule, type Stop, type StopId,
@@ -54,6 +55,7 @@ export interface Engine {
   where(stop: StopId): { x: number; y: number }; // CSS pixels on screen
   focus(stop: StopId | null): void; // fly the camera there (null: back to automatic)
   seeAll(on: boolean): void;
+  zoomLevel(level: ZoomLevel): void;
   /** True once the camera has arrived where the current view (or its `shot`) wants it. */
   settled(): boolean;
   readonly portrait: boolean;
@@ -67,6 +69,10 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   // Pixel mode (contract: the pixel canvas): draw into a buffer at art resolution, blit at a whole-number scale,
   // snap every pixel to the 48 colors (?pq=0 skips the snap, for speed checks).
   const px = pixelOn() ? createPixelCanvas(cv, ART_PX, new URLSearchParams(location.search).get("pq") === "0" ? undefined : PALETTE_48) : null;
+  const city = layers.find((l): l is CityLayer => "setCity" in l);
+  const cityPx = px ? createPixelCanvas(cv, ART_PX * 2, PALETTE_48) : null;
+  let zoomLevel: ZoomLevel = "station";
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)");
   const rehearsingShippy = new URLSearchParams(location.search).get("source") === "shippy-demo";
   const rehearsingMachines = new URLSearchParams(location.search).get("source") === "machine-demo";
   let W = 0, H = 0, DPR = 1, t = 0;
@@ -135,10 +141,12 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     return frameShot(subject(shot), scr);
   }
   function target(v: DeckView) {
+    if (zoomLevel === "city" && city) return city.camera();
     const all = fitAll();
+    if (cam.all) return shotTarget("line", all);
     const shot = v.shot ?? previewShot;
     if (shot) return shotTarget(shot, all);
-    if (cam.all) return all;
+    if (zoomLevel === "station") return frameShot({ x: focusX(v), y: 225, width: 1100 }, { w: W, h: H, dpr: DPR, artPx: ART_PX, pixel: !!px });
     const following = (v as DeckView & { followItem?: string }).followItem;
     const cargo = following ? crates.get(following) : undefined;
     if (cargo) return lean(all, at(cargo.d)[0]) ?? { x: at(cargo.d)[0], y: 225, s: Math.max(all.s, W / 1100) };
@@ -497,7 +505,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
       const x = STOP_X[id], top = BELT_Y + L.drop - L.h;
       if (px) pd.beacon(cx, x, top, t, hold);
       else { glow(x, top, 130, "255,60,40", 0.22 + 0.08 * Math.sin(t * 2.4)); put("beacon", x, top + 18, 54); }
-      if (s.waiting && put("plate", x - 6, BELT_Y + 106, 52)) {
+      if (zoomLevel !== "city" && s.waiting && put("plate", x - 6, BELT_Y + 106, 52)) {
         cx.fillStyle = "#2b1a0a"; cx.textAlign = "center"; cx.textBaseline = "middle"; cx.font = "15px Silkscreen, monospace";
         const [a, b] = s.waiting.split(" ");
         cx.fillText(a, x - 6, BELT_Y + 71); if (b) cx.fillText(b, x - 6, BELT_Y + 88);
@@ -534,13 +542,14 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   }
 
   function frame(v: DeckView, dt: number) {
-    t += dt; lever = Math.max(0, lever - dt);
-    take(v, dt); rocketStep(dt);
+    if (zoomLevel === "city" && reduced.matches) dt = 0;
+    if (zoomLevel !== "city") t += dt; lever = Math.max(0, lever - dt);
+    take(v, dt); rocketStep(zoomLevel === "city" ? 0 : dt);
     const shot = v.shot ?? previewShot;
     if (shot !== lastShot) { lastShot = shot; cam.manual = 0; } // a new story shot takes the camera back from a drag
     if (performance.now() >= cam.manual) {
       const tg = target(v), rate = shot ? SHOT_RATE : undefined;
-      if (first) Object.assign(cam, tg);
+      if (first || zoomLevel === "city" || reduced.matches) Object.assign(cam, tg);
       else {
         cam.x = settleCamera(cam.x, tg.x, dt, ART_PX / 4, rate);
         cam.y = settleCamera(cam.y, tg.y, dt, ART_PX / 4, rate);
@@ -549,23 +558,27 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
       arrived = cam.x === tg.x && cam.y === tg.y && cam.s === tg.s;
       first = false;
     }
-    for (const l of layers) l.update(dt, v);
+    for (const l of layers) l.update(zoomLevel === "city" && l !== city ? 0 : dt, v);
     const act = builder?.shippyAct?.(); // a running build calls Shippy over to weld
-    shippy.update(dt, act ? { pose: act.pose, at: act.at } : v.shippy);
-    const quake = builder?.shake?.() ?? 0;
+    shippy.update(zoomLevel === "city" ? 0 : dt, act ? { pose: act.pose, at: act.at } : v.shippy);
+    const quake = zoomLevel === "city" ? 0 : builder?.shake?.() ?? 0;
+    const renderPx = zoomLevel === "city" ? cityPx : px;
 
     const qx = (Math.random() - 0.5) * quake, qy = (Math.random() - 0.5) * quake;
     if (px) {
-      cx = px.begin({ x: cam.x + qx, y: cam.y + qy, s: cam.s });
+      cx = renderPx!.begin({ x: cam.x + qx, y: cam.y + qy, s: cam.s });
       const bw = cx.canvas.width, bh = cx.canvas.height, world = cx.getTransform();
       cx.setTransform(1, 0, 0, 1, 0, 0);
       cx.fillStyle = "#291b17"; cx.fillRect(0, 0, bw, bh);
       // The cloud sea is far away, so it lives in screen space: it starts at a fixed height (under the deck at the
       // usual framing) and only drifts with a slow parallax, so zooming or panning moves the deck over it, never with it.
       const floor = Math.round(bh * (portrait() ? SEA_AT + 0.04 : SEA_AT));
-      sky(bw, bh, 1 / ART_PX, floor);
-      farClouds(bw, bh, floor - Math.round(bh * 0.05), bh * 0.2, 5, 0.12, 0.85);
-      farClouds(bw, bh, Math.round(bh * 0.86), bh * 0.3, 12, 0.3, 0.95);
+      if (zoomLevel === "city") {
+        cx.fillStyle = PALETTE.steel[0]; cx.fillRect(0,0,bw,bh);
+        cx.fillStyle = PALETTE.iron[1]; cx.fillRect(0,Math.round(bh*.65),bw,bh);
+      } else sky(bw, bh, 1 / ART_PX, floor);
+      if (zoomLevel !== "city") farClouds(bw, bh, floor - Math.round(bh * 0.05), bh * 0.2, 5, 0.12, 0.85);
+      if (zoomLevel !== "city") farClouds(bw, bh, Math.round(bh * 0.86), bh * 0.3, 12, 0.3, 0.95);
       cx.setTransform(world);
     } else {
       cx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -601,7 +614,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     slot("line");
     rocketDraw();
     const live = v as DeckView & { intake?: (Item & { badge?: string })[]; work?: { id: string; stop: StopId; badge: string } };
-    if (px && live.intake?.length) {
+    if (px && zoomLevel !== "city" && live.intake?.length) {
       const stack = [[0,0],[-65,0],[-130,0],[-30,-45],[-95,-45],[-65,-90]];
       for (let i = 0; i < Math.min(stack.length, live.intake.length); i++) pd.crate(cx, STOP_X.repo - 135 + stack[i][0], BELT_Y + stack[i][1], 'plain');
       pd.crateBadge(cx, STOP_X.repo - 200, BELT_Y - 100, String(live.intake.length));
@@ -609,7 +622,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     crates.forEach(crate);
     for (const id of STOPS) station(v, id);
     slot("stations");
-    if (px && live.work) {
+    if (px && zoomLevel !== "city" && live.work) {
       const c = crates.get(live.work.id);
       if (c) {
         const [x, y] = at(c.d);
@@ -618,12 +631,12 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     }
     leverDraw(v);
     shippy.drawWorld(cx);
-    puffsDraw(dt);
+    if (zoomLevel !== "city") puffsDraw(dt);
     if (!px) clouds(600, 1.6, 12, 0.95); // pixel mode keeps every cloud behind the deck, so nothing ever touches it
     slot("front");
-    if (px) { px.end(); cx = screen; cx.imageSmoothingEnabled = false; }
+    if (px) { renderPx!.end(); cx = screen; cx.imageSmoothingEnabled = false; }
     cx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    shippy.drawCorner(cx, 14, 14, 76);
+    if (zoomLevel !== "city") shippy.drawCorner(cx, 14, 14, 76);
   }
 
   return {
@@ -631,6 +644,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     where(stop) { return { x: W / 2 + (STOP_X[stop] - cam.x) * cam.s, y: H / 2 + ((stop === "launch" ? LAUNCH_Y : FLOOR_Y - 80) - cam.y) * cam.s }; },
     focus(stop) { cam.pin = stop; cam.manual = 0; },
     seeAll(on) { cam.all = on; cam.manual = 0; },
+    zoomLevel(level) { zoomLevel = level; cam.all = level === "line"; cam.manual = 0; first = true; city?.setCity(level === "city"); document.body.dataset.deckZoom = level; },
     settled() { return arrived; },
     get portrait() { return portrait(); },
   };

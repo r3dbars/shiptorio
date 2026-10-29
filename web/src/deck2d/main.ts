@@ -147,7 +147,7 @@ if (typeof document !== "undefined" && document.getElementById("world")) void (a
 // Each module lives in its own folder and is picked up here when it exists, so threads can land independently.
 type Mod = Record<string, unknown>;
 // Each folder's entry: index.ts, or the one file named after the folder's job (card/card.ts, data/source.ts).
-const mods = import.meta.glob<Mod>(["./{story,data,shippy,card,juice,grow,build,launch,props}/index.ts", "./card/card.ts", "./data/source.ts", "./shippy/shippy.ts", "./story/story.ts"]);
+const mods = import.meta.glob<Mod>(["./{story,data,shippy,card,juice,grow,build,launch,props,city}/index.ts", "./card/card.ts", "./data/source.ts", "./shippy/shippy.ts", "./story/story.ts"]);
 const load = async (folder: string, name: string) => {
   for (const [path, get] of Object.entries(mods)) if (path.startsWith(`./${folder}/`)) { const m = await get(); if (m[name]) return m; }
   return null;
@@ -232,7 +232,7 @@ const seed = Number(params.get("seed")) || 0;
   const shippy = ((shippyMod?.createShippy as CreateShippy | undefined) ?? fallbackShippy)(art);
   const cv = document.getElementById("world") as HTMLCanvasElement;
   const layers: DeckLayer[] = [];
-  for (const f of ["grow", "build", "launch", "juice", "props"]) { const m = await load(f, "createLayer"); if (m) layers.push((m.createLayer as CreateLayer)(art, bus)); }
+  for (const f of ["grow", "build", "launch", "juice", "props", "city"]) { const m = await load(f, "createLayer"); if (m) layers.push((m.createLayer as CreateLayer)(art, bus)); }
   const inspector = createMachineInteraction(machines ? id => { if (id === machines.machine) machines.setMode("working"); } : undefined);
   if (want === "live" && signedIn && !params.has("repo")) connections.open("repo");
   // The live first run: a guest feels one swipe on the sample, Shippy says hi, then sign in. After that, picking a
@@ -291,10 +291,10 @@ const seed = Number(params.get("seed")) || 0;
   deckSound.attachSound(bus, () => source.view());
 
   const zoom = document.getElementById("zoom") as HTMLButtonElement;
-  let all = false, asking = false;
+  let zoomStep = 0, asking = false;
   // Phone only, and only while nothing asks: a card on screen is the one thing to tap.
-  const zoomLabel = () => { const label = all ? "Zoom in" : "Zoom out"; zoom.hidden = !engine.portrait || asking; zoom.textContent = label; zoom.setAttribute("aria-label", label); };
-  zoom.addEventListener("click", () => { all = !all; engine.seeAll(all); zoomLabel(); });
+  const zoomLabel = () => { const label = zoomStep === 2 ? "Zoom in" : "Zoom out"; zoom.hidden = false; zoom.textContent = label; zoom.setAttribute("aria-label", label); };
+  zoom.addEventListener("click", () => { zoomStep = (zoomStep + 1) % 3; engine.zoomLevel((["station", "line", "city"] as const)[zoomStep]); zoomLabel(); });
   addEventListener("resize", zoomLabel); zoomLabel();
 
   const toast = document.getElementById("toast")!;
@@ -316,11 +316,12 @@ const seed = Number(params.get("seed")) || 0;
     const base = inspector.view(source.view());
     firstRun?.step(dt);
     const shown = payoff.view(connections.view(away ? away.view(base) : base), dt);
-    const view = oneAsk(firstRun ? firstRun.view(shown) : shown);
+    const underlying = oneAsk(firstRun ? firstRun.view(shown) : shown);
+    const view = zoomStep === 2 ? { ...underlying, card: null, caption: "The factory must grow." } : underlying;
     document.body.classList.toggle("first-run", !!firstRun?.playing());
     if (!!view.card !== asking) {
       asking = !!view.card;
-      if (asking && all) { all = false; engine.seeAll(false); } // a new question brings the camera back to it
+      // This mockup keeps the chosen overview while the underlying line continues running.
       zoomLabel();
     }
     const work = (view as import('./data/view').LiveDeckView).work;
