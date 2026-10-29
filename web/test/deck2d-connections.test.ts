@@ -145,7 +145,7 @@ test('anonymous front door asks for sign-in without a protected API request', as
 test('ready engine keeps unplug behind Options and never disconnects on the first tap', async () => {
   const f = setup([{ paired: true, online: true, harnesses: ['codex'] }]);
   f.ui.open('power'); await settle();
-  expect(f.ui.card()).toMatchObject({ yes: 'Open inbox', no: 'Options' });
+  expect(f.ui.card()).toMatchObject({ yes: 'See issues', no: 'Options' });
   await f.no();
   expect(f.ui.card()).toMatchObject({ title: 'Engine options', yes: 'Unplug', no: 'Close' });
   expect(f.calls.every(call => call.method === 'GET')).toBe(true);

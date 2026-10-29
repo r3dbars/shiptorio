@@ -120,7 +120,7 @@ test('intro → sign in → repo → approve → PR → gauntlet → launch → 
     await post(`/__test/${repo}/check`);
     for (let i = 0; i < 3; i++) await post(`/__test/${repo}/tick`);
     await expect(card).toContainText('Launch #99');
-    await expect(card).toContainText('CI, the verify bay and AI review all passed');
+    await expect(card).toContainText('Checks and Review passed');
     await screenshot(card, 'launch-card.png');
     await page.evaluate(() => {
       (window as any).__ships = [];

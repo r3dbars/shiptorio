@@ -46,7 +46,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body));
     const dev = body.messages[0].content as string;
     let out: unknown;
-    if (dev.includes('AI review station')) out = { tool: 'verdict', verdict: 'pass', reason: 'Regression covers the fix', findings: [] };
+    if (dev.includes('Review station')) out = { tool: 'verdict', verdict: 'pass', reason: 'Regression covers the fix', findings: [] };
     else if (dev.includes('ONE tool per turn')) {
       const brief = promptJson(body.messages[1].content);
       const read = brief.alreadyRead as string[];

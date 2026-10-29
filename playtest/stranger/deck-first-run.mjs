@@ -108,7 +108,7 @@ try { for (const [index,view] of views.entries()) {
       const beat=()=>context.request.post(origin+`/api/runner/${stub.state.repo}/heartbeat`,{data:{harnesses:['codex']},headers:{origin,authorization:`Bearer ${token}`}});
       const online=await beat();assert.equal(online.ok(),true,await online.text());
       const beating=setInterval(()=>{beat().catch(()=>{});},5000);
-      // No Check and no Open inbox: the deck notices the runner, builds the rest of the line, then shows the first issue.
+      // No Check and no See issues: the deck notices the runner, builds the rest of the line, then shows the first issue.
       try{await card().getByRole('button',{name:'Plan',exact:true}).waitFor();}finally{clearInterval(beating);}
     });
     await step('first-issue-card',async()=>{assert.match(await card().innerText(),/#1.*Checkout total/);});

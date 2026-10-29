@@ -2,12 +2,12 @@ import { STOPS, type DeckSource, type ShippyView } from "../contract";
 
 const JOBS: { seconds: number; at: ShippyView["at"]; pose: ShippyView["pose"]; caption: string }[] = [
   { seconds: 1.5, at: "corner", pose: "peek", caption: "Shippy is ready for a job." },
-  { seconds: 5.5, at: "builder", pose: "carry", caption: "Carrying a beam to the Builder." },
+  { seconds: 5.5, at: "builder", pose: "carry", caption: "Carrying a beam to Builder." },
   { seconds: 4, at: "builder", pose: "weld", caption: "Building the machine, one panel at a time." },
   { seconds: 2, at: "builder", pose: "inspect", caption: "Checking the finished work." },
   { seconds: 2.5, at: "checks", pose: "walking", caption: "Heading over to Checks." },
-  { seconds: 3, at: "checks", pose: "poke", caption: "Tuning the inspection machine." },
-  { seconds: 2.5, at: "review", pose: "walking", caption: "The review lever needs a hand." },
+  { seconds: 3, at: "checks", pose: "poke", caption: "Tuning Checks." },
+  { seconds: 2.5, at: "review", pose: "walking", caption: "Review's lever needs a hand." },
   { seconds: 3, at: "review", pose: "lever", caption: "Pulling the lever to keep work moving." },
   { seconds: 1.5, at: "review", pose: "happy", caption: "Job done." },
   { seconds: 8, at: "corner", pose: "walking", caption: "Back to the charging dock, ready for the next job." },

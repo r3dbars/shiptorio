@@ -21,7 +21,7 @@ describe("researched checks in the gauntlet", () => {
     expect(nextGate(after)).toBe("verify");
     const done = setStage(setStage(after, "verify", "passed", "proof"), "ai", "passed", "ok");
     expect(done.state).toBe("on_pad");
-    expect(launchMove(done).evidence?.map((e) => e.station)).toEqual(["CI inspector", "Leftover sweeper", "Secret scanner", "Verify bay", "AI review"]);
+    expect(launchMove(done).evidence?.map((e) => e.station)).toEqual(["CI check", "Leftover sweeper", "Secret scanner", "Proof check", "Review"]);
   });
 
   it("a failing check sends it back with a scar naming the check", () => {

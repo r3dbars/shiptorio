@@ -9,7 +9,7 @@ export const PIPELINE_REASONS = {
   checking: "Checking this PR's current revision.", checks_failed: "A check sent this change back for repair.",
   proof_required: "Current-revision verification is required before this change can advance.",
   reviewing: "Reviewing the verified change.", review_failed: "The review sent this change back for repair.",
-  gate_waiting: "Your decision is needed at the merge gate.", launching: "Waiting for GitHub to confirm the launch.",
+  gate_waiting: "Your decision is needed at Gate.", launching: "Waiting for GitHub to confirm the launch.",
   complete: "This step is complete.", launched: "GitHub confirmed this change launched.",
 } as const;
 export const PipelineStep = z.object({
