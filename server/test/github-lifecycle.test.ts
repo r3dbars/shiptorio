@@ -148,6 +148,18 @@ describe("GitHub lifecycle fixture payloads", () => {
     expect(obj.alarm()).toBe(deadline);
     expect(f.row()?.archived_at).not.toBeNull();
   });
+  it("an orphaned real factory pauses durably without draining its delivery queue", async () => {
+    const f = fixture(); await install(f);
+    const obj = f.objects.get("repo:501")!;
+    await f.DB.prepare("DELETE FROM repos WHERE full_name = 'octo-org/demo'").run();
+    const original = globalThis.fetch;
+    globalThis.fetch = (() => { throw new Error("orphan must not reach GitHub"); }) as typeof fetch;
+    try { await obj.factory.alarm(); await obj.factory.alarm(); } finally { globalThis.fetch = original; }
+    expect(obj.data.get("githubLifecycle").reason).toBe("GitHub repository is not installed");
+    expect(obj.data.get("state").tick).toBe(4);
+    expect(obj.alarm()).toBeNull();
+    expect(obj.data.has("delivery:backfill-40-501")).toBe(true);
+  });
   it("wake catches missed removal before queued GitHub work, persists it, and stays stopped", async () => {
     const f = fixture(); await install(f);
     f.env.GITHUB_APP_PRIVATE_KEY = await privateKey();
