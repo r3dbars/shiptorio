@@ -435,6 +435,8 @@ links the successful Deploy run, including D1 migration application and live smo
 
 ## Live quota admin form recovery (Codex, 2026-10-26)
 
+- 2026-10-29, Codex #63: trim admin to factories, pause/resume, kill switches and spend; retire unused pages after authorization while retaining operational admission POSTs and all security guards. PR #632.
+
 Follow-up [PR #284](https://github.com/r3dbars/shiptorio/pull/284) to #269 on `codex/quota-admin-origin`: verified Deploy run 40432397609
 succeeded and production SHA `6c7bca1` includes its merge. The real
 r3dbars/shiptorio card showed 20/21 runs and correctly linked to the prefilled owner

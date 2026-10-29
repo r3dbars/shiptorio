@@ -42,8 +42,8 @@ test('Justin approves pending user from /admin; pending cannot access assets, AP
   expect(await (await app.fetch(req('/',friend),e as never)).text()).toContain('pending approval');
   expect((await app.fetch(req('/admin',friend,{action:'approve',identity:'new-player'}),e as never)).status).toBe(403);
   const approved=await app.fetch(req('/admin',admin,{action:'approve',identity:'new-player'}),e as never);
-  expect(approved.status).toBe(200);
-  expect(await approved.text()).toContain('access approved');
+  expect(approved.status).toBe(302);
+  expect(approved.headers.get('location')).toBe('/admin');
   expect(await signupAllowed(e,'new-player')).toBe(true);
   expect(await (await app.fetch(req('/',friend),e as never)).text()).toBe('factory app');
   expect((await app.fetch(req('/api/repos',friend),e as never)).status).toBe(200);
@@ -60,7 +60,7 @@ test('email waitlist does not authenticate an identity; approval requires GitHub
   expect(response.status).toBe(200);
   expect((await e.DB.prepare('SELECT status FROM signup_waitlist').first<{status:string}>())?.status).toBe('pending');
   expect((await app.fetch(req('/admin',admin,{action:'approve',identity:'person@example.com'}),e as never)).status).toBe(400);
-  expect((await app.fetch(req('/admin',admin,{action:'approve',identity:'person@example.com',login:'verified-person'}),e as never)).status).toBe(200);
+  expect((await app.fetch(req('/admin',admin,{action:'approve',identity:'person@example.com',login:'verified-person'}),e as never)).status).toBe(302);
   expect(await signupAllowed(e,'verified-person')).toBe(true);
   expect((await app.fetch(req('/waitlist','',{email:'person@example.com','cf-turnstile-response':'test'},'https://evil.example'),e as never)).status).toBe(403);
 });
@@ -122,13 +122,13 @@ test('password fallback remains explicit and does not unlock admin with password
   expect(await (await app.fetch(req('/index.html'),e as never)).text()).toContain('Password');
 });
 
-test('failed runner pairings throttle and surface on admin without calling a factory',async()=>{
+test('failed runner pairings remain throttled after the old admin page is retired',async()=>{
   const e=env();
   for(let i=0;i<10;i++) expect((await app.fetch(new Request('https://shiptorio.com/api/runner/owner/repo/claim',{method:'POST',headers:{authorization:'Bearer invalid','cf-connecting-ip':'192.0.2.8'}}),e as never)).status).toBe(401);
   expect((await app.fetch(new Request('https://shiptorio.com/api/runner/owner/repo/claim',{method:'POST',headers:{authorization:'Bearer invalid','cf-connecting-ip':'192.0.2.8'}}),e as never)).status).toBe(429);
   const admin=await signedInCookie(e,'r3dbars');
   const page=await app.fetch(req('/admin/signup',admin),e as never);
-  expect(await page.text()).toContain('repeated failed runner authentication');
+  expect(page.status).toBe(302);expect(page.headers.get('location')).toBe('/admin');
 });
 
 test('Turnstile sign-in has no GET bypass in waitlist mode; missing keys never start OAuth',async()=>{

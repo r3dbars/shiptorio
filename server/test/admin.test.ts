@@ -21,20 +21,19 @@ it('blocks unsigned and non-admin players on every admin route', async () => {
     expect(response.headers.get('X-Request-ID')).toBeTruthy();
   }
 });
-it('shows Justin recent logs and a selected factory snapshot; rejects unknown factories', async () => {
+it('shows only spend data; factory controls use their own authenticated state', async () => {
   await env.DB.prepare("INSERT OR IGNORE INTO repos (full_name, installation_id, default_branch) VALUES ('owner/repo', 1, 'main')").run();
   const headers = { cookie: await cookie('r3dbars') };
   const page = await app.fetch(new Request('https://shiptorio.com/admin', { headers }), env);
-  expect(page.status).toBe(200); expect(await page.text()).toContain('Shiptorio diagnostics');
+  expect(page.status).toBe(200); expect(await page.text()).toContain('Shiptorio admin');
   const response = await app.fetch(new Request('https://shiptorio.com/admin/data?repo=owner/repo', { headers }), env);
   expect(response.status).toBe(200); expect(response.headers.get('Cache-Control')).toBe('no-store');
-  expect(await response.json()).toMatchObject({ release: 'abc123', snapshot: { tick: 7 }, pausedForAccess: 0, errors: [], events: [], spark: [], webhooks: [] });
-  expect((await app.fetch(new Request('https://shiptorio.com/admin/data?repo=unknown/repo', { headers }), env)).status).toBe(404);
+  const data=await response.json() as any;expect(data.spend).toEqual([]);expect(data.budget).toBeDefined();expect(data.snapshot).toBeUndefined();expect(data.events).toBeUndefined();
 });
-it('requires same-origin explicit POST and configured DSN to force a Sentry error', async () => {
+it('retired error route preserves origin protection then redirects', async () => {
   const headers = { cookie: await cookie('r3dbars') };
   expect((await app.fetch(new Request('https://shiptorio.com/admin/force-error', { method: 'POST', headers }), env)).status).toBe(403);
-  expect((await app.fetch(new Request('https://shiptorio.com/admin/force-error', { method: 'POST', headers: { ...headers, origin: 'https://shiptorio.com' } }), env)).status).toBe(503);
+  expect((await app.fetch(new Request('https://shiptorio.com/admin/force-error', { method: 'POST', headers: { ...headers, origin: 'https://shiptorio.com' } }), env)).status).toBe(302);
 });
 it('returns runtime telemetry identity and release using the signed session', async () => {
   const response = await app.fetch(new Request('https://shiptorio.com/api/telemetry/config', { headers: { cookie: await cookie('r3dbars'), 'x-request-id': 'forged' } }), env);
