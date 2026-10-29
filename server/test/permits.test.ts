@@ -104,7 +104,7 @@ describe("permits in the Factory", () => {
     }) as typeof fetch;
     try {
       const state = FactoryState.parse({ repo: "r3dbars/demo", baseBranch: "main", districts: [], ...starterLine(), items: [], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 });
-      const data = new Map<string, unknown>([["state", state], ["meta", { repo: "r3dbars/demo", installationId: 1 }], ["permits", shipClean(emptyBook(), 5)]]);
+      const data = new Map<string, unknown>([["githubAccessCheckedAt", Date.now()], ["state", state], ["meta", { repo: "r3dbars/demo", installationId: 1 }], ["permits", shipClean(emptyBook(), 5)]]);
       const events: { type: string; district?: string; move?: { id: string; kind?: string; options: { id: string }[] } }[] = [];
       let alarm: number | null = null;
       const storage = {

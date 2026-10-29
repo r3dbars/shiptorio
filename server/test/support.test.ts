@@ -167,7 +167,7 @@ describe("nothing is sent without a player tap", () => {
       // Spark calls reserve budget in the real cost-guard tables (budget-fixture.ts), owned by this repo's player.
       const { db: budget, sqlite } = budgetDb();
       sqlite.exec("INSERT INTO user_repos VALUES('example/shop', 1)");
-      const data = new Map<string, unknown>([["state", structuredClone(state)], ["meta", { repo: state.repo, installationId: 1 }]]);
+      const data = new Map<string, unknown>([["githubAccessCheckedAt", Date.now()], ["state", structuredClone(state)], ["meta", { repo: state.repo, installationId: 1 }]]);
       const kv = new Map<string, string>();
       let alarm: number | null = null;
       const events: { type: string; text?: string; deck?: { id: string; kind?: string; options: { id: string }[] }[] }[] = [];

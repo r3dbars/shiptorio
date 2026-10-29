@@ -101,3 +101,10 @@ test("a signed access restoration during lookup invalidates stale removal eviden
   expect(result).toEqual({ stopped: false });
   expect(await DB.prepare("SELECT archived_at FROM repos WHERE full_name='owner/repo'").first()).toEqual({ archived_at: null });
 });
+
+test("a factory whose registry record disappeared stops without a provider call", async () => {
+  const { DB, env, meta } = await accessFixture();
+  await DB.prepare("DELETE FROM repos WHERE full_name='owner/repo'").run();
+  expect(await reconcileFactoryGitHubAccess(env, meta, undefined, 10_000, async () => { throw new Error("must not fetch"); }))
+    .toEqual({ stopped: true, reason: "GitHub repository is not installed" });
+});

@@ -41,8 +41,8 @@ export async function reconcileFactoryGitHubAccess(
   const row = await env.DB.prepare(`SELECT r.archived_at, r.archive_reason, i.status, i.token_version FROM repos r
     LEFT JOIN installations i ON i.id = r.installation_id WHERE lower(r.full_name) = ? AND r.installation_id = ?`)
     .bind(meta.repo.toLowerCase(), meta.installationId).first<{ archived_at: number | null; archive_reason: string | null; status: string | null; token_version: number }>();
-  // Coordinator and local fixture objects have no repository row and do not run a factory.
-  if (!row) return { stopped: false };
+  // A real factory has meta; losing its registry row must not resurrect orphaned work.
+  if (!row) return { stopped: true, reason: "GitHub repository is not installed" };
   if (row.archived_at != null) return { stopped: true, reason: row.archive_reason ?? ACCESS_LOST_REASON, archivedAt: row.archived_at };
   if (row.status === "suspended") return { stopped: true, reason: "GitHub installation suspended" };
   if (row.status === "deleted") return lost("installation deleted");

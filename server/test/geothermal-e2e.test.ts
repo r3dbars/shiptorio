@@ -62,7 +62,7 @@ test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1")("geothermal end to end:
   }) as typeof fetch;
   const item = { id: "gh-1", kind: "cleanup", source: "github_issue", title: "Fix typo in README setup steps", body: "It says isntall", district: "docs", state: "queued", attempts: 0, updatedAt: Date.now() } as Item;
   const state = FactoryState.parse({ repo: "r3dbars/demo", baseBranch: "main", districts: [], ...starterLine(), items: [item], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 });
-  const data = new Map<string, unknown>([["state", state], ["meta", { repo: state.repo, installationId: 1 }], ["runnerPair", "pair"]]);
+  const data = new Map<string, unknown>([["githubAccessCheckedAt", Date.now()], ["state", state], ["meta", { repo: state.repo, installationId: 1 }], ["runnerPair", "pair"]]);
   let alarm: number | null = null;
   const storage = { async transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> { return fn(storage); }, async get(k: string) { return structuredClone(data.get(k)); }, async put(k: string, v: unknown) { data.set(k, structuredClone(v)); }, async delete(k: string) { return data.delete(k); }, async list(o: { prefix: string; limit?: number }) { return new Map([...data.entries()].filter(([k]) => k.startsWith(o.prefix)).slice(0, o.limit)); }, async getAlarm() { return alarm; }, async setAlarm(n: number) { alarm = n; } };
   const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [] };

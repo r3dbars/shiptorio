@@ -12,7 +12,7 @@ export function credentialDB(original?: { prepare(sql: string): unknown }) {
     sqlite,
     prepare(sql: string): any {
       // This fixture owns credentials, not a live installation registry. Lifecycle tests use full D1.
-      if (sql.startsWith("SELECT r.archived_at, r.archive_reason, i.status")) return { bind: () => ({ first: async () => null }) };
+      if (sql.startsWith("SELECT r.archived_at, r.archive_reason, i.status")) return { bind: () => ({ first: async () => ({ archived_at: null, archive_reason: null, status: "active", token_version: 0 }) }) };
       if (sql.startsWith("SELECT r.repo_id, r.installation_id FROM repos")) {
         let args: any[] = [];
         return { bind(...values: any[]) { args = values; return this; }, async first() { return sqlite.query("SELECT repo_id, installation_id FROM credential_test_repos WHERE full_name = ? AND installation_id = ?").get(...args); } };

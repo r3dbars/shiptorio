@@ -142,3 +142,9 @@ next permitted wake; no coding job or PR merge is triggered by that reconciliati
 An in-flight access lookup is tied to the installation's token generation. A signed
 restore or permission transition that arrives during the lookup invalidates its stale
 removal/suspension evidence, so it cannot re-pause newly restored access.
+
+A factory with retained metadata but no matching repository registry row is an orphan,
+not an implicitly authorized factory: its wake pauses with `GitHub repository is not
+installed` without making a provider call. The access count includes all `repos` archive
+rows because only GitHub lifecycle/access paths create those rows; independent admin
+pauses live in `admin_controls` and are not counted.

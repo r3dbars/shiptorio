@@ -112,7 +112,7 @@ describe("live gauntlet in the Factory", () => {
     try {
       const state = base();
       state.items = [setStage(pr(), "ci", "passed", "All checks passed")];
-      const data = new Map<string, unknown>([["state", state], ["meta", { repo: "r3dbars/demo", installationId: 1 }]]);
+      const data = new Map<string, unknown>([["githubAccessCheckedAt", Date.now()], ["state", state], ["meta", { repo: "r3dbars/demo", installationId: 1 }]]);
       const events: { type: string; move?: { id: string; options: { id: string }[]; evidence?: unknown[] } }[] = [];
       let alarm: number | null = null;
       const storage = {
