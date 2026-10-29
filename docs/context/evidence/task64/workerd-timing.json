@@ -1,0 +1,116 @@
+{
+  "before": [
+    {
+      "visit": "cold",
+      "firstSnapshotMs": 43,
+      "timing": "do_auth;dur=2.0;desc=\"1 calls\", do_load;dur=3.0;desc=\"2 calls\", do_admin_view;dur=0.0;desc=\"1 calls\", do_repo_access;dur=1.0;desc=\"1 calls\", do_frame;dur=0.0;desc=\"1 calls\", app_signed_in;dur=1.0;desc=\"1 calls\", app_trace_auth;dur=1.0;desc=\"1 calls\", app_scope_auth;dur=2.0;desc=\"1 calls\", app_admin_view;dur=0.0;desc=\"2 calls\", app_repo_access;dur=2.0;desc=\"1 calls\", app_quotas;dur=2.0;desc=\"1 calls\", app_deleted;dur=0.0;desc=\"1 calls\", app_factory_lookup;dur=1.0;desc=\"1 calls\", app_installation;dur=1.0;desc=\"1 calls\", app_ensure;dur=2.0;desc=\"1 calls\", app_socket_fetch;dur=9.0;desc=\"1 calls\", fixture_verify;dur=0.0, fixture_enter;dur=1.0, fixture_session;dur=1.0, fixture_preview;dur=0.0, fixture_seed;dur=0.0, fixture_runner;dur=2.0, fixture_app;dur=24.0"
+    },
+    {
+      "visit": "warm-0",
+      "firstSnapshotMs": 34,
+      "timing": "do_auth;dur=2.0;desc=\"1 calls\", do_load;dur=2.0;desc=\"2 calls\", do_admin_view;dur=0.0;desc=\"1 calls\", do_repo_access;dur=1.0;desc=\"1 calls\", do_frame;dur=0.0;desc=\"1 calls\", app_signed_in;dur=1.0;desc=\"1 calls\", app_trace_auth;dur=1.0;desc=\"1 calls\", app_scope_auth;dur=1.0;desc=\"1 calls\", app_admin_view;dur=0.0;desc=\"2 calls\", app_repo_access;dur=2.0;desc=\"1 calls\", app_quotas;dur=2.0;desc=\"1 calls\", app_deleted;dur=1.0;desc=\"1 calls\", app_factory_lookup;dur=0.0;desc=\"1 calls\", app_installation;dur=0.0;desc=\"1 calls\", app_ensure;dur=4.0;desc=\"1 calls\", app_socket_fetch;dur=6.0;desc=\"1 calls\", fixture_verify;dur=0.0, fixture_enter;dur=0.0, fixture_session;dur=2.0, fixture_preview;dur=0.0, fixture_seed;dur=0.0, fixture_runner;dur=4.0, fixture_app;dur=18.0"
+    },
+    {
+      "visit": "warm-1",
+      "firstSnapshotMs": 28,
+      "timing": "do_auth;dur=2.0;desc=\"1 calls\", do_load;dur=1.0;desc=\"2 calls\", do_admin_view;dur=0.0;desc=\"1 calls\", do_repo_access;dur=1.0;desc=\"1 calls\", do_frame;dur=0.0;desc=\"1 calls\", app_signed_in;dur=1.0;desc=\"1 calls\", app_trace_auth;dur=1.0;desc=\"1 calls\", app_scope_auth;dur=1.0;desc=\"1 calls\", app_admin_view;dur=0.0;desc=\"2 calls\", app_repo_access;dur=1.0;desc=\"1 calls\", app_quotas;dur=2.0;desc=\"1 calls\", app_deleted;dur=0.0;desc=\"1 calls\", app_factory_lookup;dur=1.0;desc=\"1 calls\", app_installation;dur=0.0;desc=\"1 calls\", app_ensure;dur=2.0;desc=\"1 calls\", app_socket_fetch;dur=7.0;desc=\"1 calls\", fixture_verify;dur=0.0, fixture_enter;dur=0.0, fixture_session;dur=2.0, fixture_preview;dur=0.0, fixture_seed;dur=0.0, fixture_runner;dur=2.0, fixture_app;dur=17.0"
+    },
+    {
+      "visit": "warm-2",
+      "firstSnapshotMs": 25,
+      "timing": "do_auth;dur=1.0;desc=\"1 calls\", do_load;dur=2.0;desc=\"2 calls\", do_admin_view;dur=0.0;desc=\"1 calls\", do_repo_access;dur=1.0;desc=\"1 calls\", do_frame;dur=0.0;desc=\"1 calls\", app_signed_in;dur=1.0;desc=\"1 calls\", app_trace_auth;dur=1.0;desc=\"1 calls\", app_scope_auth;dur=1.0;desc=\"1 calls\", app_admin_view;dur=0.0;desc=\"2 calls\", app_repo_access;dur=1.0;desc=\"1 calls\", app_quotas;dur=2.0;desc=\"1 calls\", app_deleted;dur=0.0;desc=\"1 calls\", app_factory_lookup;dur=0.0;desc=\"1 calls\", app_installation;dur=1.0;desc=\"1 calls\", app_ensure;dur=1.0;desc=\"1 calls\", app_socket_fetch;dur=6.0;desc=\"1 calls\", fixture_verify;dur=0.0, fixture_enter;dur=1.0, fixture_session;dur=2.0, fixture_preview;dur=0.0, fixture_seed;dur=0.0, fixture_runner;dur=1.0, fixture_app;dur=15.0"
+    },
+    {
+      "visit": "warm-3",
+      "firstSnapshotMs": 27,
+      "timing": "do_auth;dur=1.0;desc=\"1 calls\", do_load;dur=2.0;desc=\"2 calls\", do_admin_view;dur=0.0;desc=\"1 calls\", do_repo_access;dur=2.0;desc=\"1 calls\", do_frame;dur=0.0;desc=\"1 calls\", app_signed_in;dur=1.0;desc=\"1 calls\", app_trace_auth;dur=1.0;desc=\"1 calls\", app_scope_auth;dur=1.0;desc=\"1 calls\", app_admin_view;dur=0.0;desc=\"2 calls\", app_repo_access;dur=1.0;desc=\"1 calls\", app_quotas;dur=2.0;desc=\"1 calls\", app_deleted;dur=1.0;desc=\"1 calls\", app_factory_lookup;dur=0.0;desc=\"1 calls\", app_installation;dur=0.0;desc=\"1 calls\", app_ensure;dur=3.0;desc=\"1 calls\", app_socket_fetch;dur=7.0;desc=\"1 calls\", fixture_verify;dur=0.0, fixture_enter;dur=1.0, fixture_session;dur=1.0, fixture_preview;dur=0.0, fixture_seed;dur=0.0, fixture_runner;dur=1.0, fixture_app;dur=19.0"
+    },
+    {
+      "visit": "warm-4",
+      "firstSnapshotMs": 27,
+      "timing": "do_auth;dur=2.0;desc=\"1 calls\", do_load;dur=1.0;desc=\"2 calls\", do_admin_view;dur=0.0;desc=\"1 calls\", do_repo_access;dur=1.0;desc=\"1 calls\", do_frame;dur=0.0;desc=\"1 calls\", app_signed_in;dur=1.0;desc=\"1 calls\", app_trace_auth;dur=1.0;desc=\"1 calls\", app_scope_auth;dur=1.0;desc=\"1 calls\", app_admin_view;dur=0.0;desc=\"2 calls\", app_repo_access;dur=1.0;desc=\"1 calls\", app_quotas;dur=2.0;desc=\"1 calls\", app_deleted;dur=2.0;desc=\"1 calls\", app_factory_lookup;dur=1.0;desc=\"1 calls\", app_installation;dur=0.0;desc=\"1 calls\", app_ensure;dur=2.0;desc=\"1 calls\", app_socket_fetch;dur=5.0;desc=\"1 calls\", fixture_verify;dur=1.0, fixture_enter;dur=0.0, fixture_session;dur=2.0, fixture_preview;dur=0.0, fixture_seed;dur=0.0, fixture_runner;dur=1.0, fixture_app;dur=17.0"
+    },
+    {
+      "visit": "warm-5",
+      "firstSnapshotMs": 27,
+      "timing": "do_auth;dur=1.0;desc=\"1 calls\", do_load;dur=2.0;desc=\"2 calls\", do_admin_view;dur=0.0;desc=\"1 calls\", do_repo_access;dur=1.0;desc=\"1 calls\", do_frame;dur=0.0;desc=\"1 calls\", app_signed_in;dur=1.0;desc=\"1 calls\", app_trace_auth;dur=1.0;desc=\"1 calls\", app_scope_auth;dur=1.0;desc=\"1 calls\", app_admin_view;dur=0.0;desc=\"2 calls\", app_repo_access;dur=1.0;desc=\"1 calls\", app_quotas;dur=2.0;desc=\"1 calls\", app_deleted;dur=1.0;desc=\"1 calls\", app_factory_lookup;dur=1.0;desc=\"1 calls\", app_installation;dur=0.0;desc=\"1 calls\", app_ensure;dur=4.0;desc=\"1 calls\", app_socket_fetch;dur=6.0;desc=\"1 calls\", fixture_verify;dur=1.0, fixture_enter;dur=0.0, fixture_session;dur=1.0, fixture_preview;dur=0.0, fixture_seed;dur=0.0, fixture_runner;dur=1.0, fixture_app;dur=19.0"
+    },
+    {
+      "visit": "warm-6",
+      "firstSnapshotMs": 26,
+      "timing": "do_auth;dur=1.0;desc=\"1 calls\", do_load;dur=0.0;desc=\"2 calls\", do_admin_view;dur=0.0;desc=\"1 calls\", do_repo_access;dur=2.0;desc=\"1 calls\", do_frame;dur=0.0;desc=\"1 calls\", app_signed_in;dur=1.0;desc=\"1 calls\", app_trace_auth;dur=1.0;desc=\"1 calls\", app_scope_auth;dur=1.0;desc=\"1 calls\", app_admin_view;dur=0.0;desc=\"2 calls\", app_repo_access;dur=2.0;desc=\"1 calls\", app_quotas;dur=3.0;desc=\"1 calls\", app_deleted;dur=0.0;desc=\"1 calls\", app_factory_lookup;dur=1.0;desc=\"1 calls\", app_installation;dur=0.0;desc=\"1 calls\", app_ensure;dur=2.0;desc=\"1 calls\", app_socket_fetch;dur=5.0;desc=\"1 calls\", fixture_verify;dur=0.0, fixture_enter;dur=1.0, fixture_session;dur=1.0, fixture_preview;dur=0.0, fixture_seed;dur=0.0, fixture_runner;dur=2.0, fixture_app;dur=17.0"
+    },
+    {
+      "visit": "warm-7",
+      "firstSnapshotMs": 24,
+      "timing": "do_auth;dur=1.0;desc=\"1 calls\", do_load;dur=2.0;desc=\"2 calls\", do_admin_view;dur=0.0;desc=\"1 calls\", do_repo_access;dur=2.0;desc=\"1 calls\", do_frame;dur=1.0;desc=\"1 calls\", app_signed_in;dur=1.0;desc=\"1 calls\", app_trace_auth;dur=1.0;desc=\"1 calls\", app_scope_auth;dur=1.0;desc=\"1 calls\", app_admin_view;dur=0.0;desc=\"2 calls\", app_repo_access;dur=1.0;desc=\"1 calls\", app_quotas;dur=2.0;desc=\"1 calls\", app_deleted;dur=0.0;desc=\"1 calls\", app_factory_lookup;dur=0.0;desc=\"1 calls\", app_installation;dur=0.0;desc=\"1 calls\", app_ensure;dur=2.0;desc=\"1 calls\", app_socket_fetch;dur=6.0;desc=\"1 calls\", fixture_verify;dur=0.0, fixture_enter;dur=1.0, fixture_session;dur=2.0, fixture_preview;dur=0.0, fixture_seed;dur=0.0, fixture_runner;dur=1.0, fixture_app;dur=15.0"
+    },
+    {
+      "visit": "warm-8",
+      "firstSnapshotMs": 23,
+      "timing": "do_auth;dur=1.0;desc=\"1 calls\", do_load;dur=2.0;desc=\"2 calls\", do_admin_view;dur=0.0;desc=\"1 calls\", do_repo_access;dur=1.0;desc=\"1 calls\", do_frame;dur=0.0;desc=\"1 calls\", app_signed_in;dur=0.0;desc=\"1 calls\", app_trace_auth;dur=0.0;desc=\"1 calls\", app_scope_auth;dur=1.0;desc=\"1 calls\", app_admin_view;dur=0.0;desc=\"2 calls\", app_repo_access;dur=1.0;desc=\"1 calls\", app_quotas;dur=1.0;desc=\"1 calls\", app_deleted;dur=1.0;desc=\"1 calls\", app_factory_lookup;dur=0.0;desc=\"1 calls\", app_installation;dur=0.0;desc=\"1 calls\", app_ensure;dur=3.0;desc=\"1 calls\", app_socket_fetch;dur=5.0;desc=\"1 calls\", fixture_verify;dur=1.0, fixture_enter;dur=0.0, fixture_session;dur=1.0, fixture_preview;dur=0.0, fixture_seed;dur=0.0, fixture_runner;dur=2.0, fixture_app;dur=14.0"
+    },
+    {
+      "visit": "warm-9",
+      "firstSnapshotMs": 25,
+      "timing": "do_auth;dur=2.0;desc=\"1 calls\", do_load;dur=1.0;desc=\"2 calls\", do_admin_view;dur=0.0;desc=\"1 calls\", do_repo_access;dur=1.0;desc=\"1 calls\", do_frame;dur=0.0;desc=\"1 calls\", app_signed_in;dur=1.0;desc=\"1 calls\", app_trace_auth;dur=1.0;desc=\"1 calls\", app_scope_auth;dur=2.0;desc=\"1 calls\", app_admin_view;dur=0.0;desc=\"2 calls\", app_repo_access;dur=2.0;desc=\"1 calls\", app_quotas;dur=3.0;desc=\"1 calls\", app_deleted;dur=0.0;desc=\"1 calls\", app_factory_lookup;dur=1.0;desc=\"1 calls\", app_installation;dur=0.0;desc=\"1 calls\", app_ensure;dur=2.0;desc=\"1 calls\", app_socket_fetch;dur=5.0;desc=\"1 calls\", fixture_verify;dur=0.0, fixture_enter;dur=0.0, fixture_session;dur=1.0, fixture_preview;dur=0.0, fixture_seed;dur=0.0, fixture_runner;dur=2.0, fixture_app;dur=17.0"
+    }
+  ],
+  "after": [
+    {
+      "visit": "cold",
+      "firstSnapshotMs": 37,
+      "timing": "do_auth;dur=1.0;desc=\"1 calls\", do_load;dur=0.0;desc=\"2 calls\", do_admin_view;dur=0.0;desc=\"1 calls\", do_repo_access;dur=2.0;desc=\"1 calls\", do_frame;dur=0.0;desc=\"1 calls\", app_signed_in;dur=0.0;desc=\"1 calls\", app_trace_auth;dur=0.0;desc=\"1 calls\", app_scope_auth;dur=0.0;desc=\"1 calls\", app_admin_view;dur=0.0;desc=\"2 calls\", app_repo_access;dur=2.0;desc=\"1 calls\", app_quotas;dur=2.0;desc=\"1 calls\", app_deleted;dur=1.0;desc=\"1 calls\", app_factory_lookup;dur=0.0;desc=\"1 calls\", app_installation;dur=1.0;desc=\"1 calls\", app_ensure;dur=2.0;desc=\"1 calls\", app_socket_fetch;dur=8.0;desc=\"1 calls\", fixture_verify;dur=0.0, fixture_enter;dur=1.0, fixture_session;dur=1.0, fixture_preview;dur=0.0, fixture_seed;dur=0.0, fixture_runner;dur=0.0, fixture_app;dur=21.0"
+    },
+    {
+      "visit": "warm-0",
+      "firstSnapshotMs": 24,
+      "timing": "do_auth;dur=0.0;desc=\"1 calls\", do_load;dur=2.0;desc=\"2 calls\", do_admin_view;dur=0.0;desc=\"1 calls\", do_repo_access;dur=1.0;desc=\"1 calls\", do_frame;dur=0.0;desc=\"1 calls\", app_signed_in;dur=0.0;desc=\"1 calls\", app_trace_auth;dur=0.0;desc=\"1 calls\", app_scope_auth;dur=0.0;desc=\"1 calls\", app_admin_view;dur=0.0;desc=\"2 calls\", app_repo_access;dur=3.0;desc=\"1 calls\", app_quotas;dur=2.0;desc=\"1 calls\", app_deleted;dur=1.0;desc=\"1 calls\", app_factory_lookup;dur=0.0;desc=\"1 calls\", app_installation;dur=1.0;desc=\"1 calls\", app_ensure;dur=2.0;desc=\"1 calls\", app_socket_fetch;dur=5.0;desc=\"1 calls\", fixture_verify;dur=0.0, fixture_enter;dur=0.0, fixture_session;dur=1.0, fixture_preview;dur=0.0, fixture_seed;dur=0.0, fixture_runner;dur=1.0, fixture_app;dur=15.0"
+    },
+    {
+      "visit": "warm-1",
+      "firstSnapshotMs": 20,
+      "timing": "do_auth;dur=1.0;desc=\"1 calls\", do_load;dur=0.0;desc=\"2 calls\", do_admin_view;dur=0.0;desc=\"1 calls\", do_repo_access;dur=1.0;desc=\"1 calls\", do_frame;dur=0.0;desc=\"1 calls\", app_signed_in;dur=1.0;desc=\"1 calls\", app_trace_auth;dur=1.0;desc=\"1 calls\", app_scope_auth;dur=1.0;desc=\"1 calls\", app_admin_view;dur=0.0;desc=\"2 calls\", app_repo_access;dur=1.0;desc=\"1 calls\", app_quotas;dur=1.0;desc=\"1 calls\", app_deleted;dur=0.0;desc=\"1 calls\", app_factory_lookup;dur=1.0;desc=\"1 calls\", app_installation;dur=0.0;desc=\"1 calls\", app_ensure;dur=2.0;desc=\"1 calls\", app_socket_fetch;dur=4.0;desc=\"1 calls\", fixture_verify;dur=0.0, fixture_enter;dur=1.0, fixture_session;dur=0.0, fixture_preview;dur=0.0, fixture_seed;dur=0.0, fixture_runner;dur=1.0, fixture_app;dur=11.0"
+    },
+    {
+      "visit": "warm-2",
+      "firstSnapshotMs": 21,
+      "timing": "do_auth;dur=1.0;desc=\"1 calls\", do_load;dur=2.0;desc=\"2 calls\", do_admin_view;dur=0.0;desc=\"1 calls\", do_repo_access;dur=2.0;desc=\"1 calls\", do_frame;dur=0.0;desc=\"1 calls\", app_signed_in;dur=0.0;desc=\"1 calls\", app_trace_auth;dur=0.0;desc=\"1 calls\", app_scope_auth;dur=0.0;desc=\"1 calls\", app_admin_view;dur=0.0;desc=\"2 calls\", app_repo_access;dur=2.0;desc=\"1 calls\", app_quotas;dur=2.0;desc=\"1 calls\", app_deleted;dur=0.0;desc=\"1 calls\", app_factory_lookup;dur=0.0;desc=\"1 calls\", app_installation;dur=1.0;desc=\"1 calls\", app_ensure;dur=1.0;desc=\"1 calls\", app_socket_fetch;dur=5.0;desc=\"1 calls\", fixture_verify;dur=1.0, fixture_enter;dur=0.0, fixture_session;dur=1.0, fixture_preview;dur=0.0, fixture_seed;dur=0.0, fixture_runner;dur=0.0, fixture_app;dur=15.0"
+    },
+    {
+      "visit": "warm-3",
+      "firstSnapshotMs": 23,
+      "timing": "do_auth;dur=0.0;desc=\"1 calls\", do_load;dur=3.0;desc=\"2 calls\", do_admin_view;dur=0.0;desc=\"1 calls\", do_repo_access;dur=1.0;desc=\"1 calls\", do_frame;dur=1.0;desc=\"1 calls\", app_signed_in;dur=1.0;desc=\"1 calls\", app_trace_auth;dur=1.0;desc=\"1 calls\", app_scope_auth;dur=1.0;desc=\"1 calls\", app_admin_view;dur=0.0;desc=\"2 calls\", app_repo_access;dur=1.0;desc=\"1 calls\", app_quotas;dur=1.0;desc=\"1 calls\", app_deleted;dur=1.0;desc=\"1 calls\", app_factory_lookup;dur=0.0;desc=\"1 calls\", app_installation;dur=0.0;desc=\"1 calls\", app_ensure;dur=5.0;desc=\"1 calls\", app_socket_fetch;dur=5.0;desc=\"1 calls\", fixture_verify;dur=0.0, fixture_enter;dur=1.0, fixture_session;dur=0.0, fixture_preview;dur=0.0, fixture_seed;dur=0.0, fixture_runner;dur=1.0, fixture_app;dur=15.0"
+    },
+    {
+      "visit": "warm-4",
+      "firstSnapshotMs": 21,
+      "timing": "do_auth;dur=0.0;desc=\"1 calls\", do_load;dur=2.0;desc=\"2 calls\", do_admin_view;dur=0.0;desc=\"1 calls\", do_repo_access;dur=2.0;desc=\"1 calls\", do_frame;dur=0.0;desc=\"1 calls\", app_signed_in;dur=2.0;desc=\"1 calls\", app_trace_auth;dur=2.0;desc=\"1 calls\", app_scope_auth;dur=0.0;desc=\"1 calls\", app_admin_view;dur=0.0;desc=\"2 calls\", app_repo_access;dur=1.0;desc=\"1 calls\", app_quotas;dur=2.0;desc=\"1 calls\", app_deleted;dur=0.0;desc=\"1 calls\", app_factory_lookup;dur=1.0;desc=\"1 calls\", app_installation;dur=0.0;desc=\"1 calls\", app_ensure;dur=1.0;desc=\"1 calls\", app_socket_fetch;dur=6.0;desc=\"1 calls\", fixture_verify;dur=0.0, fixture_enter;dur=0.0, fixture_session;dur=1.0, fixture_preview;dur=0.0, fixture_seed;dur=0.0, fixture_runner;dur=1.0, fixture_app;dur=14.0"
+    },
+    {
+      "visit": "warm-5",
+      "firstSnapshotMs": 20,
+      "timing": "do_auth;dur=1.0;desc=\"1 calls\", do_load;dur=2.0;desc=\"2 calls\", do_admin_view;dur=0.0;desc=\"1 calls\", do_repo_access;dur=1.0;desc=\"1 calls\", do_frame;dur=0.0;desc=\"1 calls\", app_signed_in;dur=0.0;desc=\"1 calls\", app_trace_auth;dur=0.0;desc=\"1 calls\", app_scope_auth;dur=0.0;desc=\"1 calls\", app_admin_view;dur=0.0;desc=\"2 calls\", app_repo_access;dur=1.0;desc=\"1 calls\", app_quotas;dur=2.0;desc=\"1 calls\", app_deleted;dur=0.0;desc=\"1 calls\", app_factory_lookup;dur=1.0;desc=\"1 calls\", app_installation;dur=0.0;desc=\"1 calls\", app_ensure;dur=2.0;desc=\"1 calls\", app_socket_fetch;dur=5.0;desc=\"1 calls\", fixture_verify;dur=0.0, fixture_enter;dur=0.0, fixture_session;dur=1.0, fixture_preview;dur=0.0, fixture_seed;dur=0.0, fixture_runner;dur=1.0, fixture_app;dur=12.0"
+    },
+    {
+      "visit": "warm-6",
+      "firstSnapshotMs": 20,
+      "timing": "do_auth;dur=0.0;desc=\"1 calls\", do_load;dur=2.0;desc=\"2 calls\", do_admin_view;dur=0.0;desc=\"1 calls\", do_repo_access;dur=2.0;desc=\"1 calls\", do_frame;dur=0.0;desc=\"1 calls\", app_signed_in;dur=0.0;desc=\"1 calls\", app_trace_auth;dur=0.0;desc=\"1 calls\", app_scope_auth;dur=1.0;desc=\"1 calls\", app_admin_view;dur=0.0;desc=\"2 calls\", app_repo_access;dur=1.0;desc=\"1 calls\", app_quotas;dur=2.0;desc=\"1 calls\", app_deleted;dur=0.0;desc=\"1 calls\", app_factory_lookup;dur=0.0;desc=\"1 calls\", app_installation;dur=1.0;desc=\"1 calls\", app_ensure;dur=2.0;desc=\"1 calls\", app_socket_fetch;dur=5.0;desc=\"1 calls\", fixture_verify;dur=0.0, fixture_enter;dur=0.0, fixture_session;dur=1.0, fixture_preview;dur=0.0, fixture_seed;dur=0.0, fixture_runner;dur=1.0, fixture_app;dur=13.0"
+    },
+    {
+      "visit": "warm-7",
+      "firstSnapshotMs": 22,
+      "timing": "do_auth;dur=0.0;desc=\"1 calls\", do_load;dur=1.0;desc=\"2 calls\", do_admin_view;dur=0.0;desc=\"1 calls\", do_repo_access;dur=1.0;desc=\"1 calls\", do_frame;dur=0.0;desc=\"1 calls\", app_signed_in;dur=0.0;desc=\"1 calls\", app_trace_auth;dur=0.0;desc=\"1 calls\", app_scope_auth;dur=0.0;desc=\"1 calls\", app_admin_view;dur=0.0;desc=\"2 calls\", app_repo_access;dur=1.0;desc=\"1 calls\", app_quotas;dur=1.0;desc=\"1 calls\", app_deleted;dur=1.0;desc=\"1 calls\", app_factory_lookup;dur=2.0;desc=\"1 calls\", app_installation;dur=1.0;desc=\"1 calls\", app_ensure;dur=1.0;desc=\"1 calls\", app_socket_fetch;dur=4.0;desc=\"1 calls\", fixture_verify;dur=0.0, fixture_enter;dur=1.0, fixture_session;dur=0.0, fixture_preview;dur=0.0, fixture_seed;dur=0.0, fixture_runner;dur=1.0, fixture_app;dur=14.0"
+    },
+    {
+      "visit": "warm-8",
+      "firstSnapshotMs": 20,
+      "timing": "do_auth;dur=1.0;desc=\"1 calls\", do_load;dur=1.0;desc=\"2 calls\", do_admin_view;dur=0.0;desc=\"1 calls\", do_repo_access;dur=1.0;desc=\"1 calls\", do_frame;dur=0.0;desc=\"1 calls\", app_signed_in;dur=0.0;desc=\"1 calls\", app_trace_auth;dur=0.0;desc=\"1 calls\", app_scope_auth;dur=1.0;desc=\"1 calls\", app_admin_view;dur=0.0;desc=\"2 calls\", app_repo_access;dur=1.0;desc=\"1 calls\", app_quotas;dur=2.0;desc=\"1 calls\", app_deleted;dur=0.0;desc=\"1 calls\", app_factory_lookup;dur=0.0;desc=\"1 calls\", app_installation;dur=1.0;desc=\"1 calls\", app_ensure;dur=2.0;desc=\"1 calls\", app_socket_fetch;dur=5.0;desc=\"1 calls\", fixture_verify;dur=0.0, fixture_enter;dur=0.0, fixture_session;dur=1.0, fixture_preview;dur=0.0, fixture_seed;dur=0.0, fixture_runner;dur=1.0, fixture_app;dur=13.0"
+    },
+    {
+      "visit": "warm-9",
+      "firstSnapshotMs": 18,
+      "timing": "do_auth;dur=0.0;desc=\"1 calls\", do_load;dur=2.0;desc=\"2 calls\", do_admin_view;dur=0.0;desc=\"1 calls\", do_repo_access;dur=1.0;desc=\"1 calls\", do_frame;dur=0.0;desc=\"1 calls\", app_signed_in;dur=0.0;desc=\"1 calls\", app_trace_auth;dur=0.0;desc=\"1 calls\", app_scope_auth;dur=0.0;desc=\"1 calls\", app_admin_view;dur=0.0;desc=\"2 calls\", app_repo_access;dur=1.0;desc=\"1 calls\", app_quotas;dur=1.0;desc=\"1 calls\", app_deleted;dur=0.0;desc=\"1 calls\", app_factory_lookup;dur=1.0;desc=\"1 calls\", app_installation;dur=0.0;desc=\"1 calls\", app_ensure;dur=1.0;desc=\"1 calls\", app_socket_fetch;dur=5.0;desc=\"1 calls\", fixture_verify;dur=0.0, fixture_enter;dur=1.0, fixture_session;dur=0.0, fixture_preview;dur=0.0, fixture_seed;dur=0.0, fixture_runner;dur=1.0, fixture_app;dur=11.0"
+    }
+  ]
+}

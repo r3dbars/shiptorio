@@ -14,6 +14,8 @@ The final pass adds layered cascading cliffs, animated cyan seams and floating f
 
 ## Browser signing key reuse (Codex, 2026-10-28)
 
+- 2026-10-29, Codex #64: combine each D1 session/admission/revocation check into one request-local query; retain all independent authorization boundaries and add reproducible local workerd first-snapshot measurements.
+
 Session cookies and preview-form proofs now reuse the existing bounded, isolate-local HMAC key cache. Before: every sign/verification imported a key; after: concurrent checks with the same secret share one import. Cookie signatures, expiry, password rotation and fresh authorization checks remain unchanged. Focused session/gate/cache tests pass; full check and exact-head dev CI govern merge. This CPU reduction is not a claim that the connection latency target has been achieved.
 
 ## Hosted tester playthrough fixes (Codex, 2026-10-28)

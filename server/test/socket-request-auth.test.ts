@@ -7,9 +7,15 @@ mock.module("cloudflare:workers", () => ({ DurableObject: class { constructor(pu
 const { testApp: app } = await import("./app-fixture");
 async function setup() {
   const db = testD1(); let reads = 0, denyAt = Infinity;
-  const env = { DB: { ...db, prepare(sql: string) {
+  const env = { DB: { ...db, async batch(statements: D1PreparedStatement[]) {
+      const results = await db.batch(statements);
+      statements.forEach((statement, i) => {
+        if ((statement as unknown as { sql: string }).sql.startsWith("SELECT u.id, u.login") && ++reads === denyAt) results[i] = { ...results[i], results: [] };
+      });
+      return results;
+    }, prepare(sql: string) {
       const statement = db.prepare(sql);
-      if (!sql.startsWith("SELECT u.id, u.login FROM sessions")) return statement;
+      if (!sql.startsWith("SELECT u.id, u.login")) return statement;
       return { ...statement, bind: (...args: unknown[]) => {
         const bound = statement.bind(...args);
         return { ...bound, first: async () => ++reads === denyAt ? null : bound.first() };
