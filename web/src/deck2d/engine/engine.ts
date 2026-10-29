@@ -24,7 +24,7 @@ const BOILER = { x: DECK_DX ? 280 : 240, base: 182 };
 const BOUNDS = { x0: -20, x1: PAD.x + 1533 * PAD.s + 20, y0: -30, y1: DECK_DX ? 800 : 670 }; // pixel mode: the whole underside, lanterns and all
 const SPEED = 170, GAP = 50, CRATE = 42;
 // pixel mode: the lever stands on the floor in front of Review (Shippy pulls it from review + 150, facing left)
-const LEVER = DECK_DX ? { x: STOP_X.review + 92, base: 312, h: 78 } : { x: STOP_X.review + 92, base: FLOOR_Y + 48, h: 78 };
+const LEVER = DECK_DX ? { x: STOP_X.review + 92, base: 330, h: 78 } : { x: STOP_X.review + 92, base: FLOOR_Y + 48, h: 78 };
 
 // The belt: along the deck, down onto the bridge, out to the launch circle.
 const PATH: [number, number][] = [[STOP_X.repo + 60, BELT_Y], [1915 + DECK_DX, BELT_Y], [1995 + DECK_DX, BRIDGE_Y], [STOP_X.launch - 130, BRIDGE_Y], [STOP_X.launch - 34, LAUNCH_Y]];
