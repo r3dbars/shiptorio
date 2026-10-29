@@ -38,6 +38,9 @@ test("watch mode builds, fails, repairs, launches, and resets without a click", 
     src.step?.(0.1);
     const job = src.state()?.items[0];
     if (job) seen.add(job.state);
+    expect(src.view().caption).not.toMatch(/SIMULATION|gauntlet|blockage/);
+    if (job?.state === "rejected") expect(src.view().caption).toBe("A check failed. Sending the fix back for repair…");
+    if (job?.state === "inspecting") expect(src.view().caption).toBe("Checking the fix…");
     if (job?.state === "rejected") expect(src.view().jam).toBe("builder");
     if (job?.state === "working" && job.attempts > 1) repaired = true;
     if (src.view().shipped > 0) launched = true;

@@ -813,3 +813,4 @@ Verified whole-App regressions: Hono response assignment replaced appended App t
 
 
 - Codex #74: watch reset retains the built view until the replacement snapshot arrives; no replayed station construction. PR #633; frame regression and 390/1280 before/after PNGs.
+- Codex #73 (2026-10-29): shorten setup/watch copy, put Unplug behind Options, make Check primary after copying, and use Ship it consistently in the conveyor. Scoped card/action tests and phone/desktop browser interactions pass; full check: 1,886 passed, two existing platform skips, zero failures. PR #634 includes before/after PNG evidence.
