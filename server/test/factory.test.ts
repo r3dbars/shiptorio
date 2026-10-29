@@ -1030,3 +1030,31 @@ it("a recorded merge repairs an older stale item without awarding another rocket
   expect(f.saved().items[0].orbit?.mergeSha).toBe("merged-sha");
   expect(f.saved().science).toEqual(score);
 });
+
+it("a confirmed merged PR still reconciles when its item was refreshed during the GitHub read", async () => {
+  const keys=await crypto.subtle.generateKey({name:"RSASSA-PKCS1-v1_5",modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:"SHA-256"},true,["sign","verify"]);
+  const pem=`-----BEGIN PRIVATE KEY-----\n${Buffer.from(await crypto.subtle.exportKey("pkcs8",keys.privateKey)).toString("base64")}\n-----END PRIVATE KEY-----`;
+  const before=item({state:"inspecting",inspection:freshInspection("head")});
+  const f=fixture([before],{GITHUB_APP_ID:"1",GITHUB_APP_PRIVATE_KEY:pem});
+  const internal=f.factory as unknown as {reconcileGitHub():Promise<void>;patch(p:Patch):Promise<void>};
+  f.data.set("reconcileAt",0);
+  const entered=Promise.withResolvers<void>(),release=Promise.withResolvers<void>();
+  const original=globalThis.fetch;
+  globalThis.fetch=(async(input:unknown)=>{
+    const url=String(input);
+    if(url.endsWith("/access_tokens"))return Response.json({token:"fixture-merged-race"});
+    if(url.includes("/pulls?"))return Response.json([]);
+    if(url.endsWith("/pulls/42")){entered.resolve();await release.promise;return Response.json({state:"closed",merged:true,merge_commit_sha:"merged-sha",head:{sha:"head"}});}
+    throw Error("Unexpected merge reconciliation request");
+  }) as typeof fetch;
+  try{
+    await f.factory.exportState();
+    const pending=internal.reconcileGitHub();
+    await entered.promise;
+    await internal.patch({items:[{...before,updatedAt:Date.now()}]});
+    release.resolve();await pending;
+    expect(f.saved().items[0].state).toBe("launched");
+    expect(f.saved().items[0].orbit?.mergeSha).toBe("merged-sha");
+    expect(f.saved().science.red).toBe(1);
+  }finally{release.resolve();globalThis.fetch=original;}
+});
