@@ -110,7 +110,7 @@ export async function adminSignup(request: Request, env: Env): Promise<Response>
   const login = (await currentUser(env,request.headers.get('cookie'),new URL(request.url)))?.login || null;
   if (!login || !isAdmin(env,login) || !await signupAllowed(env,login)) return new Response('Admin only',{status:403});
   if (request.method === 'POST' && request.headers.get('origin') !== new URL(request.url).origin) return new Response('Invalid origin',{status:403});
-  if (request.method !== 'POST') return new Response(null,{status:302,headers:{Location:'/admin'}}); // retired page; admission POSTs still serve existing operations
+  if (request.method !== 'POST') return new Response(null,{status:302,headers:{...headers,Location:'/admin'}}); // retired page; admission POSTs still serve existing operations
   // Bounded retention work on admin visits rather than a sweep on every public request.
   await env.DB.batch([
     env.DB.prepare('DELETE FROM signup_counters WHERE rowid IN (SELECT rowid FROM signup_counters WHERE expires_at < ? LIMIT 100)').bind(Date.now()),
@@ -139,5 +139,5 @@ export async function adminSignup(request: Request, env: Env): Promise<Response>
 
     } else return new Response('Choose a valid GitHub login',{status:400});
   }
-  return new Response(null,{status:302,headers:{Location:'/admin'}});
+  return new Response(null,{status:302,headers:{...headers,Location:'/admin'}});
 }
