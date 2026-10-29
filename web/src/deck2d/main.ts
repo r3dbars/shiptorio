@@ -68,6 +68,14 @@ export function wireDeckAccessibility(canvas: HTMLCanvasElement, host: HTMLEleme
   };
 }
 
+/** Copy text that may still be on its way. A ClipboardItem holding a promise keeps the tap's permission
+ * (Safari drops it after an await); browsers without one copy once the text arrives. */
+export function copyText(text: string | Promise<string>): Promise<void> {
+  if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write)
+    return navigator.clipboard.write([new ClipboardItem({ "text/plain": Promise.resolve(text).then(t => new Blob([t], { type: "text/plain" })) })]);
+  return Promise.resolve(text).then(t => navigator.clipboard.writeText(t));
+}
+
 /** A requested live URL is not proof that this browser is signed in. */
 export async function deckSignedIn(request: typeof fetch = fetch): Promise<boolean> {
   try {
@@ -130,7 +138,7 @@ const seed = Number(params.get("seed")) || 0;
 
   const connections = createConnections({
     repo: signedIn ? params.get("repo") || undefined : undefined, origin: location.origin, path: location.pathname + location.search,
-    navigate: url => { location.href = url; }, copy: text => navigator.clipboard.writeText(text),
+    navigate: url => { location.href = url; }, copy: copyText,
     onStart: id => (source as DeckSource & { focusItem?: (id: string) => void }).focusItem?.(id),
   });
   let source: DeckSource;

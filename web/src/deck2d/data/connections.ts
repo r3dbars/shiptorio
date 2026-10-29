@@ -5,17 +5,21 @@ import { runnerInstallCommand } from '../../runner-install';
 type Repo = { fullName: string };
 type Issue = { id: number; number: number; title: string; body: string };
 type Pane = 'repos' | 'issues' | 'power' | 'setup' | 'disconnect';
-type Options = { repo?: string; origin: string; path: string; fetch?: typeof fetch; navigate: (url: string) => void; copy: (text: string) => Promise<void>; onStart?: (id: string) => void; now?: () => number };
+type Options = { repo?: string; origin: string; path: string; fetch?: typeof fetch; navigate: (url: string) => void; copy: (text: string | Promise<string>) => Promise<void>; onStart?: (id: string) => void; now?: () => number };
 
-/** Browsing is read-only. Starting one issue requests a plan; a separate card approves the build. */
+/** Browsing is read-only. Starting one issue requests a plan; a separate card approves the build.
+ * Setup asks for as few taps as possible: one repo is used without asking, one tap copies the Codex line,
+ * and once that runner is online the first issue card comes up by itself. */
 export function createConnections(o: Options) {
   const request = o.fetch ?? fetch, now = o.now ?? Date.now;
   let accountChecked = false;
   let pane: Pane | null = null, revision = 0, displayRevision = 0, busy = false, refreshing = false, error = '', login = false;
   let repos: Repo[] = [], issues: Issue[] = [], index = 0, page = 1, nextPage: number | null = null;
   let status: RunnerStatus | null = null, command = '', copied = false, copyFailed = false, expires = 0, nextPoll = 0;
+  let leaving = '', onboarding = false; // leaving: the one repo we're opening. onboarding: go straight to the inbox once Codex is ready.
   const repo = o.repo && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(o.repo) && !o.repo.split('/').some(part => part === '.' || part === '..') ? o.repo : undefined;
   const api = `/api/repos/${repo}`;
+  const liveUrl = (name: string) => `${o.path.split('?')[0]}?source=live&repo=${encodeURIComponent(name)}&onboard=codex`;
   async function json<T>(url: string, init?: RequestInit): Promise<T> {
     const response = await request(url, { cache: 'no-store', ...init });
     if (!response.ok) {
@@ -34,10 +38,10 @@ export function createConnections(o: Options) {
     }
     return response.json() as Promise<T>;
   }
-  async function refresh() {
-    if (!pane || busy || refreshing || pane === 'setup' || pane === 'disconnect') return;
+  async function refresh(quiet = false) {
+    if (!pane || busy || refreshing || leaving || pane === 'disconnect') return;
     const current = revision, target = pane;
-    refreshing = true; busy = !(target === 'power' && status); error = ''; login = false;
+    refreshing = true; busy = !quiet && !(target === 'power' && status) && target !== 'setup'; error = ''; login = false;
     try {
       if (target === 'repos') {
         // The front door is public. Ask who is here before requesting a protected inbox,
@@ -55,6 +59,8 @@ export function createConnections(o: Options) {
         }
         const data = await json<{ repos: Repo[]; nextPage?: number | null }>(`/api/repos?page=${page}`);
         if (current === revision) { repos = data.repos; nextPage = data.nextPage ?? null; index = Math.min(index, Math.max(0, repos.length - 1)); }
+        // Only one repo: there's nothing to choose, so open it.
+        if (current === revision && repos.length === 1 && !nextPage && page === 1) { leaving = repos[0].fullName; o.navigate(liveUrl(leaving)); }
       } else if (target === 'issues') {
         const data = await json<{ issues: Issue[]; nextPage: number | null }>(`${api}/issues?page=${page}`);
         if (current === revision) { issues = data.issues; nextPage = data.nextPage; index = 0; }
@@ -63,38 +69,43 @@ export function createConnections(o: Options) {
         if (current === revision) status = data;
       }
     } catch (e) { if (current === revision) error = e instanceof Error ? e.message : 'Could not load connection.'; }
-    finally { if (current === revision) { busy = false; refreshing = false; nextPoll = now() + 5000; } }
+    finally { if (current === revision) { busy = false; refreshing = false; nextPoll = now() + (target === 'setup' ? 2000 : 5000); } }
+    if (current !== revision || error || !status?.online || (target !== 'power' && target !== 'setup')) return;
+    // The runner just came online: no Check, no Open inbox. Show the first issue, or the one fix Codex still needs.
+    if (onboarding && status.harnesses.includes('codex') && !status.working) { onboarding = false; pane = 'issues'; revision++; index = 0; page = 1; await refresh(); }
+    else if (target === 'setup') { pane = 'power'; revision++; }
   }
   function open(target: 'repo' | 'power') {
     if (pane === (target === 'repo' ? 'issues' : 'power') && !busy) { pane = null; revision++; return; }
     revision++; busy = false; refreshing = false; error = ''; login = false; index = 0; page = 1;
-    pane = !repo ? 'repos' : target === 'repo' ? 'issues' : 'power';
+    pane = !repo ? 'repos' : target === 'repo' ? 'issues' : 'power'; onboarding = false;
     void refresh();
   }
   function card(): CardView | null {
     if (!pane) return null;
     let title = '', line = '', yes = 'Refresh', no = 'Close';
-    if (busy) { title = pane === 'repos' ? 'Finding your repositories…' : pane === 'issues' ? 'Opening your inbox…' : 'Checking Codex…'; line = 'This should only take a moment.'; yes = 'Please wait…'; }
+    if (leaving) { title = `Opening ${leaving}…`; line = 'Shippy reads its issues and opens PRs here.'; yes = 'Please wait…'; }
+    else if (busy) { title = pane === 'repos' ? 'Finding your repositories…' : pane === 'issues' ? 'Opening your inbox…' : 'Checking Codex…'; line = 'This should only take a moment.'; yes = 'Please wait…'; }
     else if (error) { title = login ? 'Sign in to your factory' : 'Connection needs attention'; line = login ? 'Sign in with GitHub so Shippy can see your repos. No coding starts yet.' : error; yes = login ? 'Sign in' : 'Try again'; }
     else if (pane === 'repos') {
       const r = repos[index]; title = r ? `Use ${r.fullName}?` : 'Connect your GitHub repo';
-      line = r ? `${repos.length > 1 ? `Repository ${index + 1} of ${repos.length}. ` : ""}Shippy reads its issues and opens PRs here. Codex is next.` : 'Install the GitHub App so Shippy can read your issues. Then come back and refresh.';
+      line = r ? `${repos.length > 1 ? `Repository ${index + 1} of ${repos.length}. ` : ""}Shippy reads its issues and opens PRs here.` : 'Install the GitHub App on one repo so Shippy can read its issues. This card updates by itself.';
       yes = r ? 'Use this repo' : nextPage ? 'More repos' : 'Connect GitHub'; no = r && (repos.length > 1 || nextPage || page > 1) ? 'Next repo' : 'Close';
     } else if (pane === 'issues') {
       const issue = issues[index]; title = issue ? `#${issue.number}: ${issue.title}` : 'No open issues on this page';
       line = issue ? `${repo} · ${index + 1} of ${issues.length}. ${issue.body ? `${issue.body.slice(0, 120).trim()}${issue.body.length > 120 ? '…' : ''} ` : ''}Review the plan before Codex starts.` : `Issues are what the factory builds. Add one to ${repo} on GitHub, then refresh.`;
       yes = issue ? 'Plan' : nextPage ? 'More issues' : 'Refresh'; no = issue ? 'Next issue' : 'Close';
     } else if (pane === 'setup') {
-      title = copied ? 'Setup command copied' : 'Connect your Codex subscription';
-      line = copyFailed ? `Copy this into Terminal: ${command}` : 'This links your computer so Codex can build here. Paste it into Terminal, then choose Check.';
-      yes = copied ? 'Check' : 'Copy setup'; no = copied ? 'Copy setup' : 'Check';
+      title = copied ? 'Paste it into Terminal' : 'Copy the setup line';
+      line = copyFailed ? `Copy this into Terminal: ${command}` : 'Then press Return. Shippy moves on by itself once Codex is plugged in.';
+      yes = copied ? 'Copy again' : 'Copy setup'; no = 'Close';
     } else if (pane === 'disconnect') {
       title = 'Engine options'; line = 'Unplug this engine from the factory. Your Codex sign-in stays on your computer.'; yes = 'Unplug'; no = 'Close';
     } else {
       const ready = status?.online && status.harnesses.includes('codex');
       title = !status?.paired ? 'Connect your Codex engine' : !status.online ? 'Codex engine is offline' : !ready ? 'Sign in to Codex' : status.working ? 'Engine is busy' : 'Codex engine is ready';
-      line = !status?.paired ? 'Codex writes the code on your computer, with your own subscription. Connecting starts no job.' : !status.online ? 'Run shiptorio-runner watch on your computer so the factory can hand Codex work.' : !ready ? 'Run shiptorio-runner login codex on your computer so Codex can write code for you.' : status.working ? `Working on ${status.working.title}.` : 'Codex is ready. Pick an issue so the factory has something to build.';
-      yes = !status?.paired ? 'Set up Codex' : ready && !status.working ? 'Open inbox' : 'Refresh'; no = status?.paired ? 'Options' : 'Close';
+      line = !status?.paired ? 'Codex writes the code on your computer, with your own subscription. One line in Terminal plugs it in.' : !status.online ? 'Run shiptorio-runner watch on your computer so the factory can hand Codex work.' : !ready ? 'Run shiptorio-runner login codex on your computer so Codex can write code for you.' : status.working ? `Working on ${status.working.title}.` : 'Codex is ready. Pick an issue so the factory has something to build.';
+      yes = !status?.paired ? 'Copy setup' : ready && !status.working ? 'Open inbox' : 'Refresh'; no = status?.paired ? 'Options' : 'Close';
     }
     return { id: `connection-${revision}-${displayRevision}-${pane}`, stop: pane === 'power' || pane === 'setup' || pane === 'disconnect' ? 'builder' : 'repo', title, line, yes, no, dots: null };
   }
@@ -102,7 +113,7 @@ export function createConnections(o: Options) {
     if (!pane || card()?.id !== id) return false;
     const generation = revision;
     displayRevision++; // A refresh is a new card even when its content is unchanged.
-    if (busy) return true;
+    if (busy || leaving) return true;
     if (error && approve) {
       if (login) o.navigate(`/auth/login?next=${encodeURIComponent(o.path)}`); else if (pane === 'disconnect') { error = ''; } else { await refresh(); return true; }
       if (login) return true;
@@ -116,17 +127,13 @@ export function createConnections(o: Options) {
         if (index + 1 < repos.length) { index++; revision++; }
         else { page = nextPage ?? 1; index = 0; await refresh(); }
       }
-      else if (pane === 'setup') {
-        if (copied && expires > now()) { try { await o.copy(command); copyFailed = false; } catch { copyFailed = true; } revision++; }
-        else { pane = 'power'; revision++; await refresh(); }
-      }
       else if (pane === 'power' && status?.paired) { pane = 'disconnect'; revision++; }
       else { pane = null; revision++; }
       return true;
     }
     if (pane === 'repos') {
       if (!repos[index] && nextPage) { page = nextPage; await refresh(); }
-      else if (repos[index]) o.navigate(`${o.path.split('?')[0]}?source=live&repo=${encodeURIComponent(repos[index].fullName)}&onboard=codex`);
+      else if (repos[index]) o.navigate(liveUrl(repos[index].fullName));
       else {
         busy = true;
         try {
@@ -148,15 +155,19 @@ export function createConnections(o: Options) {
       } catch (e) { if (generation === revision) error = e instanceof Error ? e.message : 'Could not start this issue.'; }
       finally { busy = false; }
     } else if (pane === 'power' && !status?.paired) {
+      // One tap: ask for the join code and copy the line in the same click (the clipboard needs this tap).
       busy = true;
+      const join = json<{ join: string; expires: number }>(`${api}/runner/join`, { method: 'POST' });
+      const copiedLine = o.copy(join.then(j => runnerInstallCommand(o.origin, j.join))).then(() => true, () => false);
       try {
-        const join = await json<{ join: string; expires: number }>(`${api}/runner/join`, { method: 'POST' });
+        const ticket = await join, ok = await copiedLine;
         if (generation !== revision) return true;
-        command = runnerInstallCommand(o.origin, join.join); expires = join.expires; copied = false; pane = 'setup'; busy = false; revision++;
+        command = runnerInstallCommand(o.origin, ticket.join); expires = ticket.expires; copied = ok; copyFailed = !ok;
+        pane = 'setup'; onboarding = true; nextPoll = now() + 2000; busy = false; revision++;
       } catch (e) { if (generation === revision) error = e instanceof Error ? e.message : 'Setup failed'; }
       finally { if (generation === revision) busy = false; }
     } else if (pane === 'setup') {
-      if (copied || expires <= now()) { pane = 'power'; revision++; await refresh(); }
+      if (expires <= now()) { pane = 'power'; revision++; await refresh(); }
       else { try { await o.copy(command); copied = true; copyFailed = false; } catch { copied = false; copyFailed = true; } revision++; }
     } else if (pane === 'disconnect') {
       busy = true;
@@ -169,9 +180,13 @@ export function createConnections(o: Options) {
     } else await refresh();
     return true;
   }
-  if (repo && new URLSearchParams(o.path.split('?')[1]).get('onboard') === 'codex') open('power');
+  if (repo && new URLSearchParams(o.path.split('?')[1]).get('onboard') === 'codex') { open('power'); onboarding = true; }
   return { open, answer, card, view(base: DeckView): DeckView {
     const c = card();
     return c ? { ...base, card: c, shippy: { at: c.stop, pose: 'inspect' } } : base;
-  }, tick() { if (pane === 'power' && !busy && !error && now() >= nextPoll) void refresh(); } };
+  }, tick() {
+    // Watch quietly while the player is off doing the step: installing the GitHub App, or running the setup line.
+    const waiting = pane === 'power' || pane === 'setup' || pane === 'repos' && accountChecked && !repos.length;
+    if (waiting && !busy && !error && now() >= nextPoll) void refresh(true);
+  } };
 }

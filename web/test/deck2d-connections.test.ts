@@ -4,7 +4,7 @@ const settle = () => new Promise(r => setTimeout(r, 0));
 function setup(responses: unknown[], repo: string | undefined = 'owner/repo') {
   const calls: { url: string; method: string }[] = [], navigations: string[] = [], copied: string[] = [];
   const ui = createConnections({ repo, origin: 'https://shiptorio.dev', path: '/deck?source=live&repo=owner%2Frepo',
-    navigate: url => navigations.push(url), copy: async text => { copied.push(text); },
+    navigate: url => navigations.push(url), copy: async text => { copied.push(await text); },
     fetch: (async (url, init) => { calls.push({ url: String(url), method: init?.method ?? 'GET' }); const r = String(url) === '/api/me' && !(responses[0] && typeof responses[0] === 'object' && 'githubConfigured' in responses[0]) ? {login:'fixture'} : responses.shift(); return r instanceof Response ? r : Response.json(r); }) as typeof fetch,
   });
   const yes = () => ui.answer(ui.card()!.id, true), no = () => ui.answer(ui.card()!.id, false);
@@ -36,6 +36,19 @@ test('an existing PR blocks another start and tells the player which work to fin
   f.ui.open('repo');await settle();await f.yes();
   expect(f.ui.card()?.line).toContain('Finish PR #27');
 });
+test('one repo opens by itself; zero repos keeps watching for the GitHub App install', async () => {
+  const one = setup([{ repos: [{ fullName: 'alice/only' }] }], ''); one.ui.open('repo'); await settle();
+  expect(one.navigations).toEqual(['/deck?source=live&repo=alice%2Fonly&onboard=codex']); expect(one.ui.card()?.title).toBe('Opening alice/only…');
+  let t = 0;
+  const calls: string[] = [], navigations: string[] = [];
+  const answers = [{ repos: [] }, { repos: [{ fullName: 'alice/new' }] }];
+  const ui = createConnections({ origin: '', path: '/deck?source=live', navigate: u => navigations.push(u), copy: async () => {}, now: () => t,
+    fetch: (async url => { calls.push(String(url)); return Response.json(String(url) === '/api/me' ? { login: 'alice' } : answers.shift()); }) as typeof fetch });
+  ui.open('repo'); await settle(); expect(ui.card()?.yes).toBe('Connect GitHub');
+  ui.tick(); await settle(); expect(calls).toHaveLength(2); // waits between checks
+  t = 6000; ui.tick(); await settle();
+  expect(navigations).toEqual(['/deck?source=live&repo=alice%2Fnew&onboard=codex']);
+});
 test('repository selection explicitly enters live mode and never starts a job', async () => {
   const f = setup([{ repos: [{ fullName: 'alice/a' }, { fullName: 'bob/b' }] }], '');
   f.ui.open('repo'); await settle(); await f.no(); await f.yes();
@@ -54,12 +67,12 @@ test('Codex readiness requires Codex, not merely another signed-in agent', async
     const f = setup([{ paired: true, online: true, harnesses }]); f.ui.open('power'); await settle(); expect(f.ui.card()?.title).toBe(word);
   }
 });
-test('setup requires an explicit click, copies locally, and never enqueues work', async () => {
+test('setup is one explicit tap: it asks for the join code and copies the line, and never enqueues work', async () => {
   const f = setup([{ paired: false, online: false, harnesses: [] }, { join: 'example-code', expires: Date.now() + 60000 }]);
-  f.ui.open('power'); await settle(); expect(f.calls).toHaveLength(1);
+  f.ui.open('power'); await settle(); expect(f.calls).toHaveLength(1); expect(f.ui.card()?.yes).toBe('Copy setup');
   const action = f.yes(); await f.yes(); await action;
   expect(f.calls).toHaveLength(2); expect(f.calls[1]).toEqual({ url: '/api/repos/owner/repo/runner/join', method: 'POST' });
-  await f.yes(); expect(f.copied[0]).toContain('--join'); expect(f.ui.card()?.title).toBe('Setup command copied');
+  expect(f.copied).toHaveLength(1); expect(f.copied[0]).toContain('--join'); expect(f.ui.card()?.title).toBe('Paste it into Terminal');
 });
 test('disconnect requires a second explicit confirmation and can be cancelled', async () => {
   const f = setup([{ paired: true, online: true, harnesses: ['codex'] }]); f.ui.open('power'); await settle();
@@ -118,8 +131,7 @@ test('rate-limit errors remain visible rather than being cleared by status polli
 test('choosing a repo leads to Codex, then directly to the first issue card', async () => {
   const calls: string[] = [];
   const ui = createConnections({repo:'owner/repo',origin:'https://shiptorio.dev',path:'/deck?source=live&repo=owner%2Frepo&onboard=codex',navigate:()=>{},copy:async()=>{},fetch:(async url=>{calls.push(String(url));return Response.json(String(url).includes('/status')?{paired:true,online:true,harnesses:['codex']}:{issues:[{id:1,number:16,title:'README',body:''}],nextPage:null});}) as typeof fetch});
-  await settle();expect(ui.card()?.yes).toBe('Open inbox');expect(ui.card()?.no).toBe('Options');
-  await ui.answer(ui.card()!.id,true);expect(ui.card()?.yes).toBe('Plan');
+  await settle();await settle();expect(ui.card()?.yes).toBe('Plan');
   expect(calls).toEqual(['/api/repos/owner/repo/runner/status','/api/repos/owner/repo/issues?page=1']);
 });
 
@@ -139,20 +151,25 @@ test('ready engine keeps unplug behind Options and never disconnects on the firs
   expect(f.calls.every(call => call.method === 'GET')).toBe(true);
 });
 
-test('after copy, Check is primary and Copy setup remains secondary', async () => {
-  const f = setup([{ paired: false, online: false, harnesses: [] }, { join: 'example-code', expires: Date.now() + 60000 }, { paired: true, online: true, harnesses: ['codex'] }]);
-  f.ui.open('power'); await settle(); await f.yes();
-  expect(f.ui.card()).toMatchObject({ yes: 'Copy setup', no: 'Check' });
-  await f.yes();
-  expect(f.ui.card()).toMatchObject({ title: 'Setup command copied', yes: 'Check', no: 'Copy setup' });
-  await f.no(); expect(f.copied).toHaveLength(2);
-  await f.yes(); expect(f.ui.card()?.title).toBe('Codex engine is ready');
-  expect(f.calls.filter(call => call.method === 'POST')).toHaveLength(1);
+test('after copy there is no Check: the first issue card comes up once the runner is online', async () => {
+  let t = 0;
+  const responses: unknown[] = [{ paired: false, online: false, harnesses: [] }, { join: 'example-code', expires: 600000 }, { paired: true, online: false, harnesses: [] },
+    { paired: true, online: true, harnesses: ['codex'] }, { issues: [{ id: 1, number: 16, title: 'README', body: '' }], nextPage: null }];
+  const copied: string[] = [], calls: string[] = [];
+  const ui = createConnections({ repo: 'owner/repo', origin: 'https://shiptorio.dev', path: '/deck?source=live&repo=owner%2Frepo', navigate() {}, now: () => t,
+    copy: async text => { copied.push(await text); }, fetch: (async (url, init) => { calls.push(`${init?.method ?? 'GET'} ${url}`); return Response.json(responses.shift()); }) as typeof fetch });
+  ui.open('power'); await settle(); await ui.answer(ui.card()!.id, true);
+  expect(ui.card()).toMatchObject({ title: 'Paste it into Terminal', yes: 'Copy again', no: 'Close' });
+  await ui.answer(ui.card()!.id, true); expect(copied).toHaveLength(2);
+  t = 3000; ui.tick(); await settle(); expect(ui.card()?.title).toBe('Paste it into Terminal'); // paired, not online yet
+  t = 6000; ui.tick(); await settle(); await settle();
+  expect(ui.card()?.yes).toBe('Plan');
+  expect(calls.filter(c => c.startsWith('POST'))).toEqual(['POST /api/repos/owner/repo/runner/join']);
 });
 
 test('a single repo and an issue use short labels without repeated setup warnings', async () => {
   const f = setup([{ repos: [{ fullName: 'owner/repo' }] }], ''); f.ui.open('repo'); await settle();
-  expect(f.ui.card()?.line).toBe('Shippy reads its issues and opens PRs here. Codex is next.');
+  expect(f.ui.card()?.title).toBe('Opening owner/repo…');
   const issue = setup([{ issues: [{id:1,number:16,title:'Fix checkout',body:''}], nextPage:null }]);
   issue.ui.open('repo'); await settle(); expect(issue.ui.card()?.no).toBe('Next issue');
   expect(issue.ui.card()?.line).not.toContain('Shippy:');
