@@ -82,8 +82,8 @@ export function createConnections(o: Options) {
       yes = r ? 'Use this repo' : nextPage ? 'More repos' : 'Connect GitHub'; no = r && (repos.length > 1 || nextPage || page > 1) ? 'Next repo' : 'Close';
     } else if (pane === 'issues') {
       const issue = issues[index]; title = issue ? `#${issue.number}: ${issue.title}` : 'No open issues on this page';
-      line = issue ? `${repo} · ${index + 1} of ${issues.length}. ${issue.body ? `${issue.body.slice(0, 120).trim()}${issue.body.length > 120 ? '…' : ''} ` : ''}Start issue prepares a plan. Codex waits for your approval.` : `Issues are what the factory builds. Add one to ${repo} on GitHub, then refresh.`;
-      yes = issue ? 'Start issue' : nextPage ? 'More issues' : 'Refresh'; no = issue ? 'Next issue' : 'Close';
+      line = issue ? `${repo} · ${index + 1} of ${issues.length}. ${issue.body ? `${issue.body.slice(0, 120).trim()}${issue.body.length > 120 ? '…' : ''} ` : ''}Review the plan before Codex starts.` : `Issues are what the factory builds. Add one to ${repo} on GitHub, then refresh.`;
+      yes = issue ? 'Plan' : nextPage ? 'More issues' : 'Refresh'; no = issue ? 'Next issue' : 'Close';
     } else if (pane === 'setup') {
       title = copied ? 'Setup command copied' : 'Connect your Codex subscription';
       line = copyFailed ? `Copy this into Terminal: ${command}` : 'This links your computer so Codex can build here. Paste it into Terminal, then choose Check.';

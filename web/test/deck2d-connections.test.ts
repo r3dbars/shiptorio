@@ -26,7 +26,7 @@ test('empty pages can advance, and empty inbox is clearly different from error',
 test('starting the selected issue requests only its plan, once, then returns to the live deck', async () => {
   const f = setup([{issues:[{id:1,number:16,title:'README',body:''}],nextPage:null},{jobId:'planned'}]);
   f.ui.open('repo'); await settle();
-  expect(f.ui.card()?.yes).toBe('Start issue');
+  expect(f.ui.card()?.yes).toBe('Plan');
   await f.yes();
   expect(f.calls).toEqual([{url:'/api/repos/owner/repo/issues?page=1',method:'GET'},{url:'/api/repos/owner/repo/issues/16/start',method:'POST'}]);
   expect(f.ui.card()).toBeNull();
@@ -119,7 +119,7 @@ test('choosing a repo leads to Codex, then directly to the first issue card', as
   const calls: string[] = [];
   const ui = createConnections({repo:'owner/repo',origin:'https://shiptorio.dev',path:'/deck?source=live&repo=owner%2Frepo&onboard=codex',navigate:()=>{},copy:async()=>{},fetch:(async url=>{calls.push(String(url));return Response.json(String(url).includes('/status')?{paired:true,online:true,harnesses:['codex']}:{issues:[{id:1,number:16,title:'README',body:''}],nextPage:null});}) as typeof fetch});
   await settle();expect(ui.card()?.yes).toBe('Open inbox');expect(ui.card()?.no).toBe('Options');
-  await ui.answer(ui.card()!.id,true);expect(ui.card()?.yes).toBe('Start issue');
+  await ui.answer(ui.card()!.id,true);expect(ui.card()?.yes).toBe('Plan');
   expect(calls).toEqual(['/api/repos/owner/repo/runner/status','/api/repos/owner/repo/issues?page=1']);
 });
 
