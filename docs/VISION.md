@@ -83,6 +83,8 @@ threads and Codex iterate on this same deck, not on copies or variants. The rule
 
 **2026-10-29: The 2D deck is the actual product, including sign-in, repo selection and coding-agent connection. Bridge the existing backend and account flows into this UI; simplify duplicate entry points rather than building another frontend. Demos remain explicit previews, not the default product.**
 
+**2026-10-29: Meta is Shippy's brain for the whole factory: identify bottlenecks, recommend the next useful decision, and help the player keep work moving toward automation. Planning one PR is a supporting ability, not the product's organizing idea. Validate this loop with Muse Spark first; evaluate a stronger model later without moving factory decisions into the coding worker.**
+
 ## Current focus: a great player experience (Justin, 2026-10-27 10:50)
 
 "Focus less on the judges and just focus more on making this web app a great experience." The game itself is the
