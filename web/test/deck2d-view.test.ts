@@ -130,6 +130,18 @@ describe("the 2D deck's view of a factory", () => {
     expect(v.card).toMatchObject({ stop: "gate", hold: true, dots: null, line: FIRST_LINE });
   });
 
+  test("the Ship it card says which PR, what changed and that checks passed", () => {
+    const pr = item("gh-7", "on_pad", { prNumber: 27, title: "Login typo.", district: "web" });
+    const ok = [{ station: "CI inspector", ok: true }, { station: "AI review", ok: true }];
+    const ship = card("ship", "request_merge", { kind: "ship", itemId: "gh-7", evidence: ok });
+    for (const visualFlow of [false, true]) {
+      const v = deckView(base({ items: [pr], deck: [ship] }), { now: 1e12, visualFlow });
+      expect(v.card).toMatchObject({ title: "Ship PR #27?", line: "Fixes: Login typo, in web/. Checks passed. Hold to ship.", yes: "Ship it", hold: true });
+    }
+    const unproven = deckView(base({ items: [pr], deck: [{ ...ship, evidence: [ok[0], { station: "AI review", ok: false }] }] }), { now: 1e12 });
+    expect(unproven.card?.line).toBe("Fixes: Login typo, in web/. Not passed yet: AI review.");
+  });
+
   test("clicking an attention station selects its own real decision", () => {
     const s = base({ deck: [card("build", "start_job"), card("merge", "request_merge")] });
     const v = deckView(s, { selectedStop: "gate" });

@@ -86,6 +86,18 @@ export function cardStop(s: FactoryState, move: Move): StopId {
 }
 
 export const isLaunchCard = (m: Move) => continueOption(m).actions.some((a) => a.tool === "request_merge");
+/** The scariest tap gets the plainest card: which PR, what it changes, and whether every check passed. Only claims what
+ * the move's own evidence says; without a PR or evidence it keeps the server's words. */
+const SHIP_VERB: Partial<Record<FactoryItem["kind"], string>> = { bug: "Fixes", feature: "Adds" };
+export function shipCard(s: FactoryState, move: Move): { title: string; line: string } | null {
+  const item = move.itemId ? s.items.find((x) => x.id === move.itemId) : undefined;
+  if (!item?.prNumber) return null;
+  const where = item.district && item.district !== "/" ? `, in ${item.district.replace(/\/+$/, "")}/` : "";
+  const proof = move.evidence ?? [];
+  const failed = proof.filter((e) => !e.ok).map((e) => e.station);
+  const checks = !proof.length ? "" : failed.length ? ` Not passed yet: ${failed.join(", ")}.` : " Checks passed. Hold to ship.";
+  return { title: `Ship PR #${item.prNumber}?`, line: `${SHIP_VERB[item.kind] ?? "Changes"}: ${item.title.trim().replace(/[.!?]+$/, "")}${where}.${checks}` };
+}
 export const isSetupCard = (m: Move) => continueOption(m).actions.some((a) => a.tool === "connect_source" && (a.args.kind === "claude" || a.args.kind === "codex"));
 /** Only show the agent on recommendations with matching Meta evidence, never from copy alone. */
 export function metaGuided(s: FactoryState, move: Move): boolean {
@@ -200,13 +212,14 @@ export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckV
   let card: LiveCardView | null = null;
   if (move) {
     const learn = move.learn ?? null;
+    const ship = isLaunchCard(move) ? shipCard(s, move) : null;
     card = {
       id: move.id,
-      title: move.title,
+      title: ship?.title ?? move.title,
       stop: flow && continueOption(move).actions.some(a => a.tool === "plan_runner_job") ? "repo" : cardStop(s, move),
       dots: learn ? { have: learn.have, need: learn.need } : null,
-      line: !flow ? (learn ? LEARN.line(Math.max(1, learn.need - learn.have)) : move.why || FIRST_LINE) : `Shippy: ${move.why || FIRST_LINE}${move.plan?.find(p => p.startsWith('Files:')) ? ` ${move.plan.find(p => p.startsWith('Files:'))}` : ''}${learn ? ` ${LEARN.line(Math.max(1, learn.need - learn.have))}` : ''}`,
-      yes: !flow ? undefined : isLaunchCard(move) ? "Ship it" : continueOption(move).actions.some(a => a.tool === "plan_runner_job") ? "Start issue" : continueOption(move).actions.some(a => a.tool === "approve_runner_job") ? "Start build" : "Continue",
+      line: ship ? ship.line : !flow ? (learn ? LEARN.line(Math.max(1, learn.need - learn.have)) : move.why || FIRST_LINE) : `Shippy: ${move.why || FIRST_LINE}${move.plan?.find(p => p.startsWith('Files:')) ? ` ${move.plan.find(p => p.startsWith('Files:'))}` : ''}${learn ? ` ${LEARN.line(Math.max(1, learn.need - learn.have))}` : ''}`,
+      yes: isLaunchCard(move) ? "Ship it" : !flow ? undefined : continueOption(move).actions.some(a => a.tool === "plan_runner_job") ? "Start issue" : continueOption(move).actions.some(a => a.tool === "approve_runner_job") ? "Start build" : "Continue",
       no: flow ? "Later" : undefined,
       hold: isLaunchCard(move),
       setup: isSetupCard(move),
