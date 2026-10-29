@@ -9,6 +9,7 @@ import { LAUNCH_BUILD_SECONDS } from "../launch/timeline";
 import { STOPS, type CardView, type DeckView, type ShippyView, type StopId } from "../contract";
 import type { AttentionView } from "../stations/attention";
 import { STORY_CARD, type StoryPhase } from "./index";
+import { CREDIT } from "../../copy";
 
 type DeckSize = NonNullable<DeckView["deck"]>["size"];
 type Island = NonNullable<DeckView["deck"]>["island"];
@@ -25,8 +26,8 @@ interface Beat {
 // The station lines use the locked names (contract STOP_LABEL) and say what each step does for fixing and shipping.
 export const TOUR: Beat[] = [
   { title: "Hi, I'm Shippy!", line: "Great to meet you. This is a game that mirrors your GitHub repo, and what you decide here really happens in your project.", yes: "Next", at: "repo" },
-  // Justin (20:53): call out Meta's model by name here; the one place player copy names it.
-  { title: "Powered by Meta Muse Spark", line: "Meta's model is my brain. I'll cheer you on and suggest what to do next, based on what you connect: GitHub first, then issues and feedback.", yes: "Next", at: "repo" },
+  // Justin (20:53): call out Meta's model by name here, with the one credit (copy.ts CREDIT).
+  { title: CREDIT[0].toUpperCase() + CREDIT.slice(1), line: "Meta's model is my brain. I'll cheer you on and suggest what to do next, based on what you connect: GitHub first, then issues and feedback.", yes: "Next", at: "repo" },
   { title: "Software is a factory", line: "Work comes in, gets built, gets checked, and ships. Let's build your line, one machine at a time.", yes: "Build it", at: "repo", then: { build: "repo" } },
   { title: "Repo", line: "Your GitHub issues land here. Every issue is a crate of work.", yes: "Next machine", at: "repo", then: { build: "planner" } },
   { title: "Planner", line: "I read an issue and write a short plan. You say yes before any code is written.", yes: "Next machine", at: "planner", then: { grow: "medium", build: "builder" } },
