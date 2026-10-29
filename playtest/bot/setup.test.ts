@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { botAdmissionPath, prepareBotPersona, deckFixtureIdentity, FIXTURE_INSTALL, isFixtureInstallPage } from "./setup.mjs";
+import { botAdmissionPath, prepareBotPersona, deckFixtureIdentity, FIXTURE_INSTALL, isFixtureInstallPage, isFixtureDeckPage } from "./setup.mjs";
 
 function harness(options: { gated?: boolean; wrongPassword?: boolean; loginStatus?: number; resetStatuses?: number[] } = {}) {
   const events: string[] = [];
@@ -86,4 +86,12 @@ test("install navigation recognizes the local provider and immediate staging red
     expect(isFixtureInstallPage(new URL(address), "https://shiptorio.dev")).toBe(true);
   for (const address of ["https://github.com/apps/real/installations/new", "https://evil.test/test/install", "https://shiptorio.dev/deck", "https://shiptorio.dev/test/install?confirm=1"])
     expect(isFixtureInstallPage(new URL(address), "https://shiptorio.dev")).toBe(false);
+});
+
+
+test("preview login accepts the current deck and its automatic repo continuation only", () => {
+  for (const url of ["https://shiptorio.dev/deck?source=live", "https://shiptorio.dev/deck?source=live&repo=test-fixture%2Ftest-newbie&onboard=codex"])
+    expect(isFixtureDeckPage(new URL(url), "https://shiptorio.dev")).toBe(true);
+  for (const url of ["https://evil.test/deck?source=live", "https://shiptorio.dev/?source=live", "https://shiptorio.dev/deck?source=sim"])
+    expect(isFixtureDeckPage(new URL(url), "https://shiptorio.dev")).toBe(false);
 });

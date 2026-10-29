@@ -13,7 +13,7 @@ export async function prepareBotPersona({ page, context, origin, persona, local,
     if (!password) throw new Error("Staging preview password is required in SHIPTORIO_TEST_PASSWORD");
     await passwordField.fill(password);
     await Promise.all([
-      page.waitForURL(current => preparingStaging ? current.pathname === admissionPath : current.pathname === "/" && current.searchParams.has("source"), { timeout: 20000 }),
+      page.waitForURL(current => preparingStaging ? current.pathname === admissionPath : isFixtureDeckPage(current, origin), { timeout: 20000, waitUntil: "domcontentloaded" }),
       page.getByRole("button", { name: /Enter the factory/ }).click(),
     ]);
     // The inert gate redirects back to the same URL; URL equality alone does not
@@ -49,4 +49,9 @@ export function deckFixtureIdentity(identity, persona) {
 export function isFixtureInstallPage(current, origin) {
   return current.href === FIXTURE_INSTALL ||
     current.origin === origin && current.pathname === "/test/install" && !current.search;
+}
+
+// Login can immediately continue into the selected repo; the path stays the deck.
+export function isFixtureDeckPage(current, origin) {
+  return current.origin === origin && ["/deck", "/deck.html"].includes(current.pathname) && current.searchParams.get("source") === "live";
 }
