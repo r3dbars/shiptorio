@@ -44,7 +44,7 @@ export const TUTORIAL: readonly TutorialCard[] = [
   { id: "planner", focus: "planner", zoom: "mid", pose: "weld", build: "planner",
     lines: [`${S.planner}.`, "I read an issue and write a short plan."], next: "Next" },
   { id: "engine", focus: "engine", zoom: "mid", pose: "carry", build: "engine",
-    lines: ["This steam engine powers the whole line.", "Sign in with your own Codex here to run it."], next: "Next" },
+    lines: ["This steam engine powers the whole line.", "Sign in with your own Codex or Claude here to run it."], next: "Next" },
   { id: "builder", focus: "builder", zoom: "mid", pose: "weld", build: "builder", deck: "medium",
     lines: [`${S.builder}.`, "Codex writes the code, on your computer."], next: "Next" },
   { id: "checks", focus: "checks", zoom: "mid", pose: "weld", build: "checks",
