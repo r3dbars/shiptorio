@@ -2,7 +2,7 @@ import { signupAllowed } from "./signup";
 import { testIdentityAllowed } from "./test-users-policy";
 // Shared adapter over accounts.ts. HTTP, browser sockets and runner grants use one revocable session.
 import { currentUser } from './accounts';
-import { isAllowed, readSessionDetails } from './session';
+import { readSessionDetails } from './session';
 import { gh, installationToken, repoInstallationId, type AppCredentials } from './github';
 export interface AccessUser { id: number; login: string; expiresAt: number; sessionHash: string }
 export interface AuthorizationEnv extends AppCredentials {

@@ -1,5 +1,13 @@
 # Public landing page (shiptorio.com)
 
+## shiptorio.dev: tutorial first, password at "create your factory" (2026-10-29)
+
+- Justin: anyone who visits shiptorio.dev goes straight into the tutorial. No password, waitlist or landing page in front.
+- Public on shiptorio.dev only (GET/HEAD): `/` (302 to `/deck?source=live`), `/deck`, `/deck.html`, `/deck/{art,px,traces}/*` and the already-public hashed `/assets/*`, `/fonts/*`, `/brand/*`. See `server/src/access.ts` `isPublicDeck`; the route table is `server/test/public-deck.test.ts`.
+- Everything else still needs the preview password, exactly as before: `/api/*` (including `/api/me`, so anonymous visitors create no guest rows), `/auth/callback`, `/connect/*`, runner, sockets, admin, the old app. The tutorial is scripted in the page, so it makes no Spark calls.
+- The password is asked at the sign-in card after the tutorial (story-connect → "Sign in to your factory" → Sign in). The deck shows a small popup (`web/src/deck2d/password.ts`) that posts the same `/access` form, then goes to `/auth/login`. A browser that already has the password skips the popup.
+- shiptorio.com is unchanged (landing + gate) until Justin asks for a promotion.
+
 ## Approved landing refresh (2026-10-28)
 
 - Justin selected the transparent brass wordmark, “Build the factory, ship the code.” and one brass “Join the waitlist” button over full-screen gameplay. The email field and Join action open in a native dialog; Escape or the backdrop dismisses it.

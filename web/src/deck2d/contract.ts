@@ -64,6 +64,9 @@ export interface CardView {
   hold?: boolean; // ships real code (a merge): needs a held press or a full swipe, never a flick
   guide?: "shippy"; // verified Meta-guided recommendation; ordinary setup/status cards stay plain
   setup?: boolean; // a "plug in an agent" / connect card rather than a decision on work
+  /** A story card: Shippy stands inside the card and says `line` (typed out). `yes` defaults to "Next"; Later only shows
+   *  when `no` is set. Tap the card, swipe right or press → to go on (onApprove). dots, hold and guide are ignored. */
+  shippy?: "talk" | "wave" | "point" | "happy";
 }
 
 export type ShippyPose = "folded" | "peek" | "unfold" | "walking" | "lever" | "happy" | "alarmed" | "weld" | "carry" | "inspect" | "poke" | "skid" | "idle";
@@ -73,6 +76,8 @@ export interface ShippyView {
 }
 
 /** Everything the screen shows, at one moment. Sources (data/, story/) produce it; engine/ draws it. */
+export type Shot = "shippy" | "boiler" | "line" | StopId;
+
 export interface DeckView {
   stops: Stop[]; // always all seven, in STOPS order
   jam: StopId | null; // the one bottleneck the camera parks on
@@ -80,6 +85,9 @@ export interface DeckView {
   shippy: ShippyView;
   shipped: number; // rockets launched so far
   caption: string | null; // one short line, shown at the bottom when no card is up ("Software is a factory.")
+  /** Story camera (first run): what to frame, one calm move at a time. Omitted = the usual automatic camera.
+   *  "shippy" = tight on Shippy, a stop id = that station, "boiler" = the steam engine at the back, "line" = the whole line. */
+  shot?: Shot;
   /** The platform grows with you. Omitted = full deck with the launch island built. */
   deck?: {
     size: "small" | "medium" | "large"; // small: repo + 1-2 stations; large: the whole line
