@@ -98,11 +98,16 @@ test("replay blocks page-owned connection buttons and removes that guard on clos
     let activated = 0; button.onclick = () => { activated++; }; win.document.body.append(button);
     const c = clock();
     const replay = connectReplay(() => {}, () => {}, { search: "?trace=testing-16-sample", timers: c.timers, fetch: (async () => Response.json(fixture)) as typeof fetch });
-    await flush(); button.click();
+    const zoom = win.document.createElement("button"); zoom.id = "zoom";
+    let zoomed = 0; zoom.onclick = () => { zoomed++; }; win.document.body.append(zoom);
+    await flush(); button.click(); zoom.click();
     expect(activated).toBe(0);
+    expect(zoomed).toBe(1); // camera-only control stays usable during a take
+    expect(win.document.body.classList.contains("deck-replay")).toBe(true);
     expect(win.document.querySelector('[role="status"]')?.textContent).toContain("fixture sample");
     replay.close(); button.click();
     expect(activated).toBe(1);
+    expect(win.document.body.classList.contains("deck-replay")).toBe(false);
     expect(win.document.querySelector('[role="status"]')).toBeNull();
   } finally {
     if (saved) Object.defineProperty(globalThis, "document", saved); else delete (globalThis as { document?: unknown }).document;
