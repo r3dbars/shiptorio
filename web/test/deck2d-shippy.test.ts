@@ -43,3 +43,17 @@ test("build poses: he carries the beam while he walks, then welds at the stop", 
   run(s, { at: "builder", pose: "weld" }, 8);
   expect(s.state).toMatchObject({ world: "stand", x: STOP_X.builder + 150, pose: "weld" });
 });
+
+test("pixel mode: home is on the deck floor, he never leaves the floor between home and a stop", () => {
+  const s = createShippy(noArt, { reducedMotion: true, pixel: true });
+  const home = STOP_X.repo - 150;
+  const seen = new Set<string>();
+  const go = (view: ShippyView, seconds: number) => {
+    for (let t = 0; t < seconds; t += 1 / 60) { s.update(1 / 60, view); seen.add(s.state.world); }
+  };
+  go({ at: "review", pose: "lever" }, 10);
+  expect(s.state).toMatchObject({ world: "stand", x: STOP_X.review + 150 });
+  go({ at: "corner", pose: "folded" }, 10);
+  expect(s.state).toMatchObject({ corner: "home", world: "off", x: home });
+  expect(seen.has("drop") || seen.has("leave")).toBe(false);
+});
