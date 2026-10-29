@@ -73,5 +73,12 @@ Visual deck polish stays with Justin's local Codex (`codex/deck-visuals`) and Cl
 | 54 | Bug bash the loop | new bug-bash tests; small fixes in engine/{flow,camera}.ts, juice/build/grow/launch, server/src/runner-job.ts |
 | 55 | One way in | server/src/{redirect,landing,account-pages}.ts, web/index.html, web/src/main.tsx (routing) |
 | 56 | Docs that match today | AGENTS.md, docs/context/* except the plan/deck/branch docs; history to docs/context/archive/ |
+| 57 | Shippy is calm and always easy to find | web/src/deck2d/shippy/* |
+| 58 | The runner talks in plain words | runner/src/{messages,cli,codex-diagnostic}.ts (text), runner/README.md |
+| 59 | Runner install just works | runner/install.sh, web/src/runner-install.ts, scripts/build-runner.ts |
+| 60 | Retire old flags | server/src/flags.ts, web/src/flags.ts, unowned call sites |
+| 61 | Fewer dependencies | package.json files (not playtest) + lockfile |
+| 62 | Keyboard and screen reader basics | web/src/deck2d/main.ts (aria/keyboard only) |
+| 63 | Trim the admin page | server/src/{admin,admin-view,admin-god-page,admin-god,ops}.ts |
 
 Status 18:10: #43 → PR #618, #44 → #615, #45 → #616, #46 → #617. #47 and #48 not started yet.
