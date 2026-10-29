@@ -276,6 +276,21 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     }
     cx.globalAlpha = 1;
   }
+  // Pixel mode's cloud strips, in buffer px (screen space): sized to the frame, not the world, so a zoom doesn't
+  // scale them with the deck; `par` is how much of the camera's pan they follow (far = small).
+  const SEA_AT = 0.72;
+  function farClouds(W: number, H: number, y: number, h: number, speed: number, par: number, alpha: number) {
+    const c = img("clouds"); if (!c) return;
+    const w = Math.round(c.naturalWidth * h / c.naturalHeight); h = Math.round(h);
+    const off = (((t * speed + cam.x * par) / ART_PX) % (2 * w) + 2 * w) % (2 * w);
+    cx.globalAlpha = alpha;
+    let i = 0;
+    for (let x = -off; x < W + w; x += w - 1, i++) {
+      if (i % 2) { cx.save(); cx.translate(Math.round(x) + w, y); cx.scale(-1, 1); cx.drawImage(c, 0, 0, w, h); cx.restore(); }
+      else cx.drawImage(c, Math.round(x), y, w, h);
+    }
+    cx.globalAlpha = 1;
+  }
   function belt() {
     const segs = islandUp ? SEGS : SEGS.slice(0, 1);
     if (px) {
@@ -371,8 +386,12 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
       const bw = cx.canvas.width, bh = cx.canvas.height, world = cx.getTransform();
       cx.setTransform(1, 0, 0, 1, 0, 0);
       cx.fillStyle = "#291b17"; cx.fillRect(0, 0, bw, bh);
-      // the sea starts a little under the deck's lowest rock (world y → buffer y through the world transform)
-      sky(bw, bh, 1 / ART_PX, world.d * (HULL.bottom + 170) + world.f);
+      // The cloud sea is far away, so it lives in screen space: it starts at a fixed height (under the deck at the
+      // usual framing) and only drifts with a slow parallax, so zooming or panning moves the deck over it, never with it.
+      const floor = Math.round(bh * (portrait() ? SEA_AT + 0.04 : SEA_AT));
+      sky(bw, bh, 1 / ART_PX, floor);
+      farClouds(bw, bh, floor - Math.round(bh * 0.05), bh * 0.2, 5, 0.12, 0.85);
+      farClouds(bw, bh, Math.round(bh * 0.86), bh * 0.3, 12, 0.3, 0.95);
       cx.setTransform(world);
     } else {
       cx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -384,7 +403,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     slot("sky-far");
     // pixel mode: the deck floats in open air (Justin: the clouds looked attached to it), so the cloud sea sits well
     // below the rocks and the orb; the near layer only fills the bottom of the frame
-    clouds(px ? 720 : 470, 1.1, 5, 0.85);
+    if (!px) clouds(470, 1.1, 5, 0.85);
     // The platform grows (placeholder until Justin's small/medium deck art lands: the big deck, clipped).
     const dk = v.deck ?? { size: "large", island: "built" };
     const reach = { small: 0.42, medium: 0.7, large: 1 }[dk.size];
@@ -413,7 +432,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     leverDraw(v);
     shippy.drawWorld(cx);
     puffsDraw(dt);
-    clouds(px ? 900 : 600, 1.6, 12, 0.95);
+    if (!px) clouds(600, 1.6, 12, 0.95); // pixel mode keeps every cloud behind the deck, so nothing ever touches it
     slot("front");
     if (px) { px.end(); cx = screen; cx.imageSmoothingEnabled = false; }
     cx.setTransform(DPR, 0, 0, DPR, 0, 0);
