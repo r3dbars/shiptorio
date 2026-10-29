@@ -5,7 +5,7 @@ function setup(responses: unknown[], repo: string | undefined = 'owner/repo') {
   const calls: { url: string; method: string }[] = [], navigations: string[] = [], copied: string[] = [];
   const ui = createConnections({ repo, origin: 'https://shiptorio.dev', path: '/deck?source=live&repo=owner%2Frepo',
     navigate: url => navigations.push(url), copy: async text => { copied.push(text); },
-    fetch: (async (url, init) => { calls.push({ url: String(url), method: init?.method ?? 'GET' }); const r = responses.shift(); return r instanceof Response ? r : Response.json(r); }) as typeof fetch,
+    fetch: (async (url, init) => { calls.push({ url: String(url), method: init?.method ?? 'GET' }); const r = String(url) === '/api/me' && !(responses[0] && typeof responses[0] === 'object' && 'githubConfigured' in responses[0]) ? {login:'fixture'} : responses.shift(); return r instanceof Response ? r : Response.json(r); }) as typeof fetch,
   });
   const yes = () => ui.answer(ui.card()!.id, true), no = () => ui.answer(ui.card()!.id, false);
   return { ui, calls, navigations, copied, yes, no };
@@ -39,7 +39,7 @@ test('an existing PR blocks another start and tells the player which work to fin
 test('repository selection explicitly enters live mode and never starts a job', async () => {
   const f = setup([{ repos: [{ fullName: 'alice/a' }, { fullName: 'bob/b' }] }], '');
   f.ui.open('repo'); await settle(); await f.no(); await f.yes();
-  expect(f.navigations).toEqual(['/deck?source=live&repo=bob%2Fb']); expect(f.calls).toHaveLength(1);
+  expect(f.navigations).toEqual(['/deck?source=live&repo=bob%2Fb&onboard=codex']); expect(f.calls).toHaveLength(2);
 });
 test('access errors do not imply an empty inbox or a ready engine', async () => {
   const f = setup([new Response('', { status: 403 })]); f.ui.open('power'); await settle();
@@ -73,14 +73,14 @@ test('stale inbox response cannot replace the engine card', async () => {
   expect(ui.card()?.title).toBe('Codex engine is ready');
 });
 test('refresh replaces the answered card ID even when status is unchanged', async () => {
-  const ready = { paired: true, online: true, harnesses: ['codex'] };
+  const ready = { paired: true, online: true, harnesses: ['codex'], working: { title: 'Existing job' } };
   const f = setup([ready, ready]); f.ui.open('power'); await settle();
   const before = f.ui.card()!.id; await f.yes();
-  expect(f.ui.card()?.id).not.toBe(before); expect(f.ui.card()?.title).toBe('Codex engine is ready');
+  expect(f.ui.card()?.id).not.toBe(before); expect(f.ui.card()?.title).toBe('Engine is busy');
 });
 test('invalid repository input cannot turn setup into a different API request', async () => {
   const f = setup([{ repos: [] }], '../account'); f.ui.open('power'); await settle();
-  expect(f.calls).toEqual([{ url: '/api/repos?page=1', method: 'GET' }]);
+  expect(f.calls).toEqual([{ url: '/api/me', method: 'GET' }, { url: '/api/repos?page=1', method: 'GET' }]);
 });
 test('a delayed setup response cannot replace a newly opened inbox', async () => {
   let finish!: (r: Response) => void;
@@ -106,10 +106,26 @@ test('missing server GitHub credentials stay on the deck instead of sending the 
 test('repository browsing requests the next bounded page after the last card', async () => {
   const f=setup([{repos:[{fullName:'a/first'}],nextPage:2},{repos:[{fullName:'a/next'}],nextPage:null}],'');
   f.ui.open('repo');await settle();await f.no();
-  expect(f.calls[1].url).toBe('/api/repos?page=2');await f.yes();expect(f.navigations[0]).toContain('a%2Fnext');
+  expect(f.calls[2].url).toBe('/api/repos?page=2');await f.yes();expect(f.navigations[0]).toContain('a%2Fnext');
 });
 test('rate-limit errors remain visible rather than being cleared by status polling', async () => {
   const f=setup([new Response('',{status:429,headers:{'retry-after':'60'}})]);
   f.ui.open('power');await settle();f.ui.tick();await settle();
   expect(f.calls).toHaveLength(1);expect(f.ui.card()?.line).toContain('60 seconds');
+});
+
+
+test('choosing a repo leads to Codex, then directly to the first issue card', async () => {
+  const calls: string[] = [];
+  const ui = createConnections({repo:'owner/repo',origin:'https://shiptorio.dev',path:'/deck?source=live&repo=owner%2Frepo&onboard=codex',navigate:()=>{},copy:async()=>{},fetch:(async url=>{calls.push(String(url));return Response.json(String(url).includes('/status')?{paired:true,online:true,harnesses:['codex']}:{issues:[{id:1,number:16,title:'README',body:''}],nextPage:null});}) as typeof fetch});
+  await settle();expect(ui.card()?.yes).toBe('Open inbox');expect(ui.card()?.no).toBe('Unplug');
+  await ui.answer(ui.card()!.id,true);expect(ui.card()?.yes).toBe('Start issue');
+  expect(calls).toEqual(['/api/repos/owner/repo/runner/status','/api/repos/owner/repo/issues?page=1']);
+});
+
+
+test('anonymous front door asks for sign-in without a protected API request', async () => {
+  const calls: string[] = [];
+  const ui = createConnections({origin:'https://shiptorio.dev',path:'/deck?source=live',navigate:()=>{},copy:async()=>{},fetch:(async url=>{calls.push(String(url));return Response.json({guest:true,login:null,githubConfigured:true});}) as typeof fetch});
+  ui.open('repo');await settle();expect(ui.card()?.title).toBe('Sign in to your factory');expect(ui.card()?.yes).toBe('Sign in');expect(calls).toEqual(['/api/me']);
 });
