@@ -73,7 +73,8 @@ try { for (const [index,view] of views.entries()) {
     const errors=[], requests=[];let signedIn=false;
     page.on('pageerror',e=>errors.push(e.message));
     page.on('request',r=>{if(r.method()!=='GET')requests.push(new URL(r.url()).pathname)});
-    page.on('console',m=>{if(m.type()==='error' && !(m.text().includes('401')&&!signedIn))errors.push(m.text())});
+    page.on('console',m=>{if(m.type()==='error' && !(m.text().includes('401')&&!signedIn&&(baseline||new URL(m.location().url || origin).pathname==='/deck.html')))errors.push(m.text())});
+    page.on('response',r=>{if(!baseline&&new URL(r.url()).pathname.startsWith('/api/')&&r.status()>=400)errors.push(`HTTP ${r.status()} ${new URL(r.url()).pathname}`)});
     const steps=[],started=Date.now();
     const card=()=>page.locator('.ic-card:not(.ic-ghost)');
     async function step(name,work){const at=Date.now();try{await work();steps.push({name,ms:Date.now()-at});await page.screenshot({path:join(dir,`${String(steps.length).padStart(2,'0')}-${name}.png`),animations:'disabled'});if(!baseline) for(const button of await card().getByRole('button').all()){const b=await button.boundingBox(),c=await card().boundingBox();assert.ok(b.x>=c.x && b.x+b.width<=c.x+c.width+1,`${name}: button stays inside its card`);}}catch(e){await page.screenshot({path:join(dir,`FAIL-${name}.png`)});throw e;}}

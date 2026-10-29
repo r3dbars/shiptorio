@@ -10,6 +10,7 @@ type Options = { repo?: string; origin: string; path: string; fetch?: typeof fet
 /** Browsing is read-only. Starting one issue requests a plan; a separate card approves the build. */
 export function createConnections(o: Options) {
   const request = o.fetch ?? fetch, now = o.now ?? Date.now;
+  let accountChecked = false;
   let pane: Pane | null = null, revision = 0, displayRevision = 0, busy = false, refreshing = false, error = '', login = false;
   let repos: Repo[] = [], issues: Issue[] = [], index = 0, page = 1, nextPage: number | null = null;
   let status: RunnerStatus | null = null, command = '', copied = false, copyFailed = false, expires = 0, nextPoll = 0;
@@ -39,6 +40,19 @@ export function createConnections(o: Options) {
     refreshing = true; busy = !(target === 'power' && status); error = ''; login = false;
     try {
       if (target === 'repos') {
+        // The front door is public. Ask who is here before requesting a protected inbox,
+        // so an expected sign-in step does not produce a failed API request in the browser.
+        if (!accountChecked) {
+          const response = await request('/api/me', { cache: 'no-store' });
+          if (!response.ok) throw new Error('Could not check sign-in. Try again.');
+          const account = await response.json();
+          if (current !== revision) return;
+          if (account.guest === true || account.login === null) {
+            login = account.githubConfigured !== false;
+            throw new Error(login ? 'Sign in with GitHub to choose your repository.' : 'GitHub setup is not finished on this server. The factory owner must connect its GitHub App before anyone can sign in.');
+          }
+          accountChecked = true;
+        }
         const data = await json<{ repos: Repo[]; nextPage?: number | null }>(`/api/repos?page=${page}`);
         if (current === revision) { repos = data.repos; nextPage = data.nextPage ?? null; index = Math.min(index, Math.max(0, repos.length - 1)); }
       } else if (target === 'issues') {
@@ -80,7 +94,7 @@ export function createConnections(o: Options) {
       const ready = status?.online && status.harnesses.includes('codex');
       title = !status?.paired ? 'Connect your Codex engine' : !status.online ? 'Codex engine is offline' : !ready ? 'Sign in to Codex' : status.working ? 'Engine is busy' : 'Codex engine is ready';
       line = !status?.paired ? 'Shippy: Connect the local runner to use your Codex subscription. Connecting never starts a coding job.' : !status.online ? 'Shippy: Start shiptorio-runner watch on your computer. The factory is paired, but the worker is not reachable.' : !ready ? 'Shippy: Run shiptorio-runner login codex on your computer, then return here. Codex is not currently available.' : status.working ? `Shippy: Working on ${status.working.title}. This engine has no free slot until the job finishes.` : 'Codex is ready. Choose an issue next. You review the plan before any code is written.';
-      yes = !status?.paired ? 'Set up Codex' : ready && !status.working ? 'Open inbox' : 'Refresh'; no = status?.paired ? 'Disconnect' : 'Close';
+      yes = !status?.paired ? 'Set up Codex' : ready && !status.working ? 'Open inbox' : 'Refresh'; no = status?.paired ? 'Unplug' : 'Close';
     }
     return { id: `connection-${revision}-${displayRevision}-${pane}`, stop: pane === 'power' || pane === 'setup' || pane === 'disconnect' ? 'builder' : 'repo', title, line, yes, no, dots: null };
   }
