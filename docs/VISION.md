@@ -44,9 +44,10 @@ It never ends. There is always a bottleneck, always something to optimize, alway
    (phone, web, later voice). The gauntlet makes fast yeses safe, and earned trust means fewer cards.
 7. **Simple, easy, addictive in a good way.** Two minutes from sign-in to your first bottleneck. Justin loves
    games; the game pull is the product. Fun is what makes people keep shipping.
-8. **Plain words in the UI, no "Spark".** Players don't care what the planner model is called. Recommended options
-   just get a "Suggested" tag. No named character. The only credit is one small "powered by Meta Muse Spark" line
-   (onboarding/about). Internally (code, docs, contracts) Spark keeps its name.
+8. **Plain words in the UI; Shippy is the one guide.** Players don't care what the planner model is called, so
+   cards use plain words and recommended options just get a "Suggested" tag. Shippy is the only character. One short
+   tutorial beat says he's powered by Meta Muse Spark (Justin 2026-10-29); otherwise no "Spark" in player copy.
+   Internally (code, docs, contracts) Spark keeps its name.
 9. **Progressive disclosure: one concept at a time, mobile first.** Shiptorio is a lot (ore, machines, power, the gauntlet, bottlenecks, autonomy), and all of it at once overwhelms. Onboarding walks a new player through it step by step, with a coach card as the guide: your factory is one codebase, then ore, a machine, power, the line, one inspection, the rocket, the bottleneck, the check-in deck. Each piece of HUD stays hidden until the coach introduces it, and each lesson is taught by doing, not by reading. New features follow the same rule: they show up when the player is ready for them. Big readable text, few boxes.
 
 10. **The map reads like the work, bottom to top.** Raw work is mined deep underground (inbox, GitHub, Sentry,
@@ -139,7 +140,7 @@ The full approved rounds 1–4 and rollout policy are in [GAMEPLAY-PICKS.md](GAM
   Station labels, cards, captions, story, setup copy, runner messages, PR comments and docs all use these exact
   words (source of truth: `STOP_LABEL` in `web/src/deck2d/contract.ts`). No synonyms (not inspector, verify bay,
   AI review, merge gate, assembler, inbox or launch pad). Checks runs the CI check and the proof check (`docs/LOOP.md`).
-- **Who it's for:** solo founders and tiny teams with real users. Hosted on shiptorio.com (password-gated for now).
+- **Who it's for:** solo founders and tiny teams with real users. Hosted on shiptorio.com (password-gated for now). shiptorio.dev opens straight into the tutorial; the password comes at "create your own factory".
 - **Hackathon:** Meta, submit by noon CT Wed Nov 4. It's a date, not the goal.
 
 ## How to decide what's next
@@ -203,3 +204,7 @@ New high-level goals from Justin go here, dated, then get folded into the sectio
   launch pad) rise in 5 to 8 animated seconds each, burst online with electricity and stamp themselves done while a
   real first issue rides through. Behind `?buildout=1` until Justin has played it. Contract:
   `web/src/buildout/CONTRACT.md`; plan https://claude.ai/artifact/T6puBBYVnZiFaBiqephirN.
+- 2026-10-29 20:56: **Tutorial first, password at "create your own factory".** Anyone visiting shiptorio.dev lands in
+  Shippy's tutorial with no password, waitlist or landing page in front. The password pops up only when they choose to
+  create their own factory, right before GitHub sign-in. Real accounts stay locked; the tutorial is scripted (no Spark
+  spend). shiptorio.com follows only via a promotion. Details: `docs/context/landing.md`.
