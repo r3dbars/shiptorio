@@ -89,7 +89,7 @@ export const isLaunchCard = (m: Move) => continueOption(m).actions.some((a) => a
 export const isSetupCard = (m: Move) => continueOption(m).actions.some((a) => a.tool === "connect_source" && (a.args.kind === "claude" || a.args.kind === "codex"));
 /** Only show the agent on recommendations with matching Meta evidence, never from copy alone. */
 export function metaGuided(s: FactoryState, move: Move): boolean {
-  if (isSetupCard(move)) return false;
+  if (continueOption(move).actions.some(a => a.tool === "connect_source")) return false;
   if (s.holdingBack?.by === "spark" && move.id === `unlock:${s.holdingBack.id}`) return true;
   const tools = continueOption(move).actions.map(a => a.tool);
   const decision = tools.includes("approve_runner_job") ? "plan" : tools.includes("request_rework") ? "review" : null;
