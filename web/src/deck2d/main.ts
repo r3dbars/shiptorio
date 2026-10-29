@@ -80,6 +80,23 @@ export function copyText(text: string | Promise<string>): Promise<void> {
   return Promise.resolve(text).then(t => navigator.clipboard.writeText(t));
 }
 
+/** Staging only: ?fresh=1 forgets this browser and signs out, so the whole first run plays again from the story.
+ *  For Justin's recording takes (2026-10-29). Never on shiptorio.com, and there is no button for it. */
+const FRESH_HOSTS = ["shiptorio.dev", "www.shiptorio.dev", "localhost", "127.0.0.1"];
+export async function freshStart(loc: Pick<Location, "search" | "hostname" | "pathname" | "replace"> = location,
+  storage: Storage = localStorage, session: Storage = sessionStorage, request: typeof fetch = fetch): Promise<boolean> {
+  const q = new URLSearchParams(loc.search);
+  if (q.get("fresh") !== "1" || !FRESH_HOSTS.includes(loc.hostname)) return false;
+  try {
+    for (const key of Object.keys(storage)) if (key.startsWith("shiptorio")) storage.removeItem(key);
+    session.clear();
+  } catch { /* storage off: nothing to forget */ }
+  await request("/auth/logout", { redirect: "manual", cache: "no-store" }).catch(() => undefined);
+  q.delete("fresh"); q.set("source", "live");
+  loc.replace(`${loc.pathname}?${q}`);
+  return true;
+}
+
 /** A requested live URL is not proof that this browser is signed in. */
 export async function deckSignedIn(request: typeof fetch = fetch): Promise<boolean> {
   try {
@@ -124,6 +141,7 @@ export function storyBeforeSignIn(story: DeckSource, connections: { open(target:
 
 // The 2D deck page (web/deck.html). Wires the engine to a source, the card, Shippy and juice.
 if (typeof document !== "undefined" && document.getElementById("world")) void (async () => {
+  if (await freshStart()) return;
   const { createEngine } = await import("./engine/engine");
 // Each module lives in its own folder and is picked up here when it exists, so threads can land independently.
 type Mod = Record<string, unknown>;

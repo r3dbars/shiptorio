@@ -63,6 +63,9 @@ try {
     page.on("pageerror", error => failures.push(`JS: ${error.message}`));
     page.on("console", msg => { if (msg.type() === "error" && (admitted || !/401/.test(msg.text()))) failures.push(`Console: ${msg.text()}`); });
     page.on("response", response => { if (response.url().startsWith(url.origin) && response.status() >= 400 && !(!admitted && response.status() === 401 && new URL(response.url()).pathname === admissionPath)) failures.push(`HTTP ${response.status()} ${new URL(response.url()).pathname}`); });
+    // Test accounts may never mint a real runner join code (server refuses by design). Locally, hand the
+    // deck a fixture code so the card moves on to "Paste it into Terminal" like it does for a real player.
+    if (fixture) await page.route(`${url.origin}/api/repos/test-fixture/${persona}/runner/join`, route => route.fulfill({ json: { join: "0".repeat(48), expires: Date.now() + 600_000 } }));
     let lastChange = Date.now(), previous = "", number = 0;
     const capture = async label => {
       const file = `${width}-${String(++number).padStart(2, "0")}-${label.replace(/[^a-z0-9-]+/gi, "-").slice(0, 60)}.png`;
@@ -156,6 +159,8 @@ try {
         const intent = fixtureCardIntent(cardState.label, cardState.title, option?.actions.map(action => action.tool) ?? []);
         if (intent !== "wait" && await activateFixtureCard(card, cardState)) {
           recordCard(cardState.label, intent);
+          // After the tap copies the setup line, the fixture runner comes online like a real Terminal paste.
+          if (intent === "connect-codex" && fixture) await fixture.startRunner((await context.cookies()).map(c => `${c.name}=${c.value}`).join("; "));
           await capture(intent);
         }
       }
