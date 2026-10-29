@@ -69,3 +69,19 @@ test('invalid repository input cannot turn setup into a different API request', 
   const f = setup([{ repos: [] }], '../account'); f.ui.open('power'); await settle();
   expect(f.calls).toEqual([{ url: '/api/repos', method: 'GET' }]);
 });
+test('a delayed setup response cannot replace a newly opened inbox', async () => {
+  let finish!: (r: Response) => void;
+  const ui = createConnections({ repo:'a/b', origin:'https://shiptorio.dev', path:'/deck', navigate() {}, copy:async()=>{}, fetch:(async (url, init) => {
+    if(init?.method === 'POST') return new Promise<Response>(r=>{finish=r;});
+    return String(url).includes('/issues') ? Response.json({issues:[],nextPage:null}) : Response.json({paired:false,online:false,harnesses:[]});
+  }) as typeof fetch });
+  ui.open('power'); await settle(); const pending=ui.answer(ui.card()!.id,true);
+  ui.open('repo'); await settle(); finish(Response.json({join:'late',expires:Date.now()+10000})); await pending;
+  expect(ui.card()?.title).toBe('No open issues on this page');
+});
+test('confirmed disconnect revokes the pairing then refreshes status', async () => {
+  const f = setup([{paired:true,online:true,harnesses:['codex']},{ok:true},{paired:false,online:false,harnesses:[]}]);
+  f.ui.open('power'); await settle(); await f.no(); await f.yes();
+  expect(f.calls[1]).toEqual({url:'/api/repos/owner/repo/runner/disconnect',method:'POST'});
+  expect(f.ui.card()?.title).toBe('Connect your Codex engine');
+});

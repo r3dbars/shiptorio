@@ -75,6 +75,7 @@ export function createConnections(o: Options) {
   }
   async function answer(id: string, approve: boolean) {
     if (!pane || card()?.id !== id) return false;
+    const generation = revision;
     displayRevision++; // A refresh is a new card even when its content is unchanged.
     if (busy) return true;
     if (error && approve) {
@@ -94,11 +95,12 @@ export function createConnections(o: Options) {
         busy = true;
         try {
           const me = await json<{ installUrl: string | null }>('/api/me');
+          if (generation !== revision) return true;
           const url = me.installUrl ? new URL(me.installUrl) : null;
           if (url?.origin === 'https://github.com' && url.pathname.startsWith('/apps/')) o.navigate(url.href);
           else error = 'GitHub App setup is unavailable. Ask the factory owner to finish setup.';
-        } catch (e) { error = e instanceof Error ? e.message : 'Could not open GitHub setup'; }
-        finally { busy = false; }
+        } catch (e) { if (generation === revision) error = e instanceof Error ? e.message : 'Could not open GitHub setup'; }
+        finally { if (generation === revision) busy = false; }
       }
     } else if (pane === 'issues') {
       if (index + 1 < issues.length) { index++; revision++; }
@@ -107,18 +109,19 @@ export function createConnections(o: Options) {
       busy = true;
       try {
         const join = await json<{ join: string; expires: number }>(`${api}/runner/join`, { method: 'POST' });
-        command = runnerInstallCommand(o.origin, join.join); expires = join.expires; copied = false; pane = 'setup'; revision++;
-      } catch (e) { error = e instanceof Error ? e.message : 'Setup failed'; }
-      finally { busy = false; }
+        if (generation !== revision) return true;
+        command = runnerInstallCommand(o.origin, join.join); expires = join.expires; copied = false; pane = 'setup'; busy = false; revision++;
+      } catch (e) { if (generation === revision) error = e instanceof Error ? e.message : 'Setup failed'; }
+      finally { if (generation === revision) busy = false; }
     } else if (pane === 'setup') {
       if (expires <= now()) { pane = 'power'; revision++; await refresh(); }
       else { try { await o.copy(command); copied = true; } catch { copied = false; } revision++; }
     } else if (pane === 'disconnect') {
       busy = true;
-      try { await json(`${api}/runner/disconnect`, { method: 'POST' }); pane = 'power'; revision++; }
-      catch (e) { error = e instanceof Error ? e.message : 'Disconnect failed'; }
-      finally { busy = false; }
-      if (!error) await refresh();
+      try { await json(`${api}/runner/disconnect`, { method: 'POST' }); if (generation !== revision) return true; pane = 'power'; busy = false; revision++; }
+      catch (e) { if (generation === revision) error = e instanceof Error ? e.message : 'Disconnect failed'; }
+      finally { if (generation === revision) busy = false; }
+      if (generation + 1 === revision && !error) await refresh();
     } else await refresh();
     return true;
   }
