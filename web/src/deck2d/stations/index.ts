@@ -53,9 +53,16 @@ export function drawStation(ctx: CanvasRenderingContext2D, id: StationId, s: Sto
   // Short stepped shadows cast down-left by the upper-right sun, plus a tight
   // contact seam. Opaque palette pixels keep the floor and machines on one grid.
   const footW = Math.round(cv.width * 0.6);
-  for (let row = 5; row >= 0; row--) {
-    ctx.fillStyle = row > 2 ? PALETTE.iron[1] : PALETTE.iron[0];
+  for (let row = 9; row >= 0; row--) {
+    ctx.fillStyle = row > 5 ? PALETTE.iron[1] : PALETTE.iron[0];
     ctx.fillRect(at(x - footW * scale / 2 - row * scale), at(feetY + row * scale), footW * scale, scale);
+  }
+  // A low mounting slab has a receding top and a vertical front face. The feet
+  // meet its lit upper edge; the walkway remains visible beyond its shadow.
+  for (let row = -5; row <= 3; row++) {
+    ctx.fillStyle = row < 0 ? PALETTE.iron[2] : row === 0 ? PALETTE.iron[4] : PALETTE.iron[0];
+    const recede = row < 0 ? -row : 0;
+    ctx.fillRect(at(x - footW * scale / 2 + recede * scale), at(feetY + row * scale), footW * scale, scale);
   }
   ctx.fillStyle = PALETTE.soot[0];
   ctx.fillRect(at(x - footW * scale / 2), at(feetY), footW * scale, scale);

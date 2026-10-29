@@ -202,12 +202,17 @@ export function side(g: Px, x: number, y: number, h: number, d: number, ramp: Ra
  * and about 3/4 d up. Brass trims the lit front-top edge; the front-right corner catches the sun. */
 export function box3q(g: Px, x: number, y: number, w: number, h: number, d: number, base = 0.34, opts: { rust?: number; grime?: number; seed?: number } = {}) {
   const up = Math.round(d * 0.75), seed = opts.seed ?? 1;
-  side(g, x + w, y, h, d, IRON, 0.42, seed);
+  side(g, x + w, y, h, d, IRON, 0.53, seed);
   for (let j = 1; j <= up; j++) { // top face, lightest: it faces the sky
     const ty = y - j, sh = Math.round((j * d) / up);
     for (let xx = x + sh; xx < x + w + sh; xx++) tone(g, xx, ty, IRON, 0.7 + 0.12 * ((xx - x) / (w + d)) - j * 0.015 + (blotch(xx, ty, 4, seed + 5) - 0.5) * 0.12);
   }
   face(g, x, y, w, h, IRON, base, opts);
+  // A recessed front and a hard corner separate the three planes of the casing.
+  g.vline(x, y + 1, h - 1, "iron-0");
+  g.hline(x, y + h - 1, w, "soot");
+  g.line(x + w, y + h - 1, x + w + d - 1, y + h - up - 1, "iron-0");
+  g.line(x + d, y - up, x + w + d - 1, y - up, "iron-4");
   for (let xx = x; xx < x + w; xx++) tone(g, xx, y, BRASS, 0.42 + 0.3 * ((xx - x) / w)); // brass trim on the front-top edge
   for (let yy = y; yy < y + h; yy++) tone(g, x + w - 1, yy, BRASS, 0.55 - 0.15 * ((yy - y) / h)); // the lit corner upright
   g.set(x + w - 1, y, "brass-5");
