@@ -67,7 +67,7 @@ export async function deckSmoke({ origin = 'https://shiptorio.dev', password, ou
         const signIn = page.getByRole('button', { name: 'Sign in', exact: true });
         // The tour ends on its own ask; only "Create my factory" opens sign-in (and, on staging, the password).
         const ask = page.getByRole('button', { name: 'Create my factory', exact: true });
-        for (let n = 0; n < 30 && !(await ask.count()); n++) {
+        for (let n = 0; n < 60 && !(await ask.count()); n++) { // a story card's first tap may finish its typed line
           const beat = page.locator('.ic-card:not(.ic-ghost)[data-card^="tour-"] .approve');
           await Promise.race([beat.first().waitFor({ timeout: 30000 }).catch(() => {}), ask.waitFor({ timeout: 30000 }).catch(() => {})]);
           if (await ask.count()) break;
