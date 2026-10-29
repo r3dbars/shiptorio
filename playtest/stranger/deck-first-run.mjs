@@ -42,7 +42,15 @@ try { for (const [index,view] of views.entries()) {
       compatibilityDate,compatibilityFlags,kvNamespaces,d1Databases,durableObjects,assets,
       name:'shiptorio',rootPath:bundle,modules:true,scriptPath:join(bundle,'index.js'),
       bindings:{...workerOptions.bindings,PUBLIC_URL:origin,ALLOWED_LOGINS:stub.state.user.login,SESSION_SECRET:'deck-first-run-session-0123456789abcdef',APP_PASSWORD:password,META_API_KEY:'stub-meta-key',SPARK_DAILY_TOKENS:'5000000',GITHUB_APP_ID:'1',GITHUB_APP_PRIVATE_KEY:privateKey,GITHUB_CLIENT_ID:'Iv1.stub',GITHUB_CLIENT_SECRET:'stub-client-secret',GITHUB_WEBHOOK_SECRET:secret,GITHUB_APP_SLUG:'shiptorio-stub'},
-      outboundService:request=>new URL(request.url).host==='api.meta.ai'?spark.outbound(request):stub.outbound(request),
+      outboundService:async request=>{
+        if(new URL(request.url).host==='api.meta.ai') return spark.outbound(request);
+        const response=await stub.outbound(request);
+        if(request.method==='GET' && new URL(request.url).pathname===`/repos/${stub.state.repo}/issues`) {
+          const rows=await response.json();
+          return Response.json(rows.map(row=>({...row,id:row.number+7000})));
+        }
+        return response;
+      },
     }]})); await mf.ready;
     const db=await mf.getD1Database('DB');
     for(const file of readdirSync(join(server,'migrations')).filter(f=>f.endsWith('.sql')).sort()) {
@@ -68,7 +76,7 @@ try { for (const [index,view] of views.entries()) {
     page.on('console',m=>{if(m.type()==='error' && !(m.text().includes('401')&&!signedIn))errors.push(m.text())});
     const steps=[],started=Date.now();
     const card=()=>page.locator('.ic-card:not(.ic-ghost)');
-    async function step(name,work){const at=Date.now();try{await work();steps.push({name,ms:Date.now()-at});await page.screenshot({path:join(dir,`${String(steps.length).padStart(2,'0')}-${name}.png`)});}catch(e){await page.screenshot({path:join(dir,`FAIL-${name}.png`)});throw e;}}
+    async function step(name,work){const at=Date.now();try{await work();steps.push({name,ms:Date.now()-at});await page.screenshot({path:join(dir,`${String(steps.length).padStart(2,'0')}-${name}.png`),animations:'disabled'});if(!baseline) for(const button of await card().getByRole('button').all()){const b=await button.boundingBox(),c=await card().boundingBox();assert.ok(b.x>=c.x && b.x+b.width<=c.x+c.width+1,`${name}: button stays inside its card`);}}catch(e){await page.screenshot({path:join(dir,`FAIL-${name}.png`)});throw e;}}
     await step('enter-deck',async()=>{await page.goto(origin+'/deck.html?source=live');await page.getByLabel('Password').fill(password);await page.getByRole('button',{name:'Enter the factory'}).click();await page.locator('[data-deck-ready]').waitFor();await card().getByRole('button',{name:'Sign in',exact:true}).waitFor();});
     await step('github-sign-in',async()=>{await card().getByRole('button',{name:'Sign in',exact:true}).click();await card().getByRole('button',{name:'Use this repo',exact:true}).waitFor();signedIn=true;});
     await step('choose-repository',async()=>{await card().getByRole('button',{name:'Use this repo',exact:true}).click();await page.waitForURL(u=>u.searchParams.get('repo')===stub.state.repo);if(baseline) await page.getByRole('button',{name:'Codex engine',exact:true}).click();await card().getByRole('button',{name:'Set up Codex',exact:true}).waitFor();});
@@ -76,16 +84,16 @@ try { for (const [index,view] of views.entries()) {
     await step('codex-setup',async()=>{
       const response=page.waitForResponse(r=>r.request().method()==='POST'&&new URL(r.url()).pathname.endsWith('/runner/join'));
       await card().getByRole('button',{name:'Set up Codex',exact:true}).click();joinTicket=(await (await response).json()).join;
-      await card().getByRole('button',{name:'Copy command',exact:true}).click();await card().getByRole('heading',{name:'Setup command copied',exact:true}).waitFor();
+      await card().getByRole('button',{name:baseline?'Copy command':'Copy setup',exact:true}).click();await card().getByRole('heading',{name:'Setup command copied',exact:true}).waitFor();
       assert.match(await page.evaluate(()=>navigator.clipboard.readText()),/--join/);
     });
     await step('runner-ready',async()=>{
       const joined=await context.request.post(origin+'/api/runner-device/join',{data:{join:joinTicket},headers:{origin}});assert.equal(joined.ok(),true,await joined.text());
       const {token}=await joined.json();
       const online=await context.request.post(origin+`/api/runner/${stub.state.repo}/heartbeat`,{data:{harnesses:['codex']},headers:{origin,authorization:`Bearer ${token}`}});assert.equal(online.ok(),true,await online.text());
-      await card().getByRole('button',{name:'Check again',exact:true}).click();await card().getByRole('heading',{name:'Codex engine is ready',exact:true}).waitFor();
+      await card().getByRole('button',{name:baseline?'Check again':'Check',exact:true}).click();await card().getByRole('heading',{name:'Codex engine is ready',exact:true}).waitFor();
     });
-    await step('first-issue-card',async()=>{if(baseline) await page.getByRole('button',{name:'Repo inbox',exact:true}).click();else await card().getByRole('button',{name:'Browse issues',exact:true}).click();await card().getByRole('button',{name:'Start issue',exact:true}).waitFor();assert.match(await card().innerText(),/#1.*Checkout total/);});
+    await step('first-issue-card',async()=>{if(baseline) await page.getByRole('button',{name:'Repo inbox',exact:true}).click();else await card().getByRole('button',{name:'Open inbox',exact:true}).click();await card().getByRole('button',{name:'Start issue',exact:true}).waitFor();assert.match(await card().innerText(),/#1.*Checkout total/);});
     assert.ok(Date.now()-started<120000,'first issue must be reached in under two minutes');
     assert.deepEqual(errors,[],'no browser runtime errors');
     assert.ok(!requests.some(p=>p.endsWith('/start')),'browsing must not start a job');

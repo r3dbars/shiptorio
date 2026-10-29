@@ -118,7 +118,7 @@ test('rate-limit errors remain visible rather than being cleared by status polli
 test('choosing a repo leads to Codex, then directly to the first issue card', async () => {
   const calls: string[] = [];
   const ui = createConnections({repo:'owner/repo',origin:'https://shiptorio.dev',path:'/deck?source=live&repo=owner%2Frepo&onboard=codex',navigate:()=>{},copy:async()=>{},fetch:(async url=>{calls.push(String(url));return Response.json(String(url).includes('/status')?{paired:true,online:true,harnesses:['codex']}:{issues:[{id:1,number:16,title:'README',body:''}],nextPage:null});}) as typeof fetch});
-  await settle();expect(ui.card()?.yes).toBe('Browse issues');expect(ui.card()?.no).toBe('Disconnect…');
+  await settle();expect(ui.card()?.yes).toBe('Open inbox');expect(ui.card()?.no).toBe('Disconnect');
   await ui.answer(ui.card()!.id,true);expect(ui.card()?.yes).toBe('Start issue');
   expect(calls).toEqual(['/api/repos/owner/repo/runner/status','/api/repos/owner/repo/issues?page=1']);
 });
