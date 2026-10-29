@@ -1,5 +1,5 @@
 import { isLocal } from "./auth";
-import { sameOriginPath } from "./redirect";
+import { DECK_HOSTS, deckFrontDoor, sameOriginPath } from "./redirect";
 import { makeSessionCookie, readSession } from "./session";
 import { gatePage } from "./gate-page";
 import { boundedBody } from "./webhook-body";
@@ -71,13 +71,24 @@ const PUBLIC_FILE = /^\/(?:welcome\/[\w.-]*|fonts\/[\w.-]+|brand\/[\w.-]+|robots
 // public; no API, websocket, source map, arbitrary asset or private app route is opened.
 export const isJudgePage = (path: string) => path === "/judge" || path === "/judge/";
 export const isJudgeAsset = (path: string) => /^\/assets\/[^/]+-[A-Za-z0-9_-]{8,}\.(?:js|css)$/.test(path);
-export type PublicRoute = "landing" | "file" | "waitlist" | "judge";
+// shiptorio.dev opens straight into the tutorial (Justin 2026-10-29): the deck page, its front-door redirect and its
+// static art are public there. The tutorial is scripted in the page, so nothing else opens: /api/*, /auth/callback,
+// /connect, runner and socket routes still need the preview password, which the deck asks for at "create your factory".
+const DECK_FILE = /^\/deck\/(?:art|px|traces)\/(?:[\w-]+\/)*[\w-]+\.(?:webp|png|json)$/;
+export function isPublicDeck(url: URL): boolean {
+  if (!DECK_HOSTS.has(url.hostname)) return false;
+  const path = url.pathname;
+  if (path === "/") return deckFrontDoor(url) !== null;
+  return path === "/deck" || path === "/deck/" || path === "/deck.html" || DECK_FILE.test(path);
+}
+export type PublicRoute = "landing" | "file" | "waitlist" | "judge" | "deck";
 export async function publicRoute(request: Request, env: AccessEnv): Promise<PublicRoute | null> {
   const url = new URL(request.url);
   const read = request.method === "GET" || request.method === "HEAD";
   if (read && isJudgePage(url.pathname)) return "judge";
   if (read && isJudgeAsset(url.pathname)) return "file";
   if (read && PUBLIC_FILE.test(url.pathname)) return "file";
+  if (read && isPublicDeck(url)) return "deck";
   if (url.pathname === "/api/waitlist" && request.method === "POST") return "waitlist";
   if (!read || url.pathname !== "/" || (env.DEV_LOGIN && isLocal(url))) return null;
   // App deep links (/?onboard=repo&source=live from the GitHub install, ?source=sim, ...) still go to the
