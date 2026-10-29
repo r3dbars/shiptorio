@@ -104,13 +104,21 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     let lead = 0; crates.forEach((c) => { lead = Math.max(lead, c.d); });
     return PATH[0][0] + lead;
   }
+  // Desktop keeps the whole line in view (the 5-second bottleneck test) and only steps one whole art px closer,
+  // sliding toward the crate or card. Phones still park close on the stop that matters.
+  function lean(all: { x: number; y: number; s: number }, x: number) {
+    if (portrait()) return null;
+    const k = Math.max(1, Math.round(all.s * ART_PX * DPR)) + 1, s = px ? k / (ART_PX * DPR) : all.s * 1.4;
+    const half = W / 2 / s, x0 = BOUNDS.x0 - 40 + half, x1 = right() - half;
+    return { x: x1 <= x0 ? all.x : Math.max(x0, Math.min(x1, x)), y: all.y - 20, s };
+  }
   function target(v: DeckView) {
     const all = fitAll();
     if (cam.all) return all;
     const following = (v as DeckView & { followItem?: string }).followItem;
     const cargo = following ? crates.get(following) : undefined;
-    if (cargo) return { x: at(cargo.d)[0], y: 225, s: Math.max(all.s, W / 1100) };
-    if ((v.card || (v as AttentionView).focus) && !rehearsingMachines) return { x: focusX(v), y: 225, s: Math.max(all.s, W / 1100) };
+    if (cargo) return lean(all, at(cargo.d)[0]) ?? { x: at(cargo.d)[0], y: 225, s: Math.max(all.s, W / 1100) };
+    if ((v.card || (v as AttentionView).focus) && !rehearsingMachines) return lean(all, focusX(v)) ?? { x: focusX(v), y: 225, s: Math.max(all.s, W / 1100) };
     if (rehearsingMachines) {
       return { x: focusX(v), y: 225, s: Math.max(all.s, W / 1000) };
     }

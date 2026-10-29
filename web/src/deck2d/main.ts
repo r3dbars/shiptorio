@@ -59,8 +59,11 @@ const seed = Number(params.get("seed")) || 0;
   else if ((want === "sim" || want === "live" && params.has("repo")) && data?.createLiveSource) source = await (data.createLiveSource as (cfg: undefined, opts: { onPower: () => void }) => Promise<DeckSource> | DeckSource)(undefined, { onPower: () => connections.open("power") });
   else if (want === "live") {
     const backdrop = createDemo().view();
-    source = { view: () => ({ ...backdrop, stops: backdrop.stops.map(stop => ({ ...stop, state: "idle", automated: false, items: [] })),
-      jam: null, card: null, shipped: 0, caption: "Connect your repo to start your factory.", shippy: { at: "corner", pose: "idle" } }),
+    // Belief before setup: one sample crate waits at Review, so the bottleneck is visible before anything is connected.
+    // It's plainly a sample (no number, no card of its own) and nothing here can start real work.
+    source = { view: () => ({ ...backdrop, stops: backdrop.stops.map(stop => ({ ...stop, built: true, state: "idle", automated: false,
+        items: stop.id === "review" ? [{ id: "sample-waiting", title: "Sample work", look: "plain" as const }] : [] })),
+      attention: ["review"], jam: null, card: null, shipped: 0, caption: "Sample: this crate waits on your call. Connect your repo to run yours.", shippy: { at: "review", pose: "inspect" } }),
       approve() {}, later() {} };
   }
   else if (want !== "demo" && story?.createStory) source = (story.createStory as (o: { seed: number; speed: number }) => DeckSource)({ seed, speed });
