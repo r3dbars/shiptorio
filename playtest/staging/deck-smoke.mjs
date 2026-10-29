@@ -71,7 +71,10 @@ export async function deckSmoke({ origin = 'https://shiptorio.dev', password, ou
           if (await signIn.count()) break;
           assert.equal(await page.locator('.connection-tools').count(), 0);
           storyCards.push(await page.locator('.ic-card:not(.ic-ghost)[data-card^="tour-"]').first().getAttribute('data-card'));
-          await beat.first().click();
+          // The Gate's Ship it ships real-looking work, so it's a held press like a real merge (story/ship.ts).
+          if (await page.locator('.ic-card:not(.ic-ghost)[data-card^="tour-"]').first().evaluate(el => el.classList.contains('hold'))) {
+            await beat.first().hover(); await page.mouse.down(); await page.waitForTimeout(1100); await page.mouse.up();
+          } else await beat.first().click();
         }
         await page.getByRole('button', { name: 'Sign in', exact: true }).waitFor({ state: 'visible', timeout: 45000 });
         assert(new URL(page.url()).pathname === '/deck', 'Guest left the 2D deck');
