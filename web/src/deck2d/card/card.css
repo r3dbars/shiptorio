@@ -18,6 +18,7 @@
   border: 40px solid transparent; border-image: url("/deck/art/ui-panel.webp") 128 fill / 40px stretch;
   filter: drop-shadow(0 12px 22px #000b);
   font-family: "Pixelify Sans", "Silkscreen", ui-monospace, monospace; color: var(--ic-ink);
+  overflow-wrap: anywhere; /* long repo names, issue titles and setup commands wrap inside the plate */
   touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
   cursor: grab; will-change: transform;
 }
@@ -25,10 +26,10 @@
 .ic-card:not(.dragging):not(.ic-ghost) { transition: transform .32s cubic-bezier(.2, 1.6, .4, 1); } /* snaps back with a little bounce */
 
 .ic-title {
-  margin: -18px 0 0; font-weight: 700; font-size: clamp(23px, 6.6vw, 31px); line-height: 1.12; letter-spacing: .01em;
+  margin: -18px 0 8px; font-weight: 700; font-size: clamp(23px, 6.6vw, 31px); line-height: 1.12; letter-spacing: .01em;
   color: var(--ic-ink); text-shadow: 0 3px 0 #000; text-wrap: balance;
 }
-.ic-dots { display: flex; justify-content: center; gap: 12px; margin: 12px 0 8px; }
+.ic-dots { display: flex; justify-content: center; gap: 12px; margin: 4px 0 8px; }
 .ic-dot {
   width: 18px; height: 18px; box-sizing: border-box; border-radius: 50%; border: 3px solid var(--ic-ring); background: #0006;
 }
@@ -44,18 +45,18 @@
 }
 .ic-line[hidden], .ic-dots[hidden] { display: none; }
 
-.ic-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 0 -26px -26px; }
+.ic-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; margin: 0 -26px -26px; }
 .ic-btn {
   --lean: 0;
   font: inherit; font-weight: 700; font-size: clamp(18px, 5vw, 22px); color: var(--ic-ink); text-shadow: 0 2px 0 #000;
-  min-height: 60px; padding: 0 4px; cursor: pointer; background: none;
+  min-width: 0; min-height: 60px; padding: 0 4px; cursor: pointer; background: none;
   border: 18px solid transparent; border-image: url("/deck/art/ui-btn.webp") 72 fill / 18px stretch;
   display: flex; align-items: center; justify-content: center; gap: .45em; white-space: nowrap;
   transform: scale(calc(1 + var(--lean) * .07)); transition: transform .12s, filter .12s;
   touch-action: manipulation;
 }
 .ic-btn span { font-size: 1.1em; }
-.ic-btn b { font-weight: inherit; position: relative; }
+.ic-btn b { font-weight: inherit; position: relative; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .ic-btn span { position: relative; }
 /* a hold card (ships real code): Approve fills with molten gold while held, HOLD_MS in card.ts */
 .ic-fill { display: none; }
@@ -74,9 +75,8 @@
 .ic-btn:focus-visible { outline: 3px solid var(--ic-gold); outline-offset: -6px; }
 .ic-btn:disabled { cursor: default; }
 
-/* the empty state: same plate, no buttons */
+/* the empty state: same plate, same title and line, no buttons */
 .ic-empty { cursor: default; padding-bottom: 6px; }
-.ic-empty .ic-title { color: #c9f5a8; }
 .ic-empty .ic-line { margin-bottom: -16px; }
 
 /* in: slides up from below (after an answer it waits for the ghost's dot pop) */
@@ -116,18 +116,20 @@
   padding: calc(var(--p) * 11) calc(var(--p) * 10) calc(var(--p) * 9);
   -webkit-font-smoothing: none; font-smooth: never; font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0;
 }
+/* at the 3x desktop scale the words are 1.5x bigger, so the plate grows too: the longest button label still fits */
+@media (min-width: 900px) { .ironcard.px .ic-card { width: round(down, min(540px, 100vw - 20px), var(--p)); } }
 .ironcard.px .ic-pxbg { position: absolute; left: 0; top: 0; image-rendering: pixelated; pointer-events: none; z-index: 0; }
 .ironcard.px .ic-card > :not(.ic-pxbg), .ironcard.px .ic-btn > :not(.ic-pxbg):not(.ic-fill) { position: relative; z-index: 2; }
 .ironcard.px .ic-fill { z-index: 1; }
 .ironcard.px .ic-title {
-  margin: 0; font-size: calc(var(--p) * 12); line-height: calc(var(--p) * 13); letter-spacing: 0;
+  margin: 0 0 calc(var(--p) * 4); font-size: calc(var(--p) * 12); line-height: calc(var(--p) * 13); letter-spacing: 0;
   color: #fdfaec; text-shadow: 0 var(--p) 0 #0a0604;
 }
 .ironcard.px .ic-line {
   margin: 0 0 calc(var(--p) * 6); font-size: calc(var(--p) * 8); line-height: calc(var(--p) * 10);
   color: #eed3c5; text-shadow: 0 var(--p) 0 #0a0604;
 }
-.ironcard.px .ic-dots { gap: calc(var(--p) * 4); margin: calc(var(--p) * 5) 0 calc(var(--p) * 4); }
+.ironcard.px .ic-dots { gap: calc(var(--p) * 4); margin: calc(var(--p) * 1) 0 calc(var(--p) * 4); }
 .ironcard.px .ic-dot { width: calc(var(--p) * 7); height: calc(var(--p) * 7); border: 0; border-radius: 0; background: none; box-shadow: none; }
 .ironcard.px .ic-pxdot { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
 .ironcard.px .ic-dot.pop { animation: ic-px-pop .36s steps(1) both; }
@@ -146,7 +148,6 @@
 .ironcard.px .hold .ic-fill { inset: calc(var(--p) * 4); width: auto; background: #c98115; transition: transform .18s steps(3); }
 .ironcard.px .hold .ic-btn.approve.holding .ic-fill { transition: transform .8s steps(16); }
 .ironcard.px .hold .ic-btn.approve.holding { animation: none; }
-.ironcard.px .ic-empty .ic-title { color: #fdec9a; }
 .ironcard.px .ic-empty .ic-line { margin-bottom: 0; }
 
 /* motion in whole art px: in from below, out sideways, no rotation */

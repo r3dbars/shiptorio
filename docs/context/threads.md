@@ -4,6 +4,8 @@
 
 PR #598 (`codex/dev-deck-default`) makes authorized bare visits to shiptorio.dev open the approved pixel deck with the automatic Shippy watch loop. Explicit repo/onboarding links and production behavior stay unchanged; the existing access gate still runs first. Justin requested this as the staging default.
 
+- #66: exact duplicate Meta requests share only an in-flight result within the same run/account; later decisions are fresh. Duplicate triage/plan/review fixture: 10 → 5 calls, 1000 → 500 reported tokens, identical outputs; sequential happy-path savings are not claimed.
+
 ## Deck visual iteration (Codex, 2026-10-28)
 
 2026-10-29 · Codex #57 (`codex/shippy-calm`): stable floor anchors, one-shot reactions and still waiting poses; preserve purposeful work and charging, with no new moves.
@@ -20,12 +22,16 @@ Session cookies and preview-form proofs now reuse the existing bounded, isolate-
 
 ## Hosted tester playthrough fixes (Codex, 2026-10-28)
 
+- 2026-10-29 (#48): the fixture player follows Open inbox after repo selection instead of pressing Escape into Unplug, and refuses destructive primary actions.
+
 - 2026-10-29 (#48 follow-up): player bot waits for the isolated staging install redirect and completed install navigation, so it cannot race the provider form or cancel its POST.
 
 - 2026-10-29 Codex (`codex/ci-demo-reliability`, #48): audit of promotion/nightly failures, current-deck player bot coverage, and a strict postdeploy guest-deck smoke. No product logic or production promotion changes; final same-head full-suite runs remain required before readiness.
 
 The hosted test-newbie run observed a real factory-socket launched transition and PR #7 merged inside the isolated fixture, but failed on the newly enabled overview's 403 and a stale button wait after Launch. Allow only the signed tester's read-only overview through the existing private fixture; production, mutations and repo overrides stay denied. The bot now ends an outstanding action when its authoritative Launch transition arrives; earlier action failures still fail. Focused boundary/action tests pass; full check, dev CI and a fresh hosted playthrough remain required. This is fixture proof, not a real GitHub/Codex ship.
 ## GitHub connection reliability (Codex, 2026-10-28)
+
+- 2026-10-29, Codex #65: concurrent identical authorized GitHub reads share one request; writes, restored credentials and explicit fresh reads stay separate. Existing ETag revalidation and provider cooldowns remain enforced; PR #641.
 
 - 2026-10-29, Codex #44: missed GitHub access changes stop factories before work, delayed lifecycle events cannot revive them, and authenticated diagnostics counts access-paused factories. No live cleanup of the 44 staging records; PR #615.
 
@@ -49,6 +55,8 @@ Backend GitHub connection reliability: cancellation, missing setup, invalid prov
 
 ## Locked dedicated Keychain restart (Codex, 2026-10-27)
 
+- 2026-10-29, Codex #67: prove local runner sleep/network recovery and terminal Codex timeout/kill handling with isolated fault tests; preserve pairing, reject partial edits, and clean expired work.
+
 - 2026-10-29, Codex #58: runner-owned terminal messages use short explanations and one next command; technical errors are redacted and verbose-only, with login, reconnect and diagnostics tests retained.
 
 - Existing dedicated Keychains must unlock before `set-keychain-settings`; a locked service restart otherwise fails before credential discovery. The real macOS regression now locks the isolated store and calls prepare directly, preserving the password, saved canary, sandbox boundary and personal default Keychain checks.
@@ -65,6 +73,8 @@ Backend GitHub connection reliability: cancellation, missing setup, invalid prov
 - A bare visit plays the welcome tour, then drops signed-out players straight into the demo shop sandbox. GitHub sign-in is an unlock: the floor card's "Demo shop · Use your repo" chip, and a Suggested card after the first rocket. See docs/context/accounts.md "Play first". Codex prompt 3 (guest accounts, server side) builds on this; the intro story/look stays with "Fix the onboarding from Justin's playtest".
 
 ## Build the agent loop that picks the bottleneck (Claude, 2026-10-27)
+
+- 2026-10-29, Codex #69: removed the unreachable retired taps-report HTML, browser script and data queries. The authenticated redirects, live tap collection and all active signal/source/runner paths stay intact; audited the named server modules before deleting.
 
 - 2026-10-29, Codex #47: project the existing Meta brain pick onto one live station/item with plain copy and honest fallback; preserve cargo while transferring and yellow human decisions. PR #623.
 
@@ -813,3 +823,4 @@ Verified whole-App regressions: Hono response assignment replaced appended App t
 
 
 - Codex #74: watch reset retains the built view until the replacement snapshot arrives; no replayed station construction. PR #633; frame regression and 390/1280 before/after PNGs.
+- Codex #73 (2026-10-29): shorten setup/watch copy, put Unplug behind Options, make Check primary after copying, and use Ship it consistently in the conveyor. Scoped card/action tests and phone/desktop browser interactions pass; full check: 1,886 passed, two existing platform skips, zero failures. PR #634 includes before/after PNG evidence.

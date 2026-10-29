@@ -139,7 +139,40 @@ function boundedSet<K, V>(map: Map<K, V>, key: K, value: V) {
 export async function registerGithubCredential(token: string, db: D1Database, scope: string) {
   boundedSet(contexts, await credentialKey(token), { db, scope });
 }
+// Share only overlapping identical reads, never a completed response. Each caller
+// reaches this point after gh() checked its current installation and repository.
+// Writes, explicit freshness/cancellation controls, and different credentials stay separate.
+const pendingReads = new Map<string, Promise<unknown>>();
+const readGenerations = new Map<string, string>();
 async function ghRequest<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
+  const fingerprint = await credentialKey(token);
+  const owner = tokenOwners.get(fingerprint);
+  const generationKey = owner ? `github:installation:${owner.installationId}` : contexts.get(fingerprint)?.scope ?? fingerprint;
+  if (!readGenerations.has(generationKey) || (init.method ?? "GET").toUpperCase() !== "GET") {
+    // Random generations avoid reusing an old key after bounded-map eviction.
+    boundedSet(readGenerations, generationKey, crypto.randomUUID());
+  }
+  const headers = new Headers(init.headers);
+  const shared = (init.method ?? "GET").toUpperCase() === "GET"
+    && Object.keys(init).every(field => field === "method" || field === "headers")
+    && !headers.has("if-none-match") && !headers.has("if-modified-since")
+    && !headers.has("range") && !headers.has("cache-control");
+  if (!shared) return queuedGhRequest<T>(path, token, init);
+  const identity = JSON.stringify(["inflight", readGenerations.get(generationKey), owner?.env.GITHUB_APP_ID, owner?.installationId, owner?.version, owner?.scope]);
+  const key = await readCache.key(fingerprint, identity, path, headers);
+  let pending = pendingReads.get(key);
+  if (!pending) {
+    // The ordinary queue/deadline still bounds the work; avoid retaining an
+    // unbounded number of keys if many unrelated credentials arrive together.
+    if (pendingReads.size >= 500) return queuedGhRequest<T>(path, token, init);
+    pending = queuedGhRequest<T>(path, token, init);
+    pendingReads.set(key, pending);
+    const current = pending;
+    void pending.finally(() => { if (pendingReads.get(key) === current) pendingReads.delete(key); }).catch(() => {});
+  }
+  return structuredClone(await pending) as T;
+}
+async function queuedGhRequest<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
   const key = await credentialKey(token), owner = tokenOwners.get(key);
   // Bounded context eviction must never remove an installation's shared budget.
   const context = owner?.env.DB ? { db: owner.env.DB, scope: `github:installation:${owner.installationId}` } : contexts.get(key);

@@ -67,6 +67,19 @@ test("the story plays all four beats and ends on the connect card", () => {
   expect(auto.automated).toBe(true);
   expect(auto.state).toBe("auto");
 
+  // the climax: once the pile clears, one crate rolls the whole line with no card and the camera rides along
+  t += run(s, () => !!(s.view() as { followItem?: string }).followItem, 20);
+  const hero = (s.view() as { followItem?: string }).followItem!;
+  expect(s.view().caption).toBe("Shippy's got these now. No card.");
+  const before = s.view().shipped;
+  for (let k = 0; k < 200 && (s.view() as { followItem?: string }).followItem; k++) {
+    s.step!(0.1); t += 0.1;
+    expect(s.view().card).toBeNull();
+    expect(s.view().stops.find((x) => x.id === "review")!.state).toBe("auto");
+  }
+  expect(s.view().stops.some((x) => x.items.some((c) => c.id === hero))).toBe(false);
+  expect(s.view().shipped).toBe(before + 1);
+
   // the next jam, then the last card
   t += run(s, () => s.view().card?.id === STORY_CARD.connect, 20);
   expect(s.view().jam).toBe("checks");

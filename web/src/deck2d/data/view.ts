@@ -20,7 +20,7 @@ export interface LiveCardView extends CardView {
 export interface LiveDeckView extends AttentionView {
   card: LiveCardView | null;
   intake?: (Item & { badge: string })[];
-  work?: { id: string; title: string; stop: StopId; badge: string; status: string };
+  work?: { id: string; title: string; stop: StopId; badge: string; status: string; auto?: boolean }; // auto: Shippy started it, no card
   followItem?: string;
 }
 
@@ -218,8 +218,10 @@ export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckV
 
   const shipped = s.metrics?.rockets ?? s.items.filter((it) => it.state === "launched").length;
   const status = activeStop ? s.pipeline?.find(p => p.id === activeStop && p.itemIds.includes(active!.id))?.state ?? 'working' : '';
-  const work = active && activeStop ? { id: active.id, title: active.title, stop: activeStop, badge: crate(active, false).badge, status } : undefined;
-  const caption = focus?.reason ?? (!flow ? (card ? null : handed.size ? "Shippy has this. Fix the next jam." : "Software is a factory.") : work ? `${work.badge} · ${work.title} · ${STOP_LABEL[work.stop]}${status === 'waiting_player' ? ' needs your approval' : ' is working'}` : `${intake.length} issues waiting in Repo. Choose one to start.`);
+  const auto = !!active && (s.learned ?? []).some(l => l.items?.includes(active.id));
+  const work = active && activeStop ? { id: active.id, title: active.title, stop: activeStop, badge: crate(active, false).badge, status, ...(auto ? { auto } : {}) } : undefined;
+  // The climax wins the one caption line: the next one of a learned kind started with no card.
+  const caption = flow && work?.auto && !card ? LEARN.ranItself(work.badge) : focus?.reason ?? (!flow ? (card ? null : handed.size ? "Shippy has this. Fix the next jam." : "Software is a factory.") : work ? `${work.badge} · ${work.title} · ${STOP_LABEL[work.stop]}${status === 'waiting_player' ? ' needs your approval' : ' is working'}` : `${intake.length} issues waiting in Repo. Choose one to start.`);
   // Keep the existing one-shot level-up celebration even while its first automatic crate starts work.
   const leveledUp = (s.learned ?? []).some(l => now >= l.since && now - l.since < HAPPY_MS);
   return { stops, jam, focus: focus?.stop, attention: [...attention], card, intake, work, shippy: work && !card && !leveledUp ? { at: work.stop, pose: work.stop === 'builder' ? 'weld' : 'inspect' } : shippyOf(s, stops, jam, card, opts, now), shipped, caption };

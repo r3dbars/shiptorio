@@ -93,3 +93,18 @@ export class AuthFailures {
     this.failed.delete(h); return true;
   }
 }
+
+/** Fixed public categories only: provider output, paths and credentials never become server copy. */
+export class RunnerExecutionFailure extends Error {
+  constructor(readonly kind: 'timeout' | 'stopped') {
+    super(kind === 'timeout' ? 'Codex timed out before finishing. No code was published.' : 'Codex stopped before finishing. No code was published.');
+    this.name = 'RunnerExecutionFailure';
+  }
+}
+export function runnerFailureSummary(error: unknown): string {
+  if (error instanceof RunnerExecutionFailure) {
+    if (error.kind === 'timeout') return 'Codex timed out before finishing. No code was published.';
+    if (error.kind === 'stopped') return 'Codex stopped before finishing. No code was published.';
+  }
+  return 'Local runner stopped; inspect local evidence and approve another attempt.';
+}

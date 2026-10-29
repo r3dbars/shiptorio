@@ -4,13 +4,14 @@ import "./deck.css";
 import { SPRITES, createBus, type CardView, type StopId, type AttachJuice, type CreateLayer, type CreateShippy, type DeckLayer, type DeckSource, type MountCard } from "./contract";
 import { createArt } from "./engine/art";
 import { createDemo, createOrbDemo, createLaunchDemo } from "./engine/demo";
-import { fallbackCard, fallbackShippy } from "./engine/fallbacks";
+import { fallbackShippy } from "./engine/fallbacks";
 import { createShippyRehearsal } from "./shippy/rehearsal";
 import { createWatchSource, isWatchMode } from "./data/watch";
 import { createMachineRehearsal, mountMachineControls } from "./stations/rehearsal";
 import { createMachineInteraction } from "./stations/inspector";
 import { createFirstVisitDemo } from "./stations/first-visit";
 import { createConveyorDemo } from "./engine/conveyor-demo";
+import { createPayoff } from "./payoff";
 
 /** Keyboard and screen-reader access for the existing card; it never invents an action. */
 export function wireDeckAccessibility(canvas: HTMLCanvasElement, host: HTMLElement, caption: HTMLElement) {
@@ -130,7 +131,12 @@ const seed = Number(params.get("seed")) || 0;
   // Live only; ?source=sim&away=5h or ?source=replay&away=5h shows it for rehearsals and the video.
   const away = (want === "live" && params.has("repo") || (want === "replay" || want === "sim") && params.has("away")) && liveState ? createAway({ scope: params.get("repo") ?? want, search: location.search, state: liveState }) : null;
 
+  // After a ship: the rocket goes, then one calm "Shipped. That's 3 today." before the next card (payoff.ts).
+  const live = want === "live" || want === "replay";
+  const payoff = createPayoff({ every: live, phase: (source as DeckSource & { phase?: () => string }).phase,
+    store: want === "live" ? { get: k => localStorage.getItem(k), set: (k, v) => localStorage.setItem(k, v) } : null });
   bus.on(event => {
+    payoff.event(event);
     if (event.type === 'crate-arrive') (source as DeckSource & { arrive?: (id: string, stop: StopId) => void }).arrive?.(event.id, event.stop);
   });
 
@@ -182,7 +188,7 @@ const seed = Number(params.get("seed")) || 0;
     document.body.append(controls);
   }
 
-  const mountCard = (cardMod?.mountCard as MountCard | undefined) ?? fallbackCard;
+  const mountCard = cardMod?.mountCard as MountCard; // the one card (card/card.ts); there is no second style to fall back to
   const card = mountCard(document.getElementById("card-host")!, {
     onApprove(id) { if (away?.answer(id)) return; if (id.startsWith("connection-")) { void connections.answer(id, true); return; } bus.emit({ type: "approve", cardId: id }); if (!inspector.answer(id, true)) source.approve(id); },
     onLater(id) { if (away?.answer(id)) return; if (id.startsWith("connection-")) { void connections.answer(id, false); return; } bus.emit({ type: "later", cardId: id }); if (!inspector.answer(id, false)) source.later(id); },
@@ -212,7 +218,7 @@ const seed = Number(params.get("seed")) || 0;
     }
     connections.tick();
     const base = inspector.view(source.view());
-    const view = connections.view(away ? away.view(base) : base);
+    const view = payoff.view(connections.view(away ? away.view(base) : base), dt);
     const work = (view as import('./data/view').LiveDeckView).work;
     cv.dataset.workId = work?.id ?? '';
     cv.dataset.workStop = work?.stop ?? '';

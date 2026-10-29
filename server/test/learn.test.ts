@@ -36,6 +36,8 @@ describe("learning what the player approves", () => {
     expect(learnMeter(book, c, scope, true)).toBeUndefined();
     expect(learnedList(book)).toEqual([{ key, label: "Starting plans in /web", since: 10 }]);
     expect(book.auto?.[key].by).toBe("justin");
+    noteAutoRun(book, "gh-9", key); // the deck says which crates Shippy started itself
+    expect(learnedList(book)).toEqual([{ key, label: "Starting plans in /web", since: 10, items: ["gh-9"] }]);
   });
 
   it("starting and approving plans are learned apart", () => {

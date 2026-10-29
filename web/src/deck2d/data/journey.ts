@@ -30,9 +30,9 @@ export function createJourney() {
       if (work.stop === 'launch' && at === target && arrived) shipped = base.shipped;
       const card = transferring && !base.jam ? null : base.card;
       pending = new Set(base.intake?.map(i => i.id));
-      return { ...base, stops, card, shipped, work: { ...work, stop }, followItem: transferring ? work.id : undefined, focus: transferring ? stop : base.focus ?? stop,
+      return { ...base, stops, card, shipped, work: { ...work, stop }, followItem: transferring ? work.id : undefined, focus: transferring || work.auto ? stop : base.focus ?? stop,
         shippy: { at: stop, pose: transferring ? 'walking' : base.shippy.pose },
-        caption: !transferring && base.focus ? base.caption : `${work.badge} · ${work.title} · ${transferring ? `Moving to ${STOP_LABEL[stop]}` : work.status === 'waiting_player' ? `Waiting for your approval at ${STOP_LABEL[stop]}` : `${STOP_LABEL[stop]} is working`}`,
+        caption: work.auto && !card || !transferring && base.focus ? base.caption : `${work.badge} · ${work.title} · ${transferring ? `Moving to ${STOP_LABEL[stop]}` : work.status === 'waiting_player' ? `Waiting for your approval at ${STOP_LABEL[stop]}` : `${STOP_LABEL[stop]} is working`}`,
       };
     },
   };

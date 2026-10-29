@@ -1037,6 +1037,8 @@ export const LEARN = {
   why: "You said yes to these 3 times in a row. Launching still waits for you.",
   stop: "Ask me again",
   stopFor: (label: string) => `Ask me again about ${label}`,
+  // The climax: the next one of a learned kind starts with no card, and the deck says so.
+  ranItself: (badge: string) => `Shippy's got these now. ${badge} started with no card.`,
 };
 
 export const ATTENTION = {
