@@ -1,4 +1,4 @@
-import { ART_PX, BELT_Y, LOOK, STOP_X, snap, type StopId, type StopState } from "../contract";
+import { ART_PX, BELT_Y, LOOK, PALETTE, STOP_X, snap, type StopId, type StopState } from "../contract";
 import { builder } from "./builder";
 import { checks } from "./checks";
 import { gate } from "./gate";
@@ -50,6 +50,15 @@ export function drawStation(ctx: CanvasRenderingContext2D, id: StationId, s: Sto
   const at = (n: number) => (scale === ART_PX ? snap(n) : Math.round(n));
   const was = ctx.imageSmoothingEnabled;
   ctx.imageSmoothingEnabled = false;
+  // Short stepped shadows cast down-left by the upper-right sun, plus a tight
+  // contact seam. Opaque palette pixels keep the floor and machines on one grid.
+  const footW = Math.round(cv.width * 0.6);
+  for (let row = 5; row >= 0; row--) {
+    ctx.fillStyle = row > 2 ? PALETTE.iron[1] : PALETTE.iron[0];
+    ctx.fillRect(at(x - footW * scale / 2 - row * scale), at(feetY + row * scale), footW * scale, scale);
+  }
+  ctx.fillStyle = PALETTE.soot[0];
+  ctx.fillRect(at(x - footW * scale / 2), at(feetY), footW * scale, scale);
   ctx.drawImage(cv, at(x - w / 2), at(feetY - h), w, h);
   ctx.imageSmoothingEnabled = was;
 }

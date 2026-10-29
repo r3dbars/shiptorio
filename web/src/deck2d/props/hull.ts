@@ -42,7 +42,12 @@ export const ventXs = (w: number) => [w - 98, w - 78];
 export const VENT_MOUTH = 106;
 
 // ---------- floor ----------
-const ROWS = [...Array.from({ length: Math.floor((A.front - 2 - A.back) / 7) }, (_, i) => A.back + i * 7), A.front - 2];
+// Rows compress toward the rear rail and open up toward the viewer.
+const ROWS = [A.back];
+while (ROWS[ROWS.length - 1] < A.front - 2) {
+  const y = ROWS[ROWS.length - 1];
+  ROWS.push(Math.min(A.front - 2, y + Math.round(4 + 6 * (y - A.back) / (A.front - A.back))));
+}
 const PLATE = 15;
 /** Floor plates: tan-brown worn iron catching the sunset, thin dark seams, a rivet in each corner. */
 const DECKPLATE: Ramp = ["iron-0", "iron-1", "iron-2", "plate-1", "plate-2", "iron-4", "plate-4"];
@@ -54,10 +59,10 @@ function floor(g: Px, w: number) {
     const top = ROWS[r], bot = ROWS[r + 1], beltRow = y >= 39 && y <= 55; // the belt sits on these rows: keep them quiet
     for (let x = xl(y); x <= xr(y, w); x++) {
       // plates converge a little toward the back, like the mockups' 3/4 view
-      const u = c + (x - c) / (0.9 + 0.1 * v) + 1000, col = Math.floor(u / PLATE), m = u - col * PLATE;
+      const u = c + (x - c) / (0.76 + 0.24 * v) + 1000, col = Math.floor(u / PLATE), m = u - col * PLATE;
       const ph = hash(col, r, 2);
-      let t = 0.68 + (ph - 0.5) * 0.12 + 0.1 * (x / w) - 0.06 * (1 - v) + (blotch(x, y, 6, 4) - 0.5) * 0.16 + (noise(x, y, 6) - 0.5) * 0.06;
-      if (y < A.back + 2) t -= 0.2; // the back rail's shadow falls down-left onto the floor
+      let t = 0.45 + 0.3 * v + (ph - 0.5) * 0.08 + 0.08 * (x / w) + (blotch(x, y, 6, 4) - 0.5) * 0.1 + (noise(x, y, 6) - 0.5) * 0.04;
+      if (y < A.back + 3) t -= 0.16; // recessed shadow where the rear rail meets the floor
       if (m < 1 || (y === top && r > 0)) t = 0.24; // seam
       else if (y === top + 1 && r > 0) t += 0.08; // the plate's lit top edge
       else if (m >= PLATE - 1) t += 0.05;
@@ -141,13 +146,14 @@ function skirt(g: Px, w: number) {
   const y0 = A.front + 1, y1 = A.skirt;
   for (let y = y0; y < y1; y++) for (let x = 0; x < w; x++) {
     const v = (y - y0) / (y1 - y0);
-    let t = 0.42 - 0.18 * v + 0.1 * (x / w) + (blotch(x, y, 4, 21) - 0.5) * 0.22;
+    let t = 0.32 - 0.16 * v + 0.08 * (x / w) + (blotch(x, y, 4, 21) - 0.5) * 0.12;
     if (x < 3) t -= 0.12; // the left end turns away from the light
     tone(g, x, y, WARM, t + 0.08);
     const ru = blotch(x, y, 3, 23);
     if (ru > 0.84 && noise(x, y, 25) < 0.55) g.set(x, y, ru > 0.9 ? "copper-0" : "plate-1");
   }
   strap(g, 0, y0, w, 3, GOLD, 0, false); // top band
+  g.hline(0, y0 + 3, w, "soot"); // the floor overhang casts a continuous shadow on the vertical face
   for (let x = 4; x < w; x += 8) { g.rect(x, y0 + 5, 2, 2, "iron-3"); g.set(x + 1, y0 + 5, "iron-4"); g.set(x, y0 + 6, "iron-1"); g.hline(x, y0 + 7, 2, "soot"); } // 2px bolt heads across the middle
   strap(g, 0, y1 - 4, w, 3, GOLD); // bottom band
   for (let x = 3; x < w; x += 6) rivet(g, x, y1 - 3, "brass-5", "brass-1");
