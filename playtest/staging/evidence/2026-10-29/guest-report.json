@@ -1,0 +1,21 @@
+{
+  "passed": true,
+  "reports": [
+    {
+      "width": 390,
+      "height": 844,
+      "readyMs": 816,
+      "guest": true,
+      "url": "http://localhost:8893/deck?source=live",
+      "errors": []
+    },
+    {
+      "width": 1280,
+      "height": 720,
+      "readyMs": 783,
+      "guest": true,
+      "url": "http://localhost:8893/deck?source=live",
+      "errors": []
+    }
+  ]
+}
