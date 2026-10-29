@@ -22,6 +22,8 @@ Session cookies and preview-form proofs now reuse the existing bounded, isolate-
 
 ## Hosted tester playthrough fixes (Codex, 2026-10-28)
 
+- 2026-10-29 (#48): the fixture player follows Open inbox after repo selection instead of pressing Escape into Unplug, and refuses destructive primary actions.
+
 - 2026-10-29 (#48 follow-up): player bot waits for the isolated staging install redirect and completed install navigation, so it cannot race the provider form or cancel its POST.
 
 - 2026-10-29 Codex (`codex/ci-demo-reliability`, #48): audit of promotion/nightly failures, current-deck player bot coverage, and a strict postdeploy guest-deck smoke. No product logic or production promotion changes; final same-head full-suite runs remain required before readiness.
