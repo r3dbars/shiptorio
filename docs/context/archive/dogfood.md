@@ -1,3 +1,5 @@
+> **Archived 2026-10-29:** Oct 26 friction log from the first real issue run, before the 2D deck.
+
 # Dogfood: real issues end to end (friction log)
 
 Goal (Justin, 2026-10-26 20:11): one clean, checkable run in a dedicated **test repo**. File a real

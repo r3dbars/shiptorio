@@ -1,3 +1,5 @@
+> **Archived 2026-10-29:** Oct 26 status of the old map's live loop (gauntlet station names). Today's loop is ../github-deck-loop.md.
+
 # Live ship loop: what works, what's missing (2026-10-26)
 
 Goal: the first playable checkpoint end to end on shiptorio.com in live mode, not the sim.

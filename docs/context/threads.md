@@ -6,6 +6,7 @@ PR #598 (`codex/dev-deck-default`) makes authorized bare visits to shiptorio.dev
 
 - #66: exact duplicate Meta requests share only an in-flight result within the same run/account; later decisions are fresh. Duplicate triage/plan/review fixture: 10 → 5 calls, 1000 → 500 reported tokens, identical outputs; sequential happy-path savings are not claimed.
 - #60: retired the always-on remote intro flag; onboarding query/preferences and all safety kill switches remain. Other live/preview flags are inventoried in the PR and retained.
+- #56 (Claude): AGENTS.md cut from 284 to 135 lines (today only); docs/context/README.md is a short "read these 5 first" index; 13 retired docs + feedback-factory/ moved to docs/context/archive/ with a why-note on each.
 
 ## Deck visual iteration (Codex, 2026-10-28)
 
@@ -111,7 +112,7 @@ unmerged in the read-only 2026-10-27 11:53 UTC recheck. The earlier Actions bill
 local deployment handoff are historical: Shiptorio Deploy40498676438 succeeded at61ef296.
 The receipt does not certify current runner/process state or a completed rework and in-game
 Launch. No factory PR was merged directly by this documentation run.
-[Evidence and remaining proof](testing-live-acceptance.md).
+[Evidence and remaining proof](archive/testing-live-acceptance.md).
 
 ## Codex isolated tester rebase onto dev — PR #354
 
@@ -207,7 +208,7 @@ is the only copy agents outside it (Codex) can see.
 
 ## Staging burst harness — PR #372 (Codex, 2026-10-28)
 
-Staging fixtures/analytics and public judge/version recovery produced failed supplemental 250-socket receipts; the requested 200 judge HTTP/sim + 50 socket profile remains unmeasured. Rebased onto dev as harness/docs/evidence only, withdrawing unproven runtime changes. Local CLI tests now require loopback and verify the socket adapter before startup after a possible 50 unauthenticated staging-handshake escape from an ineffective mock. Full local check: 1,506 passed, two existing platform skips, zero failures. No further hosted load or production promotion; exact-head quick checks and Staging are separate gates. Evidence and limitations: [reliability.md](reliability.md).
+Staging fixtures/analytics and public judge/version recovery produced failed supplemental 250-socket receipts; the requested 200 judge HTTP/sim + 50 socket profile remains unmeasured. Rebased onto dev as harness/docs/evidence only, withdrawing unproven runtime changes. Local CLI tests now require loopback and verify the socket adapter before startup after a possible 50 unauthenticated staging-handshake escape from an ineffective mock. Full local check: 1,506 passed, two existing platform skips, zero failures. No further hosted load or production promotion; exact-head quick checks and Staging are separate gates. Evidence and limitations: [reliability.md](archive/reliability.md).
 
 ## Codex: public judge replay (2026-10-26)
 
@@ -398,7 +399,7 @@ Historical check-only receipts above predate the dev-first flow; the ten-minute 
 
 ## Factory-triggered Spark spend proof (Codex, 2026-10-26)
 
-- [Live proof](spark-spend-live-proof.md): recovered the exhausted 20/day allowance to 21 without resetting usage, after quota fix #269 deployed. Requested Plan #10 through the testing factory's real websocket action; Spark completed a plan awaiting approval.
+- [Live proof](archive/spark-spend-live-proof.md): recovered the exhausted 20/day allowance to 21 without resetting usage, after quota fix #269 deployed. Requested Plan #10 through the testing factory's real websocket action; Spark completed a plan awaiting approval.
 - Five real Worker Meta calls, 2,795 input / 2,231 output tokens (369 cached input), $0.0125696 estimated; zero unmeasured calls. Admin and owner endpoint match; real browser admin row, HUD chip and How it thinks panel verified. Build run usage stayed 20/21 throughout planning. Public [Spark docs](../site/spark.md) now describe spend and quota recovery.
 
 ## Quota recovery (Codex, 2026-10-26; PR #269)
@@ -478,7 +479,7 @@ The rejected production saves left all original account limits intact.
 
 ## Overnight paper-cut sweep (Codex, Oct 26–27, 2026)
 
-Oct 26, 9:22–10:08 PM CT: #302 merged (browser QA imports), 160 page checks, 10 logged cuts; GitHub billing blocked Deploy and report #309. Protected work untouched. Receipts/resume: [papercuts.md](papercuts.md).
+Oct 26, 9:22–10:08 PM CT: #302 merged (browser QA imports), 160 page checks, 10 logged cuts; GitHub billing blocked Deploy and report #309. Protected work untouched. Receipts/resume: [papercuts.md](archive/papercuts.md).
 ## Runner overnight recovery
 
 Codex: eight-hour grant expiry plus final-hour, job-loop-only renewal explains the
