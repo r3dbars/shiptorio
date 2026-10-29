@@ -3,6 +3,7 @@ import { sameOriginPath } from "./redirect";
 import { makeSessionCookie, readSession } from "./session";
 import { gatePage } from "./gate-page";
 import { boundedBody } from "./webhook-body";
+import { hmacSigningKey } from "./hmac-key";
 
 export interface AccessEnv {
   APP_PASSWORD?: string;
@@ -38,7 +39,7 @@ const FORM_COOKIE = "shiptorio_access_form";
 const FORM_TTL = 600_000;
 async function formSignature(secret: string, origin: string, payload: string): Promise<string> {
   const enc = new TextEncoder();
-  const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const key = await hmacSigningKey(secret);
   const bytes = new Uint8Array(await crypto.subtle.sign("HMAC", key, enc.encode(`preview-form:${origin}:${payload}`)));
   return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
