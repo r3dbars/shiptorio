@@ -18,6 +18,7 @@ export function createConnections(o: Options) {
   async function json<T>(url: string, init?: RequestInit): Promise<T> {
     const response = await request(url, { cache: 'no-store', ...init });
     if (!response.ok) {
+      if (response.status === 429) throw new Error(`GitHub is taking a short pause. Try again in ${response.headers.get('retry-after') || 'a few'} seconds.`);
       if (response.status === 401) {
         login = true;
         let configured = true;
@@ -37,8 +38,8 @@ export function createConnections(o: Options) {
     refreshing = true; busy = !(target === 'power' && status); error = ''; login = false;
     try {
       if (target === 'repos') {
-        const data = await json<{ repos: Repo[] }>('/api/repos');
-        if (current === revision) { repos = data.repos; index = Math.min(index, Math.max(0, repos.length - 1)); }
+        const data = await json<{ repos: Repo[]; nextPage?: number | null }>(`/api/repos?page=${page}`);
+        if (current === revision) { repos = data.repos; nextPage = data.nextPage ?? null; index = Math.min(index, Math.max(0, repos.length - 1)); }
       } else if (target === 'issues') {
         const data = await json<{ issues: Issue[]; nextPage: number | null }>(`${api}/issues?page=${page}`);
         if (current === revision) { issues = data.issues; nextPage = data.nextPage; index = 0; }
@@ -62,7 +63,7 @@ export function createConnections(o: Options) {
     else if (pane === 'repos') {
       const r = repos[index]; title = r ? `Use ${r.fullName}?` : 'Connect your GitHub repo';
       line = r ? `Shippy: Repository ${index + 1} of ${repos.length}. We will show its open issues. Choosing it does not start a coding job.` : 'Shippy: Install the GitHub App on a repository, then return here and refresh.';
-      yes = r ? 'Use this repo' : 'Connect GitHub'; no = r && repos.length > 1 ? 'Next repo' : 'Close';
+      yes = r ? 'Use this repo' : nextPage ? 'More repos' : 'Connect GitHub'; no = r && (repos.length > 1 || nextPage || page > 1) ? 'Next repo' : 'Close';
     } else if (pane === 'issues') {
       const issue = issues[index]; title = issue ? `#${issue.number}: ${issue.title}` : 'No open issues on this page';
       line = issue ? `Shippy: ${repo} · Issue ${index + 1} of ${issues.length}. ${issue.body.slice(0, 180) || 'No description provided.'} Browsing does not start work.` : `Shippy: ${repo}. Refresh to check for new issues.`;
@@ -91,14 +92,18 @@ export function createConnections(o: Options) {
       if (login) return true;
     }
     if (!approve) {
-      if (pane === 'repos' && repos.length > 1) { index = (index + 1) % repos.length; revision++; }
+      if (pane === 'repos' && (repos.length > 1 || nextPage || page > 1)) {
+        if (index + 1 < repos.length) { index++; revision++; }
+        else { page = nextPage ?? 1; index = 0; await refresh(); }
+      }
       else if (pane === 'setup') { pane = 'power'; revision++; await refresh(); }
       else if (pane === 'power' && status?.paired) { pane = 'disconnect'; revision++; }
       else { pane = null; revision++; }
       return true;
     }
     if (pane === 'repos') {
-      if (repos[index]) o.navigate(`${o.path.split('?')[0]}?source=live&repo=${encodeURIComponent(repos[index].fullName)}`);
+      if (!repos[index] && nextPage) { page = nextPage; await refresh(); }
+      else if (repos[index]) o.navigate(`${o.path.split('?')[0]}?source=live&repo=${encodeURIComponent(repos[index].fullName)}`);
       else {
         busy = true;
         try {
@@ -136,5 +141,5 @@ export function createConnections(o: Options) {
   return { open, answer, card, view(base: DeckView): DeckView {
     const c = card();
     return c ? { ...base, card: c, shippy: { at: c.stop, pose: 'inspect' } } : base;
-  }, tick() { if (pane === 'power' && !busy && now() >= nextPoll) void refresh(); } };
+  }, tick() { if (pane === 'power' && !busy && !error && now() >= nextPoll) void refresh(); } };
 }
