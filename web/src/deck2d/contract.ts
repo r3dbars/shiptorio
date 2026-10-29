@@ -26,6 +26,8 @@ import { pixelOn } from "../flags";
 // ---------- the line ----------
 export type StopId = "repo" | "planner" | "builder" | "checks" | "review" | "gate" | "launch";
 export const STOPS: readonly StopId[] = ["repo", "planner", "builder", "checks", "review", "gate", "launch"];
+/** One name per station, used word for word everywhere: deck, cards, captions, server logs, PR comments, docs.
+ * No synonyms (web/test/station-names.test.ts guards the old ones). */
 export const STOP_LABEL: Record<StopId, string> = {
   repo: "Repo", planner: "Planner", builder: "Builder", checks: "Checks", review: "Review", gate: "Gate", launch: "Launch",
 };

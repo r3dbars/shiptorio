@@ -46,7 +46,7 @@ function wireStage(stage: PipelineStage): Stage {
   return stage === "ci" || stage === "verify" || stage === "review" ? "inspect" : stage === "merge" ? "pad" : stage;
 }
 const LABELS: Record<PipelineStage, string> = {
-  intake: "waiting to be read", triage: "waiting for a plan", build: "waiting on a local agent", ci: "waiting at CI", verify: "waiting at the verify bay", review: "waiting at AI review", merge: "waiting on you to launch", release: "waiting for release", impact: "waiting for the customer result", power: "waiting for power", resources: "waiting for an agent connection",
+  intake: "waiting in Repo", triage: "waiting at Planner", build: "waiting at Builder for a local agent", ci: "waiting at Checks", verify: "waiting at Checks", review: "waiting at Review", merge: "waiting on you at Gate", release: "waiting for release", impact: "waiting for the customer result", power: "waiting for power", resources: "waiting for an agent connection",
 };
 function summary(metric: StageMetrics): string {
   if (metric.stage === "resources") return "Your computer writes the code. Plug it in to start building.";

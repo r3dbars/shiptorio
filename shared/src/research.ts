@@ -267,7 +267,7 @@ export function suggestResearch(state: Pick<FactoryState, "items" | "science" | 
   if (!best) return undefined;
   return { tech: best.tech.id, why: `${best.station} sent back ${best.n} PRs for this. ${best.tech.name} would have caught them in a second, before anything expensive ran.` };
 }
-const STATION_WORD: Record<string, string> = { ci: "CI", verify: "The verify bay", review: "AI review", merge: "You", orbit: "Orbit watch" };
+const STATION_WORD: Record<string, string> = { ci: "Checks", verify: "Checks", review: "Review", merge: "You", orbit: "Orbit watch" };
 
 // ---------- the line ----------
 

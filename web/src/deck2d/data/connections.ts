@@ -85,7 +85,7 @@ export function createConnections(o: Options) {
     if (!pane) return null;
     let title = '', line = '', yes = 'Refresh', no = 'Close';
     if (leaving) { title = `Opening ${leaving}…`; line = 'Shippy reads its issues and opens PRs here.'; yes = 'Please wait…'; }
-    else if (busy) { title = pane === 'repos' ? 'Finding your repositories…' : pane === 'issues' ? 'Opening your inbox…' : 'Checking Codex…'; line = 'This should only take a moment.'; yes = 'Please wait…'; }
+    else if (busy) { title = pane === 'repos' ? 'Finding your repositories…' : pane === 'issues' ? 'Loading your issues…' : 'Checking Codex…'; line = 'This should only take a moment.'; yes = 'Please wait…'; }
     else if (error) { title = login ? 'Sign in to your factory' : 'Connection needs attention'; line = login ? 'Sign in with GitHub so Shippy can see your repos. No coding starts yet.' : error; yes = login ? 'Sign in' : 'Try again'; }
     else if (pane === 'repos') {
       const r = repos[index]; title = r ? `Use ${r.fullName}?` : 'Connect your GitHub repo';
@@ -105,7 +105,7 @@ export function createConnections(o: Options) {
       const ready = status?.online && status.harnesses.includes('codex');
       title = !status?.paired ? 'Connect your Codex engine' : !status.online ? 'Codex engine is offline' : !ready ? 'Sign in to Codex' : status.working ? 'Engine is busy' : 'Codex engine is ready';
       line = !status?.paired ? 'Codex writes the code on your computer, with your own subscription. One line in Terminal plugs it in.' : !status.online ? 'Run shiptorio-runner watch on your computer so the factory can hand Codex work.' : !ready ? 'Run shiptorio-runner login codex on your computer so Codex can write code for you.' : status.working ? `Working on ${status.working.title}.` : 'Codex is ready. Pick an issue so the factory has something to build.';
-      yes = !status?.paired ? 'Copy setup' : ready && !status.working ? 'Open inbox' : 'Refresh'; no = status?.paired ? 'Options' : 'Close';
+      yes = !status?.paired ? 'Copy setup' : ready && !status.working ? 'See issues' : 'Refresh'; no = status?.paired ? 'Options' : 'Close';
     }
     return { id: `connection-${revision}-${displayRevision}-${pane}`, stop: pane === 'power' || pane === 'setup' || pane === 'disconnect' ? 'builder' : 'repo', title, line, yes, no, dots: null };
   }

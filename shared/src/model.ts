@@ -248,7 +248,7 @@ export type MoveKind = z.infer<typeof MoveKind>;
 
 // One gauntlet stamp on a card: a station that passed, failed or never ran.
 export const MoveEvidence = z.object({
-  station: z.string(), // "CI", "Verify bay", or a Station id
+  station: z.string(), // "CI check", "Proof check", or a Station id
   ok: z.boolean(),
   note: z.string().optional(), // "repro'd, then gone"
 });
@@ -390,7 +390,7 @@ export function scorecard(brain: Brain | undefined): Scorecard {
 // A station action is a Next Move option scoped to one station (docs/LOOP.md "Click any station").
 export const StationAction = z.object({
   id: z.string(),
-  label: z.string(), // "Build a second verify bay"
+  label: z.string(), // "Build a second proof check"
   recommended: z.boolean().default(false), // Spark's pick
 });
 export type StationAction = z.infer<typeof StationAction>;
@@ -398,7 +398,7 @@ export type StationAction = z.infer<typeof StationAction>;
 export const Station = z.object({
   id: z.string(),
   kind: StationKind,
-  name: z.string(), // "Verify bay"
+  name: z.string(), // "Proof check"
   machineId: z.string().optional(), // the machine on the map that is this station
   districts: z.array(z.string()).optional(), // districts whose launch permit needs it; absent = all
   wip: z.number().int(), // items in line

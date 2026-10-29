@@ -53,7 +53,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: "first-research", name: "New check", what: "You researched a check. It runs on every PR now.", icon: "flask", xp: 25, tier: "bronze", need: 1, progress: (s) => s.research?.done.length ?? 0 },
   { id: "first-mine-sentry", name: "Error miner", what: "Sentry is connected. Real errors become ore.", icon: "ore", xp: 25, tier: "bronze", need: 1, progress: (s) => (connected(s, "sentry") ? 1 : 0) },
   { id: "first-mine-posthog", name: "Traffic miner", what: "PostHog is connected. Traffic drops become ore.", icon: "gauge", xp: 25, tier: "bronze", need: 1, progress: (s) => (connected(s, "posthog") ? 1 : 0) },
-  { id: "caught-before-prod", name: "Caught it", what: "The verify bay stopped a bad fix before it reached your users.", icon: "shield", xp: 40, tier: "silver", need: 1, progress: verifyCatches },
+  { id: "caught-before-prod", name: "Caught it", what: "Checks stopped a bad fix before it reached your users.", icon: "shield", xp: 40, tier: "silver", need: 1, progress: verifyCatches },
   { id: "second-try", name: "Back on the belt", what: "A PR that got sent back came round again and shipped.", icon: "wrench", xp: 30, tier: "bronze", need: 1, progress: (s) => launchedOf(s).filter((i) => i.scars?.length).length },
   { id: "first-permit", name: "Permit to launch", what: "A lane earned a launch permit. Its PRs ship on their own.", icon: "key", xp: 50, tier: "silver", need: 1, progress: (s) => (s.autonomy?.districts.some((d) => d.permit) ? 1 : 0) },
   { id: "first-auto", name: "Hands off", what: "A PR launched on a permit. Nobody had to tap.", icon: "bot", xp: 60, tier: "silver", need: 1, progress: automatedOf },
