@@ -104,6 +104,23 @@ describe("browser origin and response policy", () => {
     expect(browserMutationAllowed(request("/webhooks/github/extra", { method: "POST" }))).toBe(false);
     expect(browserMutationAllowed(request("/api/runner/a/b/not-authenticated", { method: "POST" }))).toBe(false);
   });
+  it("rejects cross-site logout navigation before revoking the session", async () => {
+    const env = baseEnv();
+    const cookie = [await signedInCookie(env, "player", [], 7),
+      (await makeSessionCookie(`${env.SESSION_SECRET}:${env.APP_PASSWORD}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=")].join("; ");
+    for (const method of ["GET", "HEAD"]) {
+      for (const site of ["cross-site", "same-site"]) {
+        const denied = await app.fetch(request("/auth/logout", { method, headers: { cookie, "sec-fetch-site": site } }), env as never);
+        expect(denied.status).toBe(403);
+      }
+      expect(browserMutationAllowed(request("/auth/logout", { method }))).toBe(false);
+      for (const site of ["same-origin", "none"])
+        expect(browserMutationAllowed(request("/auth/logout", { method, headers: { "sec-fetch-site": site } }))).toBe(true);
+      expect(browserMutationAllowed(request("/auth/logout", { method, headers: { origin: "https://evil.example", "sec-fetch-site": "none" } }))).toBe(false);
+    }
+    const allowed = await app.fetch(request("/auth/logout", { headers: { cookie, "sec-fetch-site": "same-origin" } }), env as never);
+    expect(allowed.status).toBe(302);
+  });
   it("central middleware rejects origins before parsing forms or dispatching jobs", async () => {
     const env = baseEnv();
     const cookie = [await signedInCookie(env, "player", ["a/b"], 7),
@@ -196,6 +213,28 @@ describe("durable per-IP and per-user rate limits", () => {
     expect(Number(denied.headers.get("retry-after"))).toBeGreaterThan(0);
     expect(denied.headers.get("content-security-policy")).toContain("frame-ancestors");
     expect((await send("192.0.2.2", env.APP_PASSWORD)).status).toBe(303);
+  });
+  it("bounds anonymous pairing polls before code-keyed object dispatch without slowing normal polling", async () => {
+    const counters = namespace();
+    let dispatched = 0;
+    const env = { ...baseEnv(), FACTORY: { ...counters, get(id: string) {
+      if (id.startsWith("device:")) return { pollDevice: async () => { dispatched++; return { status: "expired" }; } };
+      return counters.get(id);
+    } } };
+    const send = (ip: string, code: string) => app.fetch(request("/api/runner-device/poll", {
+      method: "POST", headers: { "cf-connecting-ip": ip }, body: JSON.stringify({ code, secret: "x".repeat(72) }),
+    }), env as never);
+    // A normal runner asks every three seconds (20 times/minute); setup shares the remaining room.
+    for (let n = 0; n < 20; n++) expect((await send("192.0.2.7", "AAAA-BBBB-CCCC")).status).toBe(200);
+    for (let n = 20; n < LIMITS.connect; n++) await rateLimit(env as never, "ip:192.0.2.7", "connect");
+    const before = dispatched;
+    const denied = await send("192.0.2.7", "DDDD-EEEE-FFFF");
+    expect(denied.status).toBe(429);
+    expect(Number(denied.headers.get("retry-after"))).toBeGreaterThan(0);
+    expect(dispatched).toBe(before);
+    expect((await send("192.0.2.8", "DDDD-EEEE-FFFF")).status).toBe(200);
+    for (const path of ["/api/runner-device/start", "/api/runner-device/join", "/runner/pair"])
+      expect(requestBudget(request(path))).toBe("connect");
   });
   it("limits a signed-in user across changing IPs before connecting credentials", async () => {
     const env = baseEnv();

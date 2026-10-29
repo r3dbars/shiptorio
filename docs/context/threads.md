@@ -135,6 +135,8 @@ With the earlier 16-group cap, local SwiftShader repeated losses at 390×844 and
 
 ## Codex: pre-hackathon security pass (2026-10-26)
 
+- 2026-10-29 (#68): reviewed live-deck auth, webhook verification, secret redaction and pairing limits; added anonymous pairing admission and same-origin logout guards. Pairing form streaming-boundary hook is documented for separate approval.
+
 - Completed the server route, factory isolation, GitHub/Sentry signature,
   Spark tool/secret and logging audit at baseline `44942fd` (63 source files),
   plus the subsequently added runner-health display helper.

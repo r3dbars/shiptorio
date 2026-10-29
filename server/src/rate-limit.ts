@@ -65,6 +65,9 @@ export function requestBudget(request: Request, path = new URL(request.url).path
   if (path === "/api/me") return "auth";
   if (["/api/me/progress", "/api/me/prefs", "/api/account/export", "/api/account/delete"].includes(path)) return "move";
   if (path.startsWith("/auth/") || path.startsWith("/setup") || path === "/access" && request.method === "POST") return "auth";
+  // Device polling is anonymous: throttle by edge IP before a caller-chosen code opens a DO.
+  // Thirty requests/minute allows the advertised three-second poll interval plus setup.
+  if (["/api/runner-device/start", "/api/runner-device/poll", "/api/runner-device/join", "/runner/pair"].includes(path)) return "connect";
   if (path.startsWith("/connect/")) return "connect";
   if (/^\/api\/repos\/[^/]+\/[^/]+\/factory$/.test(path)) return "socket";
   if (/^\/api\/repos\//.test(path) && ["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) return "move";
