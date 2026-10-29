@@ -34,8 +34,10 @@ It never ends. There is always a bottleneck, always something to optimize, alway
 3. **Your sign-ins are the machines.** The player's Claude and ChatGPT subscriptions are the power plants and
    assemblers (via the local runner). Later, local models are another resource (geothermal). More sign-ins,
    bigger factory.
-4. **Autonomy is earned by playing.** Day one, Spark asks before it acts. The more you play, the more it's
-   allowed to do on its own (advisor → floor → build → per-district launch permits → lights out).
+4. **Autonomy is earned by playing.** Day one, Spark asks before it acts. One trust meter: say yes to the same
+   kind of card three times and the factory does that kind on its own (`server/src/learn.ts`). Only safe, undoable
+   steps can be learned (starting and approving plans). Ship it always waits for a human. Launch permits and the
+   advisor → lights-out levels are parked behind flags that stay off, even on dev.
 5. **Verify everything (checks and balances, inspired by Lauren Tan / poteto).** Checks (CI + proof) → Review →
    Gate (your merge). Fails loop back to Spark. Every station is visible and clickable, piles show the bottleneck,
    and the game rewards adding more checks.
@@ -185,6 +187,9 @@ New high-level goals from Justin go here, dated, then get folded into the sectio
 - 2026-10-27: Build mode (advanced, optional): players build and redesign the factory themselves, Factorio /
   RollerCoaster Tycoon style, on the Black Iron art. Every piece is a real pipeline part, so the layout is the
   pipeline config, and the gauntlet can be added to but never bypassed. Spec: `docs/BUILD-MODE.md`.
+- 2026-10-29: One trust meter. The player sees one way the factory earns trust: learned cards (three yeses, then
+  it's automatic). Launch permits and autonomy levels are parked (off on every worker, data kept), so Gate never
+  auto-merges and Ship it stays human.
 - 2026-10-27: Simple out of the box, complexity over months (principle 11). Justin approved the walkthrough cuts:
   no XP or levels (trust is the only progress bar), two counters (waiting on you, shipped), Next Move and the
   check-in deck become one queue, research / mines / tools hidden until needed, no first-run Check in / Build fork.

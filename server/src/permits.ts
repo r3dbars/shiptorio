@@ -117,13 +117,16 @@ export function permitMove(r: LaneRecord, now = Date.now()): Move {
   };
 }
 
-/** What the HUD shows: per-lane trust and permits, and how much of the shipping runs itself. Levels only with the "autonomy" flag. */
-export function autonomyView(book: PermitBook, levels = false, now = Date.now()): Autonomy {
+/**
+ * What the HUD shows: per-lane trust and permits, and how much of the shipping runs itself. Levels only with the
+ * "autonomy" flag, permits only with the "permits" flag: while they're parked a permit stored earlier never shows.
+ */
+export function autonomyView(book: PermitBook, { levels = false, permits = false } = {}, now = Date.now()): Autonomy {
   const lanes = Object.values(book.lanes);
   const step = levels ? nextStep(book, now) : null;
   return {
     level: levels ? ladderOf(book, now).level : "advisor",
-    districts: lanes.map((r) => ({ district: r.lane, score: Math.min(1, r.streak / needFor(r.lane)), risk: riskOf(r.lane), permit: r.permit })),
+    districts: lanes.map((r) => ({ district: r.lane, score: Math.min(1, r.streak / needFor(r.lane)), risk: riskOf(r.lane), permit: permits && r.permit })),
     next: step && { level: step.level, have: step.have, need: step.need, label: step.label },
     ranAlone: book.autoLaunches,
     automated: book.launches ? book.autoLaunches / book.launches : 0,
