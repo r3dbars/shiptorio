@@ -15,7 +15,7 @@ import { loadConnections, persistRenewal, persistGrantRejection } from "./grant-
 
 
 import { atomicJson, Backoff, recoverWorkspace, replayReceipts, retryable } from "./recovery";
-import { AuthFailures, RunnerGrantRejected, runnerResponseError, maintainConnection, renewalDue, agentOffline, authExpired, diagnose, loginCommand, type Subscription } from "./health";
+import { AuthFailures, RunnerGrantRejected, runnerFailureSummary, runnerResponseError, maintainConnection, renewalDue, agentOffline, authExpired, diagnose, loginCommand, type Subscription } from "./health";
 import { tmpdir } from "node:os";
 const blocked = new Set<Subscription>();
 const authFailures = new AuthFailures();
@@ -320,7 +320,7 @@ async function execute(job: Job, pair: Pairing) {
   } catch (error) {
     preserve ||= retryable(error) || error instanceof SignInExpired || await Bun.file(receiptFile).exists();
     if (!preserve) {
-      const receipt = { jobId: job.id, lease: job.lease, ok: false, summary: "Local runner stopped; inspect local evidence and approve another attempt.", checks: [] };
+      const receipt = { jobId: job.id, lease: job.lease, ok: false, summary: runnerFailureSummary(error), checks: [] };
       await atomicJson(receiptFile, receipt);
       try { await api(pair, "finish", receipt); completed = true; } catch { preserve = true; }
     }
