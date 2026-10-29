@@ -137,6 +137,7 @@ const speed = Math.max(0.1, Math.min(8, Number(params.get("speed")) || 1));
 const seed = Number(params.get("seed")) || 0;
 
 
+  const deckSound = await import("./sound");
   const art = createArt(Object.values(SPRITES).flat());
   const bus = createBus();
   const [story, data, shippyMod, cardMod, juiceMod] = await Promise.all([
@@ -204,6 +205,7 @@ const seed = Number(params.get("seed")) || 0;
   const inspector = createMachineInteraction(machines ? id => { if (id === machines.machine) machines.setMode("working"); } : undefined);
   if (want === "live" && signedIn && !params.has("repo")) connections.open("repo");
   const engine = createEngine(cv, art, bus, shippy, layers, { onPowerSelect: () => { if (setupReachable) connections.open("power"); }, onMachineSelect: id => {
+    deckSound.playTap(id);
     if (id === "repo" && setupReachable) { connections.open("repo"); return; }
     if (machines) machines.cycling = false;
     (source as DeckSource & { selectStop?: (stop: typeof id) => void }).selectStop?.(id);
@@ -245,6 +247,7 @@ const seed = Number(params.get("seed")) || 0;
     onLater(id) { if (away?.answer(id)) return; if (id.startsWith("connection-")) { void connections.answer(id, false); return; } bus.emit({ type: "later", cardId: id }); if (!inspector.answer(id, false)) source.later(id); },
   });
   (juiceMod?.attachJuice as AttachJuice | undefined)?.(bus, document.body, (s) => engine.where(s));
+  deckSound.attachSound(bus, () => source.view());
 
   const zoom = document.getElementById("zoom") as HTMLButtonElement;
   let all = false, asking = false;

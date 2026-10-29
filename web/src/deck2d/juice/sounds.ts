@@ -1,12 +1,12 @@
 // What the 2D deck sounds like. Every deck event (contract.ts DeckEvent) maps to sounds that already exist (Justin's
-// soundboard picks in sound/steamIron.ts, the older synth in sound/engine.ts), so the deck adds no new noise of its
+// soundboard picks in deck2d/sound/steamIron.ts, the older synth in deck2d/sound/engine.ts), so the deck adds no new noise of its
 // own. Calm pass (Justin 2026-10-28, "flashing and pinging all over"): one cue per beat, and nothing while the deck
 // is just running (crates, machines starting, Shippy walking are silent). Your swipes always play; a build rings
 // once when it's done; launch and automated are the big moments. What's left still goes through the calm floor.
 
-import { calmSounds, freshCalm, type CalmMemory } from "../../sound/calm";
-import type { Cue as BuildCue } from "../../sound/build";
-import type { Sfx } from "../../sound/engine";
+import { calmSounds, freshCalm, type CalmMemory } from "../sound/calm";
+import type { Cue as BuildCue } from "../sound/kit";
+import type { Sfx } from "../sound/engine";
 import type { DeckEvent as ContractEvent, ShippyPose, StopId, StopState } from "../contract";
 
 // The build/grow/launch layers' events. Declared here too so juice compiles before and after they reach the contract.
@@ -20,7 +20,7 @@ export type DeckEvent =
   | { type: "build-stage"; stop: StopId; stage: BuildStage }
   | { type: "launch-stage"; stage: LaunchStage };
 
-/** Seconds after the event each sound starts. sfx = the engine's sounds; build = the quiet construction kit (sound/build.ts). */
+/** Seconds after the event each sound starts. sfx = the engine's sounds; build = the quiet construction kit (sound/kit.ts). */
 export type Cue = { sfx: Sfx; at: number } | { build: BuildCue; at: number };
 
 const STATE: Record<StopState, Cue[]> = {
@@ -43,7 +43,7 @@ const SHIPPY: Record<ShippyPose, Cue[]> = {
   inspect: [], poke: [], skid: [], idle: [], // tap-to-walk poses (pixel plan): juice picks their sounds
 };
 
-// Construction uses the quiet build kit (sound/build.ts). Each build, grow or island step rings once, when it's done;
+// Construction uses the quiet build kit (sound/kit.ts). Each build, grow or island step rings once, when it's done;
 // the steps on the way there are silent.
 const STAGE: Record<BuildStage, BuildCue | null> = {
   plot: null, scaffold: null, frame: null, panels: null, top: null, burst: null, check: "bell",
