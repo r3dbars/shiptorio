@@ -44,10 +44,10 @@ for (const path of ["/admin/flags", "/api/admin/*"]) ops.use(path, async (c, nex
 });
 ops.get("/admin/flags", async c => {
   const flags = await readFlags(c.env);
-  const rows = Object.entries(flags).map(([name, enabled]) => `<article><h2>${name}</h2><p>Enabled: ${enabled}</p><form method="post" action="/api/admin/flags"><input type="hidden" name="name" value="${name}"><label>GitHub login (leave blank for everyone)<input name="user" aria-label="GitHub login"></label><label>Setting<select name="value" aria-label="Override value"><option>true</option><option>false</option><option>inherit</option></select></label><button>Save</button></form></article>`).join("");
+  const rows = Object.entries(flags).map(([name, enabled]) => `<article><h2>${name}</h2><p>${enabled ? "On" : "Off"}</p><form method="post" action="/api/admin/flags"><input type="hidden" name="name" value="${name}"><label>GitHub login (leave blank for everyone)<input name="user" aria-label="GitHub login"></label><label>Setting<select name="value" aria-label="Override value"><option value="true">On</option><option value="false">Off</option><option value="inherit">Use default</option></select></label><button>Save</button></form></article>`).join("");
   c.header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
   // This route's CSP is `default-src 'none'`: no web fonts, the plate falls back to monospace.
-  return c.html(ironPage({ title: "Kill switches", eyebrow: "Internal", fonts: false, home: "/admin", head: '<style>form{display:grid;gap:12px}article{padding:12px 0;border-top:1px solid #594128}input,select{box-sizing:border-box;max-width:100%}</style>', body: `<h1>Kill switches</h1><p>Admin: ${escape(c.get("admin"))}. A global false overrides every player. Changes can take 60 seconds; reload the app afterward.</p>${rows}` }));
+  return c.html(ironPage({ title: "Kill switches", eyebrow: "Internal", fonts: false, home: "/admin", head: '<style>form{display:grid;gap:12px}article{padding:12px 0;border-top:1px solid #594128}input,select{box-sizing:border-box;max-width:100%}</style>', body: `<h1>Kill switches</h1><p>Admin: ${escape(c.get("admin"))}. Turning a feature off for everyone overrides individual settings. Changes can take 60 seconds; reload the app afterward.</p>${rows}` }));
 
 });
 ops.get("/api/admin/budget", async c => c.json(await budgetReport(c.env)));
