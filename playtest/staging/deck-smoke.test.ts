@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { smokeOrigin, requireGuest } from './deck-smoke.mjs';
+import { smokeOrigin, requireGuest, navigateToReadyDeck } from './deck-smoke.mjs';
 
 test('post-deploy smoke cannot target production or accidentally use signed-in authority', () => {
   expect(smokeOrigin('https://shiptorio.dev/deck?source=live')).toBe('https://shiptorio.dev');
@@ -9,16 +9,17 @@ test('post-deploy smoke cannot target production or accidentally use signed-in a
   for (const user of [{ guest: false }, { login: 'owner', admin: true }, null]) expect(() => requireGuest(user)).toThrow();
 });
 
-test('request tracker names same-origin requests that are stuck or slow, and ignores other hosts', async () => {
-  const { trackRequests } = await import('./deck-smoke.mjs');
-  const handlers = {}; let clock = 0;
-  const page = { on: (event, fn) => { handlers[event] = fn; } };
-  const request = (url, headers = {}) => ({ url: () => url, response: async () => ({ status: () => 200, headers: () => headers }) });
-  const tracker = trackRequests(page, 'https://shiptorio.dev', () => clock);
-  const html = request('https://shiptorio.dev/deck?source=live'), chunk = request('https://shiptorio.dev/assets/deck.js', { 'x-request-id': 'r1' }), font = request('https://fonts.example/a.woff2');
-  for (const r of [html, chunk, font]) handlers.request(r);
-  clock = 6_000; await handlers.requestfinished(chunk);
-  clock = 12_000;
-  expect(tracker.stuck()).toEqual([{ path: '/deck', ms: 12_000 }]);
-  expect(tracker.slow()).toEqual([{ path: '/assets/deck.js', ms: 6_000, status: 200, requestId: 'r1', timing: null }]);
+
+test('document commitment still requires a rendered deck within the original total budget', async () => {
+  let now = 0;
+  const phases: string[] = [];
+  const page = {
+    goto: async (_url: string, options: { waitUntil: string; timeout: number }) => { expect(options).toEqual({ waitUntil: 'commit', timeout: 30000 }); now = 12000; },
+    locator: (selector: string) => { expect(selector).toBe('[data-deck-ready="1"]'); return { waitFor: async (options: { timeout: number }) => { expect(options.timeout).toBe(18000); } }; },
+  };
+  await navigateToReadyDeck(page, 'https://shiptorio.dev/deck?source=live', { now: () => now, onPhase: (phase: string) => phases.push(phase) });
+  expect(phases).toEqual(['document', 'rendered-deck']);
+  page.locator = () => ({ waitFor: async () => { throw new Error('deck never rendered'); } });
+  now = 0;
+  await expect(navigateToReadyDeck(page, 'https://shiptorio.dev/deck?source=live', { now: () => now })).rejects.toThrow('deck never rendered');
 });
