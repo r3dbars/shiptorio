@@ -152,7 +152,7 @@ test('after copy, Check is primary and Copy setup remains secondary', async () =
 
 test('a single repo and an issue use short labels without repeated setup warnings', async () => {
   const f = setup([{ repos: [{ fullName: 'owner/repo' }] }], ''); f.ui.open('repo'); await settle();
-  expect(f.ui.card()?.line).toBe('Connect Codex next.');
+  expect(f.ui.card()?.line).toBe('Shippy reads its issues and opens PRs here. Codex is next.');
   const issue = setup([{ issues: [{id:1,number:16,title:'Fix checkout',body:''}], nextPage:null }]);
   issue.ui.open('repo'); await settle(); expect(issue.ui.card()?.no).toBe('Next issue');
   expect(issue.ui.card()?.line).not.toContain('Shippy:');
