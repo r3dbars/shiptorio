@@ -87,7 +87,6 @@ try {
       if (fingerprint !== previous) { previous = fingerprint; lastChange = Date.now(); }
       if (Date.now() - lastChange > 60_000) { failures.push(`Stuck for 60 seconds at ${width}px: ${text.slice(0, 500)}`); await capture("stuck"); break; }
       const visible = async locator => (await locator.count()) && await locator.first().isVisible();
-      const launch = page.locator(".ic-card:not(.ic-ghost).hold button.approve, button.alaunch");
       const play = page.getByRole("button", { name: /^(Play|Skip|Enter the factory)$/i });
       const repo = page.getByRole("button", { name: new RegExp(`^(Use this repo|test-fixture/${persona})$`) });
       const installButton = page.getByRole("button", { name: "Install", exact: true });
@@ -113,7 +112,7 @@ try {
         if (!await activateFixtureCard(card, cardState, "approve", true)) return;
         recordCard(cardState.label, "hold-launch");
         await page.keyboard.down("Space");
-        try { await launch.first().waitFor({ state: "hidden", timeout: 10000 }); }
+        try { await card.waitForElementState("hidden", { timeout: 10000 }); }
         finally { await page.keyboard.up("Space"); }
         await capture("held-launch");
       } else if (await visible(installButton)) {
