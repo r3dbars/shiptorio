@@ -165,3 +165,9 @@ store; sleep locks it and the trusted runner unlocks it on its next auth check.
 If an older bundle reported browser login success but the next process said signed
 out, reinstall the runner and repeat `login claude` once. Confirm the runner's final
 `claude_code: installed and signed in for Shiptorio` message, not only the browser page.
+
+## Reading runner messages
+
+Normal output explains what happened in one short sentence, followed by a command when you need to act. Use `shiptorio-runner doctor` to check this computer, `shiptorio-runner login codex` to sign in again, or `shiptorio-runner pair` to reconnect a factory.
+
+Add `--verbose` after a command (for example `shiptorio-runner doctor --verbose`) when troubleshooting. It includes redacted technical details. The `paths` command is a machine-readable installation interface and continues to return JSON.
