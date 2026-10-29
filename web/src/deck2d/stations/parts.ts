@@ -67,17 +67,6 @@ export function cylinder(g: Px, x: number, y: number, w: number, h: number, meta
   }
 }
 
-/** A horizontal pipe run, lit along its top. */
-export function pipeH(g: Px, x: number, y: number, len: number, metal: "brass" | "copper" = "copper") {
-  const [a, b, c] = metal === "copper" ? (["copper-0", "copper-1", "copper-2"] as Color[]) : (["brass-1", "brass-2", "brass-4"] as Color[]);
-  g.hline(x, y, len, c); g.hline(x, y + 1, len, b); g.hline(x, y + 2, len, a);
-}
-/** A vertical pipe run, lit on its right. */
-export function pipeV(g: Px, x: number, y: number, len: number, metal: "brass" | "copper" = "copper") {
-  const [a, b, c] = metal === "copper" ? (["copper-0", "copper-1", "copper-2"] as Color[]) : (["brass-1", "brass-2", "brass-4"] as Color[]);
-  g.vline(x, y, len, a); g.vline(x + 1, y, len, b); g.vline(x + 2, y, len, c);
-}
-
 /** A round lamp/bulb, r ~1.5..2.5, lit from the upper right with a glint. */
 export function bulb(g: Px, cx: number, cy: number, r: number, s: StopState, on = true) {
   const [dk, mid, hi] = on ? LAMP[s] : LAMP.idle;
