@@ -67,6 +67,33 @@ export function wireDeckAccessibility(canvas: HTMLCanvasElement, host: HTMLEleme
   };
 }
 
+/** A requested live URL is not proof that this browser is signed in. */
+export async function deckSignedIn(request: typeof fetch = fetch): Promise<boolean> {
+  try {
+    const response = await request("/api/me", { cache: "no-store" });
+    if (!response.ok) return false;
+    const account = await response.json();
+    return account.guest !== true && typeof account.login === "string" && account.login.length > 0;
+  } catch { return false; }
+}
+
+export function showConnectionTools(search: string, signedIn: boolean): boolean {
+  const q = new URLSearchParams(search), repo = q.get("repo") ?? "";
+  return signedIn && q.get("source") === "live" && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)
+    && !repo.split("/").some(part => part === "." || part === "..");
+}
+
+/** Finish the sample loop with the existing connection card, not a second front door. */
+export function storyBeforeSignIn(story: DeckSource, connections: { open(target: "repo"): void }): DeckSource {
+  let finished = false;
+  return { ...story, view() {
+    const view = story.view();
+    if (view.card?.id !== "story-connect") return view;
+    if (!finished) { finished = true; connections.open("repo"); }
+    return { ...view, card: null };
+  } };
+}
+
 // The 2D deck page (web/deck.html). Wires the engine to a source, the card, Shippy and juice.
 if (typeof document !== "undefined" && document.getElementById("world")) void (async () => {
   const { createEngine } = await import("./engine/engine");
@@ -96,6 +123,8 @@ const seed = Number(params.get("seed")) || 0;
   });
   let source: DeckSource;
   const want = params.get("source");
+  const signedIn = want === "live" && await deckSignedIn();
+  const connectionToolsVisible = showConnectionTools(location.search, signedIn);
   const rehearsal = want === "shippy-demo" ? createShippyRehearsal() : null;
   const machines = want === "machine-demo" ? createMachineRehearsal() : null;
   const conveyor = want === "conveyor-demo" ? createConveyorDemo() : null;
@@ -113,8 +142,8 @@ const seed = Number(params.get("seed")) || 0;
   }
   else if (want === "launch-demo") source = createLaunchDemo();
   else if (want === "orb-demo") source = createOrbDemo();
-  else if ((want === "replay" || want === "sim" || want === "live" && params.has("repo")) && data?.createLiveSource) source = await (data.createLiveSource as (cfg: undefined, opts: { onPower: () => void }) => Promise<DeckSource> | DeckSource)(undefined, { onPower: () => connections.open("power") });
-  else if (want === "live") {
+  else if ((want === "replay" || want === "sim" || want === "live" && signedIn && params.has("repo")) && data?.createLiveSource) source = await (data.createLiveSource as (cfg: undefined, opts: { onPower: () => void }) => Promise<DeckSource> | DeckSource)(undefined, { onPower: () => connections.open("power") });
+  else if (want === "live" && signedIn) {
     const backdrop = createDemo().view();
     // Belief before setup: one sample crate waits at Review, so the bottleneck is visible before anything is connected.
     // It's plainly a sample (no number, no card of its own) and nothing here can start real work.
@@ -123,7 +152,7 @@ const seed = Number(params.get("seed")) || 0;
       attention: ["review"], jam: null, card: null, shipped: 0, caption: "Sample: this crate waits on your call. Connect your repo to run yours.", shippy: { at: "review", pose: "inspect" } }),
       approve() {}, later() {} };
   }
-  else if (want !== "demo" && story?.createStory) source = (story.createStory as (o: { seed: number; speed: number }) => DeckSource)({ seed, speed });
+  else if (want !== "demo" && story?.createStory) source = storyBeforeSignIn((story.createStory as (o: { seed: number; speed: number }) => DeckSource)({ seed, speed }), connections);
   else source = createDemo();
 
   // After a ship: the rocket goes, then one calm "Shipped. That's 3 today." before the next card (payoff.ts).
@@ -145,10 +174,10 @@ const seed = Number(params.get("seed")) || 0;
     const button = document.createElement("button"); button.type = "button"; button.textContent = label;
     button.onclick = () => connections.open(target); connectionTools.append(button);
   }
-  if (!want?.endsWith("-demo")) document.body.append(connectionTools);
-  if (want === "live" && !params.has("repo")) connections.open("repo");
-  const engine = createEngine(cv, art, bus, shippy, layers, { onPowerSelect: () => connections.open("power"), onMachineSelect: id => {
-    if (id === "repo" && !want?.endsWith("-demo")) { connections.open("repo"); return; }
+  if (connectionToolsVisible) document.body.append(connectionTools);
+  if (want === "live" && signedIn && !params.has("repo")) connections.open("repo");
+  const engine = createEngine(cv, art, bus, shippy, layers, { onPowerSelect: () => { if (connectionToolsVisible) connections.open("power"); }, onMachineSelect: id => {
+    if (id === "repo" && connectionToolsVisible) { connections.open("repo"); return; }
     if (machines) machines.cycling = false;
     (source as DeckSource & { selectStop?: (stop: typeof id) => void }).selectStop?.(id);
     inspector.select(id);
@@ -192,7 +221,7 @@ const seed = Number(params.get("seed")) || 0;
 
   const zoom = document.getElementById("zoom") as HTMLButtonElement;
   let all = false;
-  const zoomLabel = () => { const label = all ? "Zoom in" : "See all"; zoom.hidden = !engine.portrait; zoom.textContent = label; zoom.setAttribute("aria-label", label); };
+  const zoomLabel = () => { const label = all ? "Zoom in" : "Zoom out"; zoom.hidden = !engine.portrait; zoom.textContent = label; zoom.setAttribute("aria-label", label); };
   zoom.addEventListener("click", () => { all = !all; engine.seeAll(all); zoomLabel(); });
   addEventListener("resize", zoomLabel); zoomLabel();
 
