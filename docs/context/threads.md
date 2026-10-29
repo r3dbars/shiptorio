@@ -826,6 +826,7 @@ Verified whole-App regressions: Hono response assignment replaced appended App t
 - 2026-10-29 Claude ("Rebuild the main deck's underside art", `claude/project-thread-j8qkum`): the pixel deck's sides and underside are rebuilt in code to match the launch island (props/underside.ts): riveted rim band with copper pillars, chiselled warm boulders tapering to the middle, cyan shard pairs, and a steel engine with a glowing core window hung at the exact middle. The orb, underside vents/steam, pipe loops and hanging lanterns are gone.
 
 - 2026-10-29 Claude ("Plan what's next and load up Codex", `claude/project-thread-ry4a4x`): plan to Nov 3 in `docs/context/demo-plan.md` (where we are, five moves, demo line). Codex batch #43-#48 handed out: trust level-up on the real loop, stale factory cleanup, demo replay, first two minutes, Shippy's brain picks the bottleneck, green CI. Deck batch #36-#42 retired (Justin's Codex deck work #596-#611 superseded it).
+- **Codex #72 — deck front door:** signed-out live visits play the story before the existing sign-in card; setup chips require a signed-in live repo; Zoom out replaces See all. Builds on #628 keyboard accessibility. Tests and phone/desktop evidence: `web/test/evidence/deck-front-door/`.
 - 2026-10-29 · Codex #46 · `codex/deck-first-run`: new-account deck → GitHub → repo → Codex → first issue browser walk; fixture Worker/runner only, PR #617.
 
 
