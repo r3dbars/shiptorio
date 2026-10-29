@@ -97,6 +97,9 @@ export function createStory(opts: StoryOptions = {}): Story {
       script: [] as Step[], stepT: 0, // the running step is script[0]; stepT = seconds into it
       size: "large" as DeckSize, lastCallAt: -99,
       island: "built" as NonNullable<DeckView["deck"]>["island"], islandProgress: undefined as number | undefined,
+      follow: null as string | null, // the crate the camera rides along with (beat 4's no-card crate)
+      watch: null as StopId | null, // where the camera parks while Shippy takes the lever (rockets would pull it away)
+      pace: 1, // > 1 slows every stop, so the one no-card crate reads on camera
     };
   }
   const after = (sec: number, fn: () => void) => S.timers.push({ at: S.t + sec, fn });
@@ -120,7 +123,7 @@ export function createStory(opts: StoryOptions = {}): Story {
       if (!front) continue;
       if (id === "review" && !reviewOpen()) { front.t = 0; continue; }
       front.t += dt;
-      const svc = id === "review" ? S.reviewSvc : SVC[id];
+      const svc = (id === "review" ? S.reviewSvc : SVC[id]) * S.pace;
       if (front.t < svc) continue;
       if (id === "launch") { s.q.shift(); S.shipped++; continue; }
       const to = nextBuilt(i);
@@ -202,35 +205,40 @@ export function createStory(opts: StoryOptions = {}): Story {
     if (p === "swipe" && !S.card && S.laterUntil > 0 && S.t >= S.laterUntil) { S.laterUntil = 0; showCall(); }
   }
 
+  // Beat 4, the climax: the third yes hands Review to Shippy, and the next crate rolls the whole line with no card while
+  // the camera rides along. One thing at a time: Shippy takes the lever (the AUTOMATED stamp lands), the pile drains,
+  // then the one crate nobody had to call, then the next jam, then the last card.
   function goAuto() {
     setPhase("automatic");
     S.card = null;
-    S.budget = null; S.reviewSvc = 0.35; S.jam = null; S.autoReview = true;
-    S.spawnEvery = 1.0;
-    S.caption = "Same kind, three times. Shippy's got it.";
+    S.spawnEvery = 0; S.jam = null; S.watch = "review"; // the third yes already released a batch; nothing new until Shippy has the lever
+    S.caption = "Same kind, three times."; S.captionAt = S.t;
     S.shippy = { pose: "unfold", at: "corner" };
-    after(1.4, () => { S.shippy = { pose: "walking", at: "review" }; });
-    after(3.0, () => { S.shippy = { pose: "lever", at: "review" }; S.caption = "Review runs itself now."; });
-    after(4.4, () => { S.shippy = { pose: "happy", at: "review" }; });
-    after(6.4, () => {
-      setPhase("next-jam");
-      S.caption = "You're free to fix the next jam.";
-      S.nextJam = "checks"; S.jam = "checks";
-    });
-    after(10, () => {
-      setPhase("end");
-      S.caption = null;
-      S.card = {
-        id: STORY_CARD.connect,
-        title: "That's your repo. Want to see the real one?",
-        dots: null,
-        line: "Connect GitHub and this deck runs on your real code.",
-        stop: "repo",
-        yes: "See my repo",
-        no: "Replay",
-        setup: true,
-      };
-    });
+    S.script.push(
+      { rest: 1.4 }, { run: () => { S.shippy = { pose: "walking", at: "review" }; } },
+      { rest: 1.6 }, { run: () => { S.shippy = { pose: "lever", at: "review" }; S.autoReview = true; S.budget = null; S.reviewSvc = 0.35; } },
+      { say: "Review runs itself now." }, { rest: 1.4 }, { run: () => { S.shippy = { pose: "happy", at: "review" }; } },
+      { until: () => !STOPS.some((id) => S.st[id].q.length) }, { rest: REST_SEC },
+      { run: () => { S.watch = null; S.pace = 1.6; S.follow = `story-${S.nextId}`; spawn(); S.caption = "Shippy's got these now. No card."; S.captionAt = S.t; } },
+      { until: () => !STOPS.some((id) => S.st[id].q.some((c) => c.id === S.follow)) },
+      { run: () => { S.follow = null; S.pace = 1; } }, { rest: 1.2 },
+      { run: () => { setPhase("next-jam"); S.nextJam = "checks"; S.jam = "checks"; S.spawnEvery = 1.0; S.spawnT = 0.9; } },
+      { say: "You're free to fix the next jam." }, { rest: 3.6 },
+      { run: () => {
+        setPhase("end");
+        S.caption = null;
+        S.card = {
+          id: STORY_CARD.connect,
+          title: "That's your repo. Want to see the real one?",
+          dots: null,
+          line: "Connect GitHub and this deck runs on your real code.",
+          stop: "repo",
+          yes: "See my repo",
+          no: "Replay",
+          setup: true,
+        };
+      } },
+    );
   }
 
   function step(dt: number) {
@@ -250,7 +258,7 @@ export function createStory(opts: StoryOptions = {}): Story {
     fns.forEach((fn) => fn());
   }
 
-  function view(): DeckView {
+  function view(): DeckView & { followItem?: string; focus?: StopId } {
     const stops = STOPS.map((id) => {
       const s = S.st[id];
       const automated = id === "review" && S.autoReview;
@@ -263,6 +271,7 @@ export function createStory(opts: StoryOptions = {}): Story {
     });
     return {
       stops, jam: S.jam, card: S.card ? { ...S.card } : null, shippy: { ...S.shippy }, shipped: S.shipped, caption: S.card ? null : S.caption,
+      ...(S.follow ? { followItem: S.follow } : {}), ...(S.watch ? { focus: S.watch } : {}),
       deck: {
         size: S.size, island: S.island,
         ...(S.islandProgress != null ? { islandProgress: S.islandProgress } : {}),

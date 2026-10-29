@@ -75,25 +75,25 @@ export function createConnections(o: Options) {
     if (!pane) return null;
     let title = '', line = '', yes = 'Refresh', no = 'Close';
     if (busy) { title = pane === 'repos' ? 'Finding your repositories…' : pane === 'issues' ? 'Opening your inbox…' : 'Checking Codex…'; line = 'This should only take a moment.'; yes = 'Please wait…'; }
-    else if (error) { title = login ? 'Sign in to your factory' : 'Connection needs attention'; line = login ? 'Sign in with GitHub to choose your repository. No coding starts yet.' : error; yes = login ? 'Sign in' : 'Try again'; }
+    else if (error) { title = login ? 'Sign in to your factory' : 'Connection needs attention'; line = login ? 'Sign in with GitHub so Shippy can see your repos. No coding starts yet.' : error; yes = login ? 'Sign in' : 'Try again'; }
     else if (pane === 'repos') {
       const r = repos[index]; title = r ? `Use ${r.fullName}?` : 'Connect your GitHub repo';
-      line = r ? `${repos.length > 1 ? `Repository ${index + 1} of ${repos.length}. ` : ""}Connect Codex next.` : 'Install the GitHub App on a repository, then return here and refresh.';
+      line = r ? `${repos.length > 1 ? `Repository ${index + 1} of ${repos.length}. ` : ""}Shippy reads its issues and opens PRs here. Codex is next.` : 'Install the GitHub App so Shippy can read your issues. Then come back and refresh.';
       yes = r ? 'Use this repo' : nextPage ? 'More repos' : 'Connect GitHub'; no = r && (repos.length > 1 || nextPage || page > 1) ? 'Next repo' : 'Close';
     } else if (pane === 'issues') {
       const issue = issues[index]; title = issue ? `#${issue.number}: ${issue.title}` : 'No open issues on this page';
-      line = issue ? `${repo} · ${index + 1} of ${issues.length}. ${issue.body ? `${issue.body.slice(0, 120).trim()}${issue.body.length > 120 ? '…' : ''} ` : ''}Start issue prepares a plan. Codex waits for your approval.` : `${repo} has no open issues on this page. Add an issue on GitHub, then refresh.`;
+      line = issue ? `${repo} · ${index + 1} of ${issues.length}. ${issue.body ? `${issue.body.slice(0, 120).trim()}${issue.body.length > 120 ? '…' : ''} ` : ''}Start issue prepares a plan. Codex waits for your approval.` : `Issues are what the factory builds. Add one to ${repo} on GitHub, then refresh.`;
       yes = issue ? 'Start issue' : nextPage ? 'More issues' : 'Refresh'; no = issue ? 'Next issue' : 'Close';
     } else if (pane === 'setup') {
       title = copied ? 'Setup command copied' : 'Connect your Codex subscription';
-      line = copyFailed ? `Copy this into Terminal: ${command}` : 'Paste the setup command into Terminal and sign in if asked. Then come back and choose Check.';
+      line = copyFailed ? `Copy this into Terminal: ${command}` : 'This links your computer so Codex can build here. Paste it into Terminal, then choose Check.';
       yes = copied ? 'Check' : 'Copy setup'; no = copied ? 'Copy setup' : 'Check';
     } else if (pane === 'disconnect') {
       title = 'Engine options'; line = 'Unplug this engine from the factory. Your Codex sign-in stays on your computer.'; yes = 'Unplug'; no = 'Close';
     } else {
       const ready = status?.online && status.harnesses.includes('codex');
       title = !status?.paired ? 'Connect your Codex engine' : !status.online ? 'Codex engine is offline' : !ready ? 'Sign in to Codex' : status.working ? 'Engine is busy' : 'Codex engine is ready';
-      line = !status?.paired ? 'Connect the local runner to use your Codex subscription.' : !status.online ? 'Run shiptorio-runner watch on your computer.' : !ready ? 'Run shiptorio-runner login codex on your computer, then return here.' : status.working ? `Working on ${status.working.title}.` : 'Codex is ready. Choose an issue next.';
+      line = !status?.paired ? 'Codex writes the code on your computer, with your own subscription. Connecting starts no job.' : !status.online ? 'Run shiptorio-runner watch on your computer so the factory can hand Codex work.' : !ready ? 'Run shiptorio-runner login codex on your computer so Codex can write code for you.' : status.working ? `Working on ${status.working.title}.` : 'Codex is ready. Pick an issue so the factory has something to build.';
       yes = !status?.paired ? 'Set up Codex' : ready && !status.working ? 'Open inbox' : 'Refresh'; no = status?.paired ? 'Options' : 'Close';
     }
     return { id: `connection-${revision}-${displayRevision}-${pane}`, stop: pane === 'power' || pane === 'setup' || pane === 'disconnect' ? 'builder' : 'repo', title, line, yes, no, dots: null };

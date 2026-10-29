@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { resolve, join } from "node:path";
 import { safeReportFailure, safeReportValue } from "./safe-report.mjs";
 import { localFactory } from "./local.mjs";
-import { playerAction } from "./player-action.mjs";
+import { playerAction, assertSafePrimaryAction } from "./player-action.mjs";
 import { createLaunchTracker } from "./launch-tracker.mjs";
 import { botAdmissionPath, prepareBotPersona, deckFixtureIdentity, FIXTURE_INSTALL, isFixtureInstallPage } from "./setup.mjs";
 const args = process.argv.slice(2).filter(x => x !== "--");
@@ -116,7 +116,6 @@ try {
         await Promise.all([page.waitForURL(current => current.searchParams.get("repo") === `test-fixture/${persona}`, { timeout: 30000 }), repo.first().click()]);
         await page.locator('[data-deck-ready="1"]').waitFor({ timeout: 30000 });
         await capture("open-repo");
-        await page.keyboard.press("Escape");
       }
       else if (await visible(install)) {
         const installUrl = new URL(await install.first().getAttribute("href"), url.origin);
@@ -126,7 +125,7 @@ try {
         await repo.first().waitFor({ state: "visible", timeout: 60000 });
       } else if (await visible(closeSheet)) { await closeSheet.first().click(); await capture("return-to-factory"); }
       else if (/Factory job budget reached/i.test(text) && await visible(later)) { friction(`${width}px: suggested plan hit the active-job budget; used Later to reach other work`); await later.first().click(); await capture("later-busy-plan"); }
-      else if (await visible(go)) { await go.first().click(); await capture("continue"); }
+      else if (await visible(go)) { assertSafePrimaryAction(await go.first().innerText()); await go.first().click(); await capture("continue"); }
       else if (await visible(later)) { await later.first().click(); await capture("later"); }
       else if (await visible(checkin) && await checkin.first().isEnabled()) { friction(`${width}px: no direct card action was visible; opened Check in to find waiting work`); await checkin.first().click(); await capture("open-check-in"); }
       else if (await visible(menu) && await menu.first().getAttribute("aria-expanded") === "false") { friction(`${width}px: opened Menu to find the next player action`); await menu.first().click(); await capture("open-menu"); }

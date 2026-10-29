@@ -279,7 +279,10 @@ export const Move = z.object({
 export type Move = z.infer<typeof Move>;
 
 // docs/LEARN.md: a kind of card the factory now answers on its own, after the player said yes enough times in a row.
-export const Learned = z.object({ key: z.string(), label: z.string(), since: z.number() });
+export const Learned = z.object({
+  key: z.string(), label: z.string(), since: z.number(),
+  items: z.array(z.string()).max(50).optional(), // items the factory started on its own under this key, so the deck can say so
+});
 export type Learned = z.infer<typeof Learned>;
 
 export const DistrictTrust = z.object({
