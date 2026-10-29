@@ -12,6 +12,7 @@ import { sound, type Sfx } from "./engine";
 import "./sound.css";
 
 export { musicInputFor } from "./deckMusic";
+export { shippySays, talkBlip, cardAdvance, spotlight } from "./talk";
 
 const SPEAKER = '<svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true" shape-rendering="crispEdges"><path fill="currentColor" d="M2 6h3l4-3h1v10H9l-4-3H2z"/><path class="dsound-waves" fill="currentColor" d="M11 6h1v4h-1zM13 4h1v8h-1z"/><path class="dsound-x" stroke="currentColor" stroke-width="1.5" d="M11 6l4 4M15 6l-4 4"/></svg>';
 
