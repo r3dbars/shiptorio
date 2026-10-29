@@ -129,7 +129,11 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
         if (d !== 0) world.facing = d > 0 ? 1 : -1;
         const stepLen = Math.min(Math.abs(d), o.speed * dt * walkEase());
         world.x += Math.sign(d) * stepLen;
-        if (Math.abs(world.tx - world.x) < 0.5) { world.x = world.tx; world.mode = "stand"; world.t = 0; world.poseT = 0; feet(3); }
+        if (Math.abs(world.tx - world.x) < 0.5) {
+          world.x = world.tx; world.mode = "stand"; world.t = 0; world.poseT = 0;
+          if (o.pixel && view.at !== "corner") world.facing = o.standDx >= 0 ? -1 : 1;
+          feet(3);
+        }
         break;
       }
       case "stand":
@@ -163,9 +167,10 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
   }
   function standEffects(dt: number) {
     const p = world.pose, t = world.poseT;
+    const toolDirection = o.pixel && o.standDx >= 0 ? -1 : 1;
     if (p === "lever" && crossed(t % 1.4, dt, 0.55)) puff(worldPuffs, world.x + o.size * 1.35, o.floorAt(world.x) - o.size * 0.35, 5, o.size * 0.25, "255,190,90");
     if (p === "happy" && t < 1 && crossed(t % 0.5, dt, 0.49)) feet(3);
-    if (p === "weld" && crossed(t % 0.09, dt, 0.08)) puff(worldPuffs, world.x + o.size * 0.95, o.floorAt(world.x) - o.size * 0.05, 3, o.size * 0.18, "255,200,90", 0.6);
+    if (p === "weld" && crossed(t % 0.09, dt, 0.08)) puff(worldPuffs, world.x + toolDirection * o.size * 0.95, o.floorAt(world.x) - o.size * 0.05, 3, o.size * 0.18, "255,200,90", 0.6);
     if (p === "alarmed" && crossed(t % 0.14, dt, 0.13)) puff(worldPuffs, world.x + o.size * 0.15, o.floorAt(world.x) - o.size * 1.35, 1, o.size * 0.3, "120,110,105", 1.2);
   }
   function crossed(t: number, dt: number, at: number) { return t >= at && t - dt < at; }
@@ -201,7 +206,7 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
       case "weld": {
         // torch flickers between the two frames, a shower of sparks at the tip
         const f = Math.floor(t / 0.09) % 2;
-        return { ...base, frame: f ? "shippy-weld-1" : "shippy-weld-0", px: f ? "weld1" : "weld0", flip: false, x: base.x + (f ? u * 0.01 : 0), glow: 0.7 + 0.3 * f, color: AMBER };
+        return { ...base, frame: f ? "shippy-weld-1" : "shippy-weld-0", px: f ? "weld1" : "weld0", flip: o.pixel ? base.flip : false, x: base.x + (f ? u * 0.01 : 0), glow: 0.7 + 0.3 * f, color: AMBER };
       }
       case "carry": {
         const f = Math.floor(t / 0.6) % 2;

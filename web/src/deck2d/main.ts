@@ -4,6 +4,7 @@ import { createArt } from "./engine/art";
 import { createDemo, createOrbDemo, createLaunchDemo } from "./engine/demo";
 import { createEngine } from "./engine/engine";
 import { fallbackCard, fallbackShippy } from "./engine/fallbacks";
+import { createShippyRehearsal } from "./shippy/rehearsal";
 
 // The 2D deck page (web/deck.html). Wires the engine to a source, the card, Shippy and juice.
 // Each module lives in its own folder and is picked up here when it exists, so threads can land independently.
@@ -27,7 +28,9 @@ const seed = Number(params.get("seed")) || 0;
 
   let source: DeckSource;
   const want = params.get("source");
-  if (want === "launch-demo") source = createLaunchDemo();
+  const rehearsal = want === "shippy-demo" ? createShippyRehearsal() : null;
+  if (rehearsal) source = rehearsal;
+  else if (want === "launch-demo") source = createLaunchDemo();
   else if (want === "orb-demo") source = createOrbDemo();
   else if (want === "live" && data?.createLiveSource) source = await (data.createLiveSource as () => Promise<DeckSource> | DeckSource)();
   else if (want !== "demo" && story?.createStory) source = (story.createStory as (o: { seed: number; speed: number }) => DeckSource)({ seed, speed });
@@ -38,6 +41,19 @@ const seed = Number(params.get("seed")) || 0;
   const layers: DeckLayer[] = [];
   for (const f of ["grow", "build", "launch", "juice", "props"]) { const m = await load(f, "createLayer"); if (m) layers.push((m.createLayer as CreateLayer)(art, bus)); }
   const engine = createEngine(cv, art, bus, shippy, layers);
+  if (rehearsal) {
+    document.body.classList.add("shippy-rehearsal");
+    const controls = document.createElement("div"); controls.className = "shippy-tools";
+    for (const [label, run] of [
+      ["Pause", (button: HTMLButtonElement) => { rehearsal.paused = !rehearsal.paused; button.textContent = rehearsal.paused ? "Play" : "Pause"; }],
+      ["Next job", () => rehearsal.next()],
+      ["Replay", () => rehearsal.reset()],
+    ] as const) {
+      const button = document.createElement("button"); button.type = "button"; button.textContent = label;
+      button.onclick = () => run(button); controls.append(button);
+    }
+    document.body.append(controls);
+  }
 
   const mountCard = (cardMod?.mountCard as MountCard | undefined) ?? fallbackCard;
   const card = mountCard(document.getElementById("card-host")!, {
@@ -58,7 +74,7 @@ const seed = Number(params.get("seed")) || 0;
   await art.ready();
   let last = 0;
   const frame = (now: number) => {
-    const dt = Math.min(0.05, (now - (last || now)) / 1000) * speed; last = now;
+    const dt = rehearsal?.paused ? 0 : Math.min(0.05, (now - (last || now)) / 1000) * speed; last = now;
     source.step?.(dt);
     const view = source.view();
     engine.frame(view, dt);

@@ -322,6 +322,7 @@ export function createBuild(art: ArtLoader, bus: DeckBus | null, opts: BuildOpti
       shakeAmp *= Math.exp(-dt * 9);
       for (const s of view.stops) {
         const was = seen.get(s.id);
+        if (!s.built) jobs.delete(s.id); // removal/replay cancels a construction already in progress
         if (s.locked && !s.built && !jobs.has(s.id)) locked.add(s.id); else if (!s.locked) locked.delete(s.id);
         if (!first && was === false && s.built && !jobs.has(s.id)) start(s.id);
         seen.set(s.id, s.built);
