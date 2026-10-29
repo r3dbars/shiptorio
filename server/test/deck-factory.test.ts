@@ -679,11 +679,12 @@ describe("the factory learns what the player approves (docs/LEARN.md)", () => {
       throw new Error(`Unexpected learned dispatch request ${url}`);
     }) as typeof fetch;
     try {
-      const first = await f.factory.claimRunner("pair", ["codex"]);
+      const polling = new Factory((f.factory as unknown as { ctx: unknown }).ctx as never, internal.env as never);
+      const first = await polling.claimRunner("pair", ["codex"]);
       expect(first).toMatchObject({ id: "job-4", status: "running", approvedBy: "autonomy", allowedPaths: ["web/src/a.ts"] });
       expect(first?.lease).toBeTruthy();
       expect(f.saved().deck?.some(m => m.id === "approval-4")).toBe(false);
-      expect(await f.factory.claimRunner("pair", ["codex"])).toBeNull();
+      expect(await polling.claimRunner("pair", ["codex"])).toBeNull();
       const restarted = new Factory((f.factory as unknown as { ctx: unknown }).ctx as never, internal.env as never);
       expect(await restarted.claimRunner("pair", ["codex"])).toBeNull();
       const stored = f.data.get("runnerJob:job-4") as Record<string, unknown>;
