@@ -5,8 +5,8 @@
 
 import { art, type AttachJuice, type CreateLayer } from "../contract";
 import { pixelOn } from "../../flags";
-import { play as playBuild } from "../../sound/build";
-import { sound } from "../../sound/engine";
+import { play as playBuild } from "../sound/kit";
+import { sound } from "../sound/engine";
 import { DeckSound, type DeckEvent } from "./sounds";
 import { burst, launchPlume, stampAutomated } from "./fx";
 import { createJuiceLayer } from "./pixel";
