@@ -14,6 +14,7 @@ import { pixelOn } from "../../flags";
 import { cardScale, paintButton, paintDot, paintPlate, pixelLayer } from "./pixel";
 import "./card.css";
 import { mountShippyGuide } from "./shippy-guide";
+import { mountStoryShippy, type StoryShippy } from "./story";
 
 const SWIPE_SHARE = 0.28; // let go past this share of the card's width to answer
 const MIN_SWIPE_PX = 60;
@@ -67,6 +68,7 @@ interface Face {
   no: HTMLElement;
   yes: HTMLElement;
   guide?: { destroy(): void };
+  story?: StoryShippy; // a story card: Shippy inside the plate, typing his line
   px?: { redrawLater(): void }; // pixel mode: repaint the Later button when it lights up or goes dark
 }
 
@@ -98,8 +100,22 @@ function face(): Face {
   return f;
 }
 
+/** A story card with no second answer: only Next, and a left swipe or ← does nothing. */
+const solo = (card: View | null) => !!card?.shippy && !card.no;
+
 function fill(f: Face, card: View) {
   f.root.dataset.card = card.id;
+  if (card.shippy) return fillStory(f, card as View & { shippy: NonNullable<View["shippy"]> });
+  if (f.story) {
+    // the same card id came back as a plain card: put the plate back the way face() made it
+    f.story.stop();
+    f.story.canvas.remove();
+    f.story = undefined;
+    f.root.classList.remove("ic-story", "solo");
+    f.line.removeAttribute("aria-hidden");
+    f.later.hidden = false;
+    f.title.hidden = false;
+  }
   if (card.guide === "shippy" && !f.guide) f.guide = mountShippyGuide(f.root);
   if (card.guide !== "shippy" && f.guide) { f.guide.destroy(); f.guide = undefined; }
   f.no.textContent = card.no || "Later";
@@ -112,6 +128,28 @@ function fill(f: Face, card: View) {
   f.line.textContent = card.line;
   f.line.hidden = !card.line;
   setDots(f, card.dots);
+}
+
+function fillStory(f: Face, card: View & { shippy: NonNullable<View["shippy"]> }) {
+  f.guide?.destroy();
+  f.guide = undefined;
+  f.root.classList.add("ic-story");
+  f.root.classList.toggle("solo", !card.no);
+  f.root.classList.remove("hold");
+  f.approve.removeAttribute("aria-label");
+  f.no.textContent = card.no || "Later";
+  f.yes.textContent = card.yes || "Next";
+  f.later.hidden = !card.no;
+  f.title.textContent = card.title;
+  f.title.hidden = !card.title;
+  f.dots.hidden = true;
+  // screen readers get the whole line at once; the typed-out text is for the eyes
+  f.root.setAttribute("aria-label", [card.title, card.line].filter(Boolean).join(" "));
+  f.line.setAttribute("aria-hidden", "true");
+  f.line.hidden = false;
+  if (!f.story) f.story = mountStoryShippy(f.root, card.shippy);
+  else f.story.setPose(card.shippy);
+  f.story.say(f.line, card.line);
 }
 
 function setDots(f: Face, dots: CardView["dots"], pop?: number) {
@@ -150,6 +188,15 @@ export const mountCard: MountCard = (host, handlers) => {
   let drag: { pointer: number; x0: number; y0: number; dx: number; dy: number; vx: number; lastX: number; t: number; w: number } | null = null;
   let holding: { timer: ReturnType<typeof setTimeout>; f: Face } | null = null; // a hold card's Approve being held
 
+  let moved = false; // the current press dragged the card: its click is not a tap
+
+  // a story card's tap, Next or →: the first one finishes a line that is still typing, the next one goes on
+  const next = (f: Face) => {
+    if (live !== f) return;
+    if (f.story?.typing()) return f.story.finish();
+    answer("approve");
+  };
+
   const stopHold = () => {
     if (!holding) return;
     clearTimeout(holding.timer);
@@ -158,7 +205,7 @@ export const mountCard: MountCard = (host, handlers) => {
   };
   // a hold card answers only once the press has been held HOLD_MS; letting go early just drains the fill
   const startHold = () => {
-    if (!live || !shown?.hold || holding) return;
+    if (!live || !shown?.hold || shown.shippy || holding) return;
     const f = live;
     f.approve.classList.add("holding");
     holding = { f, timer: setTimeout(() => { if (holding?.f === f && live === f) { holding = null; f.approve.classList.remove("holding"); answer("approve"); } }, HOLD_MS) };
@@ -207,11 +254,12 @@ export const mountCard: MountCard = (host, handlers) => {
     f.root.style.setProperty("--ft", `${m && !PX ? Math.max(-MAX_TILT, Math.min(MAX_TILT, Number(m[1]) * TILT_PER_PX)) : 0}deg`);
     f.root.style.transform = "";
     setLean(f, a === "approve" ? 1 : -1);
-    if (a === "approve" && card.dots && card.dots.have < card.dots.need) {
+    if (a === "approve" && !card.shippy && card.dots && card.dots.have < card.dots.need) {
       setDots(f, { have: card.dots.have + 1, need: card.dots.need }, card.dots.have);
       f.root.classList.add("popping");
     }
     f.guide?.destroy();
+    f.story?.stop();
     leave(f.root, a);
     try { navigator.vibrate?.(a === "approve" ? 12 : 6); } catch { /* no haptics */ }
     (a === "approve" ? handlers.onApprove : handlers.onLater)(card.id);
@@ -224,13 +272,19 @@ export const mountCard: MountCard = (host, handlers) => {
     // after an answer the next card waits for the ghost's dot pop before it slides up
     if (performance.now() - answeredAt < AFTER_ANSWER_MS) f.root.classList.add("after");
     f.later.addEventListener("click", () => answer("later"));
-    f.approve.addEventListener("click", () => { if (!shown?.hold) answer("approve"); });
+    f.approve.addEventListener("click", () => { if (!shown?.hold || shown.shippy) next(f); });
+    // a story card: a tap anywhere on the plate goes on too (a drag that snapped back is not a tap)
+    f.root.addEventListener("click", (e) => {
+      if (!shown?.shippy || live !== f || moved || (e.target as HTMLElement).closest("button")) return;
+      next(f);
+    });
     f.approve.addEventListener("pointerdown", (e) => { if (e.isPrimary && e.button === 0) startHold(); });
     for (const type of ["pointerup", "pointerleave", "pointercancel"]) f.approve.addEventListener(type, stopHold);
     f.approve.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && shown?.hold) { e.preventDefault(); if (!e.repeat) startHold(); } });
     f.approve.addEventListener("keyup", (e) => { if (e.key === "Enter" || e.key === " ") stopHold(); });
     f.root.addEventListener("pointerdown", (e) => {
       if (!e.isPrimary || e.button !== 0 || (e.target as HTMLElement).closest("button") || live !== f) return;
+      moved = false;
       drag = { pointer: e.pointerId, x0: e.clientX, y0: e.clientY, dx: 0, dy: 0, vx: 0, lastX: e.clientX, t: performance.now(), w: f.root.getBoundingClientRect().width || 320 };
       f.root.classList.add("dragging");
       try { f.root.setPointerCapture(e.pointerId); } catch { /* synthetic pointers */ }
@@ -242,6 +296,7 @@ export const mountCard: MountCard = (host, handlers) => {
       drag.lastX = e.clientX;
       drag.t = now;
       drag.dx = e.clientX - drag.x0;
+      if (Math.abs(drag.dx) > 8) moved = true;
       drag.dy = (e.clientY - drag.y0) * 0.2;
       if (PX) {
         // whole art px only, sideways only, no tilt
@@ -255,8 +310,8 @@ export const mountCard: MountCard = (host, handlers) => {
     });
     const end = (e: PointerEvent, cancel: boolean) => {
       if (!drag || drag.pointer !== e.pointerId || live !== f) return;
-      const a = cancel ? null : swipeAnswer(drag.dx, drag.w, drag.vx, !!shown?.hold);
-      if (a) return answer(a);
+      const a = cancel ? null : swipeAnswer(drag.dx, drag.w, drag.vx, !!shown?.hold && !shown.shippy);
+      if (a && !(a === "later" && solo(shown))) return answer(a);
       drag = null;
       f.root.classList.remove("dragging");
       f.root.style.transform = "";
@@ -273,8 +328,8 @@ export const mountCard: MountCard = (host, handlers) => {
     if (!live || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
     const t = e.target as HTMLElement | null;
     if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
-    if (e.key === "ArrowRight") { e.preventDefault(); if (!shown?.hold) answer("approve"); else if (!e.repeat) startHold(); }
-    else if (e.key === "ArrowLeft") { e.preventDefault(); answer("later"); }
+    if (e.key === "ArrowRight") { e.preventDefault(); if (shown?.shippy) { if (!e.repeat) next(live); } else if (!shown?.hold) answer("approve"); else if (!e.repeat) startHold(); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); if (!solo(shown)) answer("later"); }
   };
   const onKeyUp = (e: KeyboardEvent) => { if (e.key === "ArrowRight") stopHold(); };
   window.addEventListener("keydown", onKey);
@@ -294,6 +349,7 @@ export const mountCard: MountCard = (host, handlers) => {
         // the source swapped or dropped the card underneath us (answered elsewhere): it steps down, unanswered
         stopHold();
         live.guide?.destroy();
+        live.story?.stop();
         leave(live.root, "down");
         live = null;
         drag = null;
@@ -320,6 +376,7 @@ export const mountCard: MountCard = (host, handlers) => {
       stopHold();
       clearCaughtUp();
       live?.guide?.destroy();
+      live?.story?.stop();
       wrap.remove();
       live = null;
       shown = null;
