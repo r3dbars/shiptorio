@@ -86,7 +86,7 @@ describe("autonomy level rules", () => {
 describe("autonomy levels in the Factory", () => {
   const setup = (flag: boolean) => {
     const state = FactoryState.parse({ repo: "r3dbars/demo", baseBranch: "main", districts: [], ...starterLine(), items: [], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 });
-    const data = new Map<string, unknown>([["state", state], ["meta", { repo: "r3dbars/demo", installationId: 1 }], ["permits", ship(emptyBook(), FLOOR_SHIPS, { lane: undefined })]]);
+    const data = new Map<string, unknown>([["githubAccessCheckedAt", Date.now()], ["state", state], ["meta", { repo: "r3dbars/demo", installationId: 1 }], ["permits", ship(emptyBook(), FLOOR_SHIPS, { lane: undefined })]]);
     const events: { type: string; level?: string }[] = [];
     let alarm: number | null = null;
     const storage = {
@@ -157,7 +157,7 @@ describe("levels acting in the Factory", () => {
     const item: Item = { id: "gh-5", kind: "bug", source: "github_issue", title: "Fix the login typo", district: "web", state: "queued", attempts: 0, updatedAt: now };
     const state = FactoryState.parse({ repo: "r3dbars/demo", baseBranch: "main", districts: [], ...starterLine(), items: [item], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 });
     const book = { ...emptyBook(), ladder: { level, since: now, clean: 3, offeredAt: 3 } };
-    const data = new Map<string, unknown>([["state", state], ["meta", { repo: "r3dbars/demo", installationId: 1 }], ["permits", book], ["runnerPresence", { harnesses: ["codex"], seenAt: now }]]);
+    const data = new Map<string, unknown>([["githubAccessCheckedAt", Date.now()], ["state", state], ["meta", { repo: "r3dbars/demo", installationId: 1 }], ["permits", book], ["runnerPresence", { harnesses: ["codex"], seenAt: now }]]);
     let alarm: number | null = null;
     const storage = {
       async get(k: string) { return structuredClone(data.get(k)); },

@@ -17,7 +17,7 @@ const card = (id: string, overrides: Partial<Move> = {}): Move => ({ id, title: 
 /** Real DO methods with durable storage/SQL/transport substitutes, no network services. */
 function fixture(cards: Move[], stateOverrides: Partial<FactoryState> = {}) {
   const state = FactoryState.parse({ repo: "r3dbars/demo", baseBranch: "main", districts: [], ...starterLine(), items: [], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0, move: cards[0] ?? null, deck: cards, ...stateOverrides });
-  const data = new Map<string, unknown>([["state", structuredClone(state)], ["meta", { repo: state.repo, installationId: 1 }], ["openMoves", structuredClone(cards)]]);
+  const data = new Map<string, unknown>([["githubAccessCheckedAt", Date.now()], ["state", structuredClone(state)], ["meta", { repo: state.repo, installationId: 1 }], ["openMoves", structuredClone(cards)]]);
   const rules = new Map<string, { repo: string; kind: string; scope: string; actionId: string }>();
   let alarm: number | null = null;
   const events: ServerToWeb[] = [];
