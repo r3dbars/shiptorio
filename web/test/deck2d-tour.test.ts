@@ -15,6 +15,18 @@ test("the tour opens on Shippy and a small, empty deck: no rocket, no machine li
   expect(v.stops.every((s) => !s.built && !s.items.length)).toBe(true);
   expect(v.deck).toMatchObject({ size: "small", island: "none", boiler: 0 });
   expect(v.attention).toEqual([]);
+  expect(v.shot).toBe("shippy"); // tight on Shippy first
+});
+
+test("the story camera frames each station as it is named, the engine for the boiler beat, and the line at the end", () => {
+  const t = createTour(), shots = new Set<string>();
+  for (let i = 0; i < 3000 && t.phase() !== "end"; i++) {
+    const v = t.view();
+    if (v.shot) shots.add(v.shot);
+    if (v.card) t.approve(v.card.id); else t.step(0.1);
+  }
+  for (const s of ["shippy", "repo", "planner", "builder", "checks", "review", "gate", "line", "boiler", "launch"]) expect(shots.has(s)).toBe(true);
+  expect(t.view().shot).toBe("line");
 });
 
 test("each answer builds one station, card hidden while it builds; then a fix ships and the tour hands off to sign-in", () => {

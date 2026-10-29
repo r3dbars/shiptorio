@@ -6,7 +6,7 @@
 import { STAGE_AT } from "../build/timeline";
 import { GROW_SECONDS } from "../grow/index";
 import { LAUNCH_BUILD_SECONDS } from "../launch/timeline";
-import { STOPS, type CardView, type DeckView, type ShippyView, type StopId } from "../contract";
+import { STOPS, type CardView, type DeckView, type ShippyView, type Shot, type StopId } from "../contract";
 import type { AttentionView } from "../stations/attention";
 import { STORY_CARD, type StoryPhase } from "./index";
 import { CREDIT } from "../../copy";
@@ -20,23 +20,24 @@ interface Beat {
   line: string;
   yes: string;
   at: StopId; // where Shippy stands and the camera looks while you read
+  shot?: Shot; // what the story camera frames while you read (default: at)
   then?: { build: StopId } | { grow: DeckSize; build: StopId } | { boiler: true } | { island: true } | { roll: true } | { ship: true };
 }
 
 // The station lines use the locked names (contract STOP_LABEL) and say what each step does for fixing and shipping.
 export const TOUR: Beat[] = [
-  { title: "Hi, I'm Shippy!", line: "Great to meet you. This is a game that mirrors your GitHub repo, and what you decide here really happens in your project.", yes: "Next", at: "repo" },
+  { title: "Hi, I'm Shippy!", line: "Great to meet you. This is a game that mirrors your GitHub repo, and what you decide here really happens in your project.", yes: "Next", at: "repo", shot: "shippy" },
   // Justin (20:53): call out Meta's model by name here, with the one credit (copy.ts CREDIT).
-  { title: CREDIT[0].toUpperCase() + CREDIT.slice(1), line: "Meta's model is my brain. I'll cheer you on and suggest what to do next, based on what you connect: GitHub first, then issues and feedback.", yes: "Next", at: "repo" },
-  { title: "Software is a factory", line: "Work comes in, gets built, gets checked, and ships. Let's build your line, one machine at a time.", yes: "Build it", at: "repo", then: { build: "repo" } },
+  { title: CREDIT[0].toUpperCase() + CREDIT.slice(1), line: "Meta's model is my brain. I'll cheer you on and suggest what to do next, based on what you connect: GitHub first, then issues and feedback.", yes: "Next", at: "repo", shot: "shippy" },
+  { title: "Software is a factory", line: "Work comes in, gets built, gets checked, and ships. Let's build your line, one machine at a time.", yes: "Build it", at: "repo", shot: "shippy", then: { build: "repo" } },
   { title: "Repo", line: "Your GitHub issues land here. Every issue is a crate of work.", yes: "Next machine", at: "repo", then: { build: "planner" } },
   { title: "Planner", line: "I read an issue and write a short plan. You say yes before any code is written.", yes: "Next machine", at: "planner", then: { grow: "medium", build: "builder" } },
   { title: "Builder", line: "This is where the code gets written, following the plan you said yes to.", yes: "Next machine", at: "builder", then: { build: "checks" } },
   { title: "Checks", line: "Your tests run here. Broken code stops before it can hurt anything.", yes: "Next machine", at: "checks", then: { grow: "large", build: "review" } },
   { title: "Review", line: "A second look at the change, so nothing odd slips through.", yes: "Next machine", at: "review", then: { build: "gate" } },
   { title: "Gate", line: "Nothing merges until you say so. This is where you decide what ships.", yes: "Next", at: "gate" },
-  { title: "That's your software factory line", line: "Every machine is one step from an issue to shipped code. Now it needs power.", yes: "Power it", at: "repo", then: { boiler: true } },
-  { title: "The steam engine", line: "It powers the whole line. Plug in your own Codex here and it writes your code, on your computer, with your subscription.", yes: "Next", at: "repo", then: { island: true } },
+  { title: "That's your software factory line", line: "Every machine is one step from an issue to shipped code. Now it needs power.", yes: "Power it", at: "repo", shot: "line", then: { boiler: true } },
+  { title: "The steam engine", line: "It powers the whole line. Plug in your own Codex here and it writes your code, on your computer, with your subscription.", yes: "Next", at: "repo", shot: "boiler", then: { island: true } },
   { title: "Launch", line: "Merged code ships from here. That's the whole goal: ship something.", yes: "Show me", at: "launch", then: { roll: true } },
   { title: "Ship this fix?", line: "A fix just made it through every machine and is waiting at the Gate. Approve it and I'll show you how shipping works.", yes: "Ship it", at: "gate", then: { ship: true } },
 ];
@@ -139,6 +140,9 @@ export function createTour(): Tour {
     const p = S.playing;
     const building = p && ("build" in p ? p.build : "island" in p ? "launch" : null);
     const focus: StopId = building ?? (S.crate ?? (c?.stop ?? b.at));
+    // Story camera: tight on Shippy to start, then on whatever is building or being explained; the crate's own ride
+    // (and the ship beat) leave it to followItem.
+    const shot: Shot | undefined = S.end ? "line" : p ? ("boiler" in p ? "boiler" : building ?? undefined) : S.beat === TOUR.length - 1 ? undefined : (b.shot ?? b.at);
     const shippy: ShippyView = S.end ? { pose: "happy", at: "gate" } : p && "ship" in p ? { pose: "happy", at: "gate" } : building ? { pose: "weld", at: building } : { pose: "inspect", at: b.at };
     return {
       stops: STOPS.map((id) => ({
@@ -147,7 +151,7 @@ export function createTour(): Tour {
         items: S.crate === id ? [{ id: CRATE, title: "Fix the broken docs link", look: id === "gate" && !p ? "glow" : "ok" }] : [],
       })),
       jam: null, attention: c && S.beat === TOUR.length - 1 && !S.end ? ["gate"] : [], card: c, shippy, shipped: S.shipped, caption: c ? null : S.caption,
-      focus, ...(S.crate && p ? { followItem: CRATE } : {}),
+      focus, ...(S.crate && p ? { followItem: CRATE } : shot ? { shot } : {}),
       deck: { size: S.size, island: S.island, boiler: S.boiler, ...(S.islandProgress != null ? { islandProgress: S.islandProgress } : {}) },
     } as AttentionView;
   }
