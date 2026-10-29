@@ -4,8 +4,8 @@ import { machineSignal, silhouetteOutline, statusLamp } from "../src/deck2d/stat
 import { STATIONS } from "../src/deck2d/stations";
 import { Px } from "../src/deck2d/stations/px";
 
-test("one consistent status language: healthy green, blocked red, idle unlit", () => {
-  expect(machineSignal("working")).toBe(PALETTE.ok);
+test("one meaning per color: yellow waits on you, red is stuck, green is automatic, cyan runs, idle unlit", () => {
+  expect(machineSignal("working")).toBe(PALETTE.energy);
   expect(machineSignal("auto")).toBe(PALETTE.ok);
   expect(machineSignal("jammed")).toBe(PALETTE.jam);
   expect(machineSignal("idle")).toBe(PALETTE.steel);
@@ -24,6 +24,7 @@ test("status lamps remain palette-only and aligned to the art grid", () => {
     expect(p.box.every(n => Number.isInteger(n / 5))).toBe(true);
   }
   expect(paints.some(p => p.color === PALETTE.ok[2])).toBe(true);
+  expect(paints.some(p => p.color === PALETTE.energy[2])).toBe(true);
   expect(paints.some(p => p.color === PALETTE.jam[2])).toBe(true);
 });
 

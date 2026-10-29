@@ -10,11 +10,11 @@ import type { StationDef } from "./types";
 
 const LIT: Record<StopState, Ramp> = {
   idle: ["iron-0", "iron-1", "iron-2", "iron-3", "iron-4"],
-  working: ["sun-1", "sun-3", "sun-4", "sun-5", "sun-6", "white"],
+  working: ["energy-0", "energy-0", "energy-1", "energy-2", "energy-3", "white"],
   jammed: ["jam-0", "jam-1", "jam-1", "jam-2", "jam-2", "haze-3"],
   auto: ["ok-0", "ok-1", "ok-1", "ok-2", "ok-2", "white"],
 };
-const GLOW: Record<StopState, Color | null> = { idle: null, working: "sun-5", jammed: "jam-2", auto: "ok-2" };
+const GLOW: Record<StopState, Color | null> = { idle: null, working: "energy-2", jammed: "jam-2", auto: "ok-2" };
 const GLASS: Ramp = ["soot", "steel-0", "steel-1", "steel-2", "energy-0", "energy-1", "energy-3", "white"];
 
 export const checks: StationDef = {

@@ -14,6 +14,7 @@ import { STAGE_AT } from "../build/build";
 import { GROW_SECONDS } from "../grow/index";
 import { LAUNCH_BUILD_SECONDS } from "../launch/timeline";
 import { STOPS, type CardView, type DeckSource, type DeckView, type Item, type ShippyView, type StopId } from "../contract";
+import type { AttentionView } from "../stations/attention";
 
 export interface StoryOptions {
   seed?: number; // same seed, same story (crate titles, spawn jitter)
@@ -133,13 +134,13 @@ export function createStory(opts: StoryOptions = {}): Story {
       front.t = 0;
       S.st[to].q.push(front);
     }
-    // Looks: plain until checks pass, green after, red bands while stuck waiting on a call, glowing at the front.
+    // Looks: plain until checks pass, green after, yellow while waiting on your call.
     const passed = STOPS.indexOf("checks");
     STOPS.forEach((id, i) => {
       for (const c of S.st[id].q) c.look = i > passed || c.approved ? "ok" : "plain";
     });
     if (S.st.review.built && !reviewOpen()) {
-      S.st.review.q.forEach((c, k) => { c.look = k === 0 && S.card ? "glow" : "wait"; });
+      for (const c of S.st.review.q) c.look = "wait";
     }
   }
 
@@ -258,20 +259,22 @@ export function createStory(opts: StoryOptions = {}): Story {
     fns.forEach((fn) => fn());
   }
 
-  function view(): DeckView & { followItem?: string; focus?: StopId } {
+  function view(): AttentionView & { followItem?: string } {
     const stops = STOPS.map((id) => {
       const s = S.st[id];
       const automated = id === "review" && S.autoReview;
       let state: DeckView["stops"][number]["state"] = s.q.length ? "working" : "idle";
       let waiting: string | undefined;
-      if (id === "review" && s.built && !reviewOpen() && s.q.length) { state = "jammed"; waiting = "REVIEW WAITING"; }
+      // Every bottleneck in the story waits on your call, so it's yellow (attention), never red (stuck).
+      if (id === "review" && s.built && !reviewOpen() && s.q.length) { state = "idle"; waiting = "REVIEW WAITING"; }
       if (automated) state = "auto";
-      if (id === S.nextJam) { state = "jammed"; waiting = "CHECKS WAITING"; }
+      if (id === S.nextJam) { state = "idle"; waiting = "CHECKS WAITING"; }
       return { id, built: s.built, state, automated, items: s.q.map(({ id, title, look }) => ({ id, title, look })), ...(waiting ? { waiting } : {}) };
     });
+    const call = S.jam && stops.find((s) => s.id === S.jam)?.waiting ? S.jam : null;
     return {
-      stops, jam: S.jam, card: S.card ? { ...S.card } : null, shippy: { ...S.shippy }, shipped: S.shipped, caption: S.card ? null : S.caption,
-      ...(S.follow ? { followItem: S.follow } : {}), ...(S.watch ? { focus: S.watch } : {}),
+      stops, jam: null, attention: call ? [call] : [], card: S.card ? { ...S.card } : null, shippy: { ...S.shippy }, shipped: S.shipped, caption: S.card ? null : S.caption,
+      ...(S.follow ? { followItem: S.follow } : {}), ...(S.watch ?? S.jam ? { focus: S.watch ?? S.jam! } : {}),
       deck: {
         size: S.size, island: S.island,
         ...(S.islandProgress != null ? { islandProgress: S.islandProgress } : {}),
