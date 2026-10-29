@@ -1,3 +1,5 @@
+> **Archived 2026-10-29:** Task 3 CPU review (PR #410), done.
+
 # Request helper CPU work (Task 3)
 
 PR #410. Baseline: `origin/main` at `352d3ec8`. No deployment or environment writes.

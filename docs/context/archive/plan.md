@@ -1,3 +1,5 @@
+> **Archived 2026-10-29:** Justin's original plan doc export. The 3D map, Fly/Neon stack and day plan are replaced by ../../VISION.md and ../demo-plan.md.
+
 > Export of Justin's plan doc (https://claude.ai/artifact/AWJrfEvb9c7BRwvQNcj1XL), tab "Shiptorio", taken 2026-10-26.
 > **Out of date on stack:** the Fly.io + Neon parts are replaced by Cloudflare. See `decisions.md`. Two embedded diagrams didn't export.
 

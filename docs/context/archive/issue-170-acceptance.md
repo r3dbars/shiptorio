@@ -1,3 +1,5 @@
+> **Archived 2026-10-29:** Oct 26-27 acceptance evidence for issue #170 on the old map loop.
+
 # Issue #170 live acceptance — partial evidence record
 
 Status: **historical checkpoint recorded; end-to-end acceptance incomplete**.

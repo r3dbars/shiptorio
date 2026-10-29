@@ -1,3 +1,5 @@
+> **Archived 2026-10-29:** Task 6 webhook review (Oct 27), done. Current security notes are in ../security.md.
+
 # Task6 HTTP boundary review — 2026-10-27
 
 Scoped source review of `server/src/index.ts` and the webhook verification helpers,

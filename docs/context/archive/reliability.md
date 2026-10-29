@@ -1,3 +1,5 @@
+> **Archived 2026-10-29:** Oct 27-28 runner and load investigation logs. Current test commands are in ../testing.md.
+
 # Loop reliability
 
 ## Overnight runner connection (2026-10-27)
@@ -213,12 +215,12 @@ admission fan-in are plausible next investigation targets; those observations do
 not identify a validated single bottleneck. A separately labeled post-burst socket
 received a snapshot in 2,256 ms; that is diagnostic, not concurrent-load proof.
 
-Reports: [before.json](../../tests/load/evidence/before.json),
-[after.json](../../tests/load/evidence/after.json),
-[before analytics](../../tests/load/evidence/before-analytics.json),
-[after analytics](../../tests/load/evidence/after-analytics.json),
-[burst diagnostic analytics](../../tests/load/evidence/candidate-burst-diagnostic-analytics.json),
-[provenance](../../tests/load/evidence/provenance.json).
+Reports: [before.json](../../../tests/load/evidence/before.json),
+[after.json](../../../tests/load/evidence/after.json),
+[before analytics](../../../tests/load/evidence/before-analytics.json),
+[after analytics](../../../tests/load/evidence/after-analytics.json),
+[burst diagnostic analytics](../../../tests/load/evidence/candidate-burst-diagnostic-analytics.json),
+[provenance](../../../tests/load/evidence/provenance.json).
 Analytics include preflight/cold admission through observation end, filtered to
 staging database `82bf6646-ed06-4c4d-94c3-c9b747940a7e` and DO namespace
 `187f0a43e43d4e869e501e5192eec961`. CPU includes security-counter objects in that
@@ -258,7 +260,7 @@ The grant-renewal process and all clients exited; 20 sessions owned by the five
 deleted, disabling the setup endpoint. Synthetic identities/inactive factory state
 remain for reproducibility; permission fixtures expire by TTL. Shared gate/session
 secrets were preserved after the coordinator handoff. See
-[cleanup receipt](../../tests/load/evidence/cleanup.json). Only read-only scoped
+[cleanup receipt](../../../tests/load/evidence/cleanup.json). Only read-only scoped
 analytics exports and local documentation continued afterward.
 
 Final local `bun run check`: **953 passed, 2 existing platform skips, 0 failed**,
@@ -287,7 +289,7 @@ Default load stays 200 judge HTTP/simulator viewers plus 50 signed-in sockets,
 with no implicit additional observers. Hosted acceptance remains unmeasured.
 Harness readiness/local CI does not establish the requested p95/error budget.
 This follow-up performs no hosted load, Cloudflare resource changes or manual deploy.
-The workflow in [branches.md](branches.md) now governs integration: quick checks
+The workflow in [branches.md](../branches.md) now governs integration: quick checks
 then merge to `dev`; Staging deployment is verified separately. Production only
 moves through a user-requested `dev` → `main` promotion.
 
@@ -297,7 +299,7 @@ Local orchestration initially exposed a transport-mock failure: Bun's built-in
 unauthenticated staging handshakes with a fake cookie. Conservative audit window:
 **2026-10-28 16:57:12–17:10:53 UTC**; actual request times/outcomes are unknown.
 This is not a valid load result or a claim of harmlessness. The bounded incident
-receipt is [preserved](../../tests/load/evidence/local-orchestration-incident-2026-10-28.json).
+receipt is [preserved](../../../tests/load/evidence/local-orchestration-incident-2026-10-28.json).
 The replacement local test boundary requires numeric loopback before startup,
 asserts the explicit socket-adapter identity, and verifies staging/production
 origins produce zero client constructions. No further hosted load was run.

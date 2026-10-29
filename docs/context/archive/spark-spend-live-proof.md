@@ -1,3 +1,5 @@
+> **Archived 2026-10-29:** Oct 26 Spark accounting proof. Current budgets are in ../costs.md.
+
 # Live factory Spark accounting proof
 
 Verified 2026-10-26 at 20:32 CDT (2026-10-27 01:32 UTC), on shiptorio.com.
