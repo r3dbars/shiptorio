@@ -1,7 +1,8 @@
 import { ART_PX, STOP_X } from "../contract";
+import { IDX } from "../stations/palette";
 import { Px, shift } from "../stations/px";
-import { GOLD, blotch, cylV, noise, rivet, tone, type Ramp } from "../stations/shade";
-import { CU, lathe, tube } from "../../bakeoff/boiler2d";
+import { GOLD, noise, tone, type Ramp } from "../stations/shade";
+import { CU, tube } from "../../bakeoff/boiler2d";
 
 // Back-floor dressing (hub ask, 2026-10-28): the deck behind the line is a working floor, not an empty plate. A copper
 // main runs out of the boiler along the back rail and drops into every machine; one fat feed pipe goes from the boiler
@@ -12,12 +13,12 @@ import { CU, lathe, tube } from "../../bakeoff/boiler2d";
 // Each prop is drawn on its own grid, gets its own 1px soot outline, then is stamped onto the hull: the hull's single
 // outline pass only rings the outside of the whole deck.
 
-/** Muted ramps: one or two steps darker than the station ones, so props sit back. */
-const WOOD: Ramp = ["soot", "plate-0", "plate-1", "plate-2", "plate-3", "plate-4"];
-const DRUM: Ramp = ["soot", "iron-0", "steel-0", "steel-1", "steel-2", "steel-3", "haze-2"];
-const RUST: Ramp = ["soot", "plate-0", "copper-0", "plate-1", "copper-1", "plate-2", "copper-2"];
+/** Wood for crates: light tan so they read against the darker floor plates. */
+const WOOD: Ramp = ["soot", "plate-0", "plate-1", "plate-2", "plate-3", "plate-4", "haze-2"];
+/** Blue-steel and rust-red drums; copper for the toolbox and the pipe ends. */
+const BLUE: Ramp = ["soot", "steel-0", "steel-1", "steel-2", "steel-3", "haze-2"];
+const RED: Ramp = ["soot", "plate-0", "copper-0", "copper-1", "copper-2", "copper-3"];
 const DIM_CU: Ramp = CU.slice(0, 7);
-const HOSE: Ramp = ["soot", "iron-1", "iron-2", "iron-3", "iron-4"];
 
 const SX = Object.values(STOP_X).map((x) => x / ART_PX);
 const STATIONS = SX.slice(0, 6); // repo .. gate stand on the deck; launch is on the bridge
@@ -26,112 +27,160 @@ const BOILER_RIGHT = (STOP_X.repo / ART_PX) - 26; // the boiler's right flank, j
 
 type Draw = (g: Px) => void;
 
-/** Draw one prop on its own grid, ring it with soot, and stamp it over the hull. */
+/** Draw one prop on its own grid, ring it with soot, and stamp it over what's there. Stamp props back to front: each
+ * gets its own outline, so a front crate stays separate from the drum behind it instead of melting into one blob. */
 function stamp(raw: Px, ox: number, oy: number, draw: Draw) {
   const tmp = new Px(raw.w, raw.h);
-  draw(shift(tmp, ox, oy));
-  tmp.outline();
-  for (let i = 0; i < tmp.d.length; i++) if (tmp.d[i] !== 255) raw.d[i] = tmp.d[i];
+  let x0 = raw.w, y0 = raw.h, x1 = -1, y1 = -1;
+  const g = shift(tmp, ox, oy), set = g.set.bind(g);
+  g.set = (x, y, c) => { const X = Math.round(x) + ox, Y = Math.round(y) + oy; if (X < x0) x0 = X; if (X > x1) x1 = X; if (Y < y0) y0 = Y; if (Y > y1) y1 = Y; set(x, y, c); };
+  draw(g);
+  if (x1 < 0) return;
+  const out: number[] = [];
+  for (let y = Math.max(0, y0 - 1); y <= Math.min(raw.h - 1, y1 + 1); y++) for (let x = Math.max(0, x0 - 1); x <= Math.min(raw.w - 1, x1 + 1); x++) {
+    const i = y * raw.w + x;
+    if (tmp.d[i] !== 255) raw.d[i] = tmp.d[i];
+    else if (tmp.has(x - 1, y) || tmp.has(x + 1, y) || tmp.has(x, y - 1) || tmp.has(x, y + 1)) out.push(i);
+  }
+  for (const i of out) raw.d[i] = IDX.soot;
   raw.glows.push(...tmp.glows);
 }
 
-/** A soft contact shadow on the floor plates, down and to the left of a footprint (light is upper right). */
-function shadow(g: Px, x0: number, x1: number, y: number, depth = 3) {
-  for (let j = 0; j < depth; j++) for (let x = x0 - 2 - j; x < x1 - j; x++) {
+/** A contact shadow on the floor plates under a footprint, thrown down-left (light is upper right). */
+function shadow(g: Px, x0: number, x1: number, y: number, depth = 2) {
+  for (let j = 0; j < depth; j++) for (let x = x0 - 1 - j; x < x1 - j; x++) {
     if (!g.has(x, y + j)) continue;
     if (j === 0 || ((x + y + j) & 1)) g.set(x, y + j, j === 0 ? "iron-0" : "iron-1");
   }
 }
 
-/** A wooden crate in 3/4: slatted front with a plank frame and a cross brace, lit top, dark right side. */
-function crate(g: Px, x: number, base: number, s: number, seed: number, brace = true) {
-  const d = Math.max(2, Math.round(s * 0.4)), y = base - s;
-  for (let k = 1; k <= d; k++) for (let i = 0; i < s; i++) { // top
-    const v = 0.78 + 0.1 * (i / s) - 0.04 * k + (blotch(x + i, y - k, 3, seed) - 0.5) * 0.18;
-    tone(g, x + i + k, y - k, WOOD, (i + k) % 4 === 0 ? v - 0.14 : v); // board seams run front to back
-  }
-  for (let k = 0; k < d; k++) for (let j = 0; j < s; j++) tone(g, x + s + k, y + j - k, WOOD, 0.38 - 0.1 * (j / s) + (k === 0 ? -0.06 : 0)); // side, away from the light
-  for (let j = 0; j < s; j++) for (let i = 0; i < s; i++) {
-    const edge = i === 0 || j === 0 || i === s - 1 || j === s - 1;
-    let v = 0.56 + 0.1 * (i / s) - 0.12 * (j / s) + (blotch(x + i, y + j, 3, seed + 2) - 0.5) * 0.2 + (noise(x + i, y + j, seed) - 0.5) * 0.05;
-    if (!edge && j % 3 === 0) v -= 0.16; // slat gaps
-    if (edge) v += j === 0 ? 0.18 : 0.06;
-    if (brace && !edge && (Math.abs(i - j) < 1 || Math.abs(i - (s - 1 - j)) < 1)) v = 0.7 + 0.06 * (i / s); // X brace
-    tone(g, x + i, y + j, WOOD, v);
-  }
-  g.set(x + s - 1, y, "plate-4"); // the corner facing the sun
-  rivet(g, x + 1, y + 1, "brass-2", "plate-0"); rivet(g, x + s - 2, y + 1, "brass-3", "plate-0");
-}
+const W = (i: number) => WOOD[Math.max(0, Math.min(WOOD.length - 1, i))];
 
-/** An oil drum standing up: a slightly bellied cylinder with two rolled hoops and a lid seen from above. */
-function drum(g: Px, cx: number, base: number, r: number, h: number, ramp: Ramp, seed: number) {
-  const top = base - h;
-  lathe(g, cx, top, base, (y) => r * (0.94 + 0.08 * Math.sin(Math.PI * (y - top) / h)), ramp, { amb: 0.16, gloss: 0.4, rust: 0.04, seed, grime: 1 });
-  for (const f of [0.3, 0.7]) { // hoops: a dark line under a lit line
-    const y = Math.round(top + f * h);
-    for (let x = Math.floor(cx - r); x <= Math.ceil(cx + r); x++) { if (!g.has(x, y)) continue; tone(g, x, y, ramp, 0.62 + 0.3 * ((x - cx) / r)); g.set(x, y + 1, ramp[1]); }
+/** A wooden crate in 3/4 (front w x h, receding d px up-right). The front has a lit plank frame, a planked panel and a
+ * diagonal brace with its shadow; the top is the lightest face with boards running back; the right side is dark.
+ * Nails sit in the frame corners. All steps are picked by hand, no gradients, so it stays crisp at any scale. */
+function crate(g: Px, x: number, base: number, w: number, h: number, d: number, o: { brace?: boolean; seed?: number; stencil?: boolean } = {}) {
+  const y = base - h, seed = o.seed ?? 1;
+  // top face: row k (1..d) up, shifted k right
+  for (let k = 1; k <= d; k++) for (let i = 0; i < w; i++) {
+    const X = x + i + k, Y = y - k, board = (i % 4) === 3;
+    g.set(X, Y, k === d ? W(5) : board ? W(4) : (noise(X, Y, seed) < 0.15 ? W(4) : W(5)));
   }
-  for (let y = top - 2; y <= top; y++) for (let x = Math.floor(cx - r); x <= Math.ceil(cx + r); x++) { // lid ellipse
-    const dx = (x + 0.5 - cx) / r, dy = (y + 0.5 - (top - 1)) / 1.6;
-    if (dx * dx + dy * dy > 1) continue;
-    const rim = dx * dx + dy * dy > 0.55;
-    tone(g, x, y, ramp, rim ? 0.66 + 0.2 * dx : 0.36 + 0.1 * dx);
+  for (let i = 0; i < w; i++) g.set(x + i + 1, y - 1, W(6)); // the lit front lip of the lid
+  // right side: column k (1..d) right, shifted k up
+  for (let k = 1; k <= d; k++) for (let j = 0; j < h; j++) {
+    const X = x + w - 1 + k, Y = y + j - k;
+    g.set(X, Y, k === d || j === 0 ? W(3) : j === h - 1 ? W(1) : W(2));
   }
-  g.set(Math.round(cx + r * 0.4), top - 1, ramp[1]); // the bung
-}
-
-/** A riveted steel toolbox with a brass handle and a red-rust lid band. */
-function toolbox(g: Px, x: number, base: number) {
-  const w = 11, h = 5, y = base - h;
-  for (let k = 1; k <= 2; k++) for (let i = 0; i < w; i++) tone(g, x + i + k, y - k, RUST, 0.6 + 0.12 * (i / w) - 0.06 * k);
-  for (let k = 0; k < 2; k++) for (let j = 0; j < h; j++) tone(g, x + w + k, y + j - k, RUST, 0.26 - 0.06 * (j / h));
-  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) tone(g, x + i, y + j, RUST, (j === 1 ? 0.28 : 0.46) + 0.12 * (i / w) - 0.08 * (j / h) + (blotch(x + i, y + j, 3, 31) - 0.5) * 0.15);
-  g.set(x + 2, y + 2, "brass-3"); g.set(x + w - 3, y + 2, "brass-3"); // latches
-  g.hline(x + 4, y - 4, 5, "brass-2"); g.set(x + 4, y - 3, "brass-1"); g.set(x + 8, y - 3, "brass-1"); g.set(x + 7, y - 4, "brass-4"); // handle
-}
-
-/** A coiled hose lying flat: three loops stacked up, each a 1px lit band over a 1px dark band, and a brass nozzle. */
-function hose(g: Px, cx: number, cy: number) {
-  for (let k = 0; k < 3; k++) {
-    const oy = cy - k * 1.5, rx = 5.5 - k * 0.3, ry = 2.3;
-    for (let a = 0; a < Math.PI * 2; a += 0.04) {
-      const x = Math.round(cx + Math.cos(a) * rx), y = Math.round(oy + Math.sin(a) * ry);
-      const front = Math.sin(a) > 0; // the near half of the loop
-      tone(g, x, y, HOSE, (front ? 0.55 : 0.4) + 0.3 * Math.max(0, Math.cos(a - 5.6)));
-      if (front) g.set(x, y + 1, "soot");
+  // front: frame, panel, brace
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+    const X = x + i, Y = y + j, top = j === 0, bot = j === h - 1, left = i === 0, right = i === w - 1;
+    let c = W(3);
+    if (top) c = W(5);
+    else if (bot) c = W(2);
+    else if (left) c = W(3);
+    else if (right) c = W(4);
+    else c = (j % 3 === 0) ? W(2) : (noise(X, Y, seed + 1) < 0.12 ? W(2) : W(3)); // planks with a seam every 3 rows
+    g.set(X, Y, c);
+  }
+  if (o.brace !== false && w > 5 && h > 4) {
+    const n = Math.max(w, h) * 2;
+    for (let t = 0; t <= n; t++) {
+      const X = Math.round(x + 1 + ((w - 3) * t) / n), Y = Math.round(base - 2 - ((h - 3) * t) / n);
+      g.set(X, Y, W(5)); if (Y + 1 < base - 1 && X > x + 1) g.set(X - 1, Y + 1, W(1)); // lit board, shadow under it
     }
   }
-  g.line(cx + 5, cy - 4, cx + 9, cy - 7, "iron-3"); g.set(cx + 10, cy - 8, "brass-4"); g.set(cx + 9, cy - 8, "brass-2");
+  if (o.stencil) { // a stenciled mark on the panel: a little arrow
+    const cx = x + Math.floor(w / 2), cy = y + Math.floor(h / 2);
+    g.set(cx, cy - 1, W(1)); g.set(cx - 1, cy, W(1)); g.set(cx, cy, W(1)); g.set(cx + 1, cy, W(1)); g.set(cx, cy + 1, W(1));
+  }
+  for (const [i, j] of [[1, 1], [w - 2, 1], [1, h - 2], [w - 2, h - 2]]) g.set(x + i, y + j, "iron-2"); // nails
+  g.set(x + w - 1, y, W(6)); // the corner facing the sun
 }
 
-/** Gas bottles chained to the rail: tall thin cylinders with domed tops and brass valves. */
+/** An oil drum standing up, 2r+1 wide: banded cylinder shading, a highlight stripe, two rolled hoops (a lit ridge over a
+ * dark groove), a dark foot ring, and an elliptical lid with its rim, a dark well and a bung. */
+function drum(g: Px, cx: number, base: number, r: number, h: number, ramp: Ramp) {
+  const top = base - h, n = 2 * r + 1, c = (k: number) => ramp[Math.max(0, Math.min(ramp.length - 1, k))];
+  const col = (i: number) => { const s = (i - r) / r; return s < -0.7 ? 1 : s < -0.2 ? 2 : s < 0.25 ? 3 : s < 0.6 ? 4 : s < 0.85 ? 3 : 2; }; // highlight sits right of centre
+  const hoops = [top + 2, base - 4];
+  for (let i = 0; i < n; i++) for (let y = top; y < base; y++) {
+    let k = col(i);
+    if (y === base - 1) k -= 1;
+    if (hoops.includes(y)) k += 1; else if (hoops.includes(y - 1)) k -= 1;
+    g.set(cx - r + i, y, c(k));
+  }
+  // lid: back rim, the dark well, the front rim (light, it faces the sky)
+  for (let i = 1; i < n - 1; i++) g.set(cx - r + i, top - 2, c(4));
+  g.set(cx - r, top - 1, c(3)); g.set(cx + r, top - 1, c(4));
+  for (let i = 1; i < n - 1; i++) g.set(cx - r + i, top - 1, c(1));
+  for (let i = 0; i < n; i++) g.set(cx - r + i, top, i === 0 ? c(2) : c(i > r ? 5 : 4));
+  g.set(cx + Math.ceil(r / 2), top - 1, c(3)); // the bung
+}
+
+/** A steel toolbox in copper paint: a lit lid, a tray seam, brass latches and a brass carry handle. */
+function toolbox(g: Px, x: number, base: number) {
+  const w = 12, h = 6, d = 2, y = base - h;
+  for (let k = 1; k <= d; k++) for (let i = 0; i < w; i++) g.set(x + i + k, y - k, k === d ? "copper-2" : "copper-3");
+  for (let k = 1; k <= d; k++) for (let j = 0; j < h; j++) g.set(x + w - 1 + k, y + j - k, j === 0 ? "copper-1" : "copper-0");
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) g.set(x + i, y + j, j === 0 ? "copper-2" : j === 2 ? "copper-0" : j === h - 1 ? "copper-0" : "copper-1");
+  for (const i of [2, w - 3]) { g.set(x + i, y + 1, "brass-4"); g.set(x + i, y + 2, "brass-1"); } // latches
+  g.hline(x + 4, y - 4, 5, "iron-3"); g.set(x + 4, y - 3, "iron-2"); g.set(x + 8, y - 3, "iron-2"); g.set(x + 7, y - 4, "haze-2"); // handle
+}
+
+/** Short pipe offcuts stacked like logs: copper rings with dark bores, lit on their upper right. */
+function pipeStack(g: Px, x: number, base: number) {
+  const ends: [number, number][] = [[0, 0], [6, 0], [12, 0], [3, -5], [9, -5], [6, -10]];
+  for (const [dx, dy] of ends) {
+    const cx = x + dx + 2, cy = base - 3 + dy;
+    for (let yy = -2; yy <= 3; yy++) for (let xx = -2; xx <= 3; xx++) {
+      const fx = xx - 0.5, fy = yy - 0.5, d2 = fx * fx + fy * fy;
+      if (d2 > 6.6) continue;
+      const lit = fx - fy; // up-right is lit
+      g.set(cx + xx, cy + yy, d2 <= 1 ? (xx === 1 && yy === 0 ? "plate-0" : "soot") : lit >= 2 ? "copper-3" : lit >= 0 ? "copper-2" : lit >= -2 ? "copper-1" : "copper-0");
+    }
+  }
+}
+
+/** Gas bottles chained to the rail: tall round cylinders with domed shoulders, a painted band, and brass valves. */
 function bottles(g: Px, x: number, base: number, n: number) {
   for (let k = 0; k < n; k++) {
-    const cx = x + k * 5 + 2, h = 14 - (k % 2) * 2, top = base - h - (k % 2);
-    lathe(g, cx, top, base - (k % 2), (y) => (y < top + 2 ? 1 + (y - top) : 2.3), k % 2 ? DRUM : RUST, { amb: 0.08, gloss: 0.5, seed: 40 + k });
-    g.set(Math.round(cx - 0.5), top - 1, "brass-3"); g.set(Math.round(cx + 0.5), top - 1, "brass-1");
+    const ramp = k % 2 ? BLUE : RED, cx = x + k * 6 + 2, h = 15 - (k % 2) * 2, top = base - h;
+    const c = (i: number) => ramp[Math.max(0, Math.min(ramp.length - 1, i))];
+    for (let y = top; y < base; y++) for (let i = -2; i <= 2; i++) {
+      const sh = y === top ? (Math.abs(i) <= 1) : y === top + 1 ? true : true;
+      if (!sh) continue;
+      let v = i === -2 ? 1 : i === -1 ? 2 : i === 0 ? 3 : i === 1 ? 4 : 2;
+      if (y === top) v += 1;
+      if (y === top + 4) v = i === 1 ? 5 : 4; // painted band, a step lighter
+      if (y === base - 1) v -= 1;
+      g.set(cx + i, y, c(v));
+    }
+    g.set(cx, top - 1, "brass-3"); g.set(cx + 1, top - 1, "brass-1"); g.set(cx, top - 2, "brass-4"); g.hline(cx - 1, top - 2, 1, "brass-2"); // valve
   }
-  g.hline(x, base - 9, n * 5, "iron-0"); // the chain strap
+  for (let i = 0; i < n * 6 - 1; i++) g.set(x + i, base - 9, i % 2 ? "iron-3" : "iron-2"); // the chain across them
 }
 
-/** A parts shelf against the back rail: an iron rack with three shelves of boxes, gears and one glass jar. */
+/** A parts shelf against the back rail: iron uprights with a dark back panel so the parts read, three brass-lipped
+ * boards, and on them small crates, a gear, cans and one glass jar. */
 function shelf(g: Px, x: number, base: number) {
-  const w = 24, h = 20, top = base - h;
-  for (const px of [x, x + w - 2]) cylV(g, px, top, 2, h, DRUM, { amb: 0.08, gloss: 0.2 });
+  const w = 24, h = 22, top = base - h;
+  for (let y = top + 1; y < base; y++) for (let i = 2; i < w - 2; i++) g.set(x + i, y, (y + i) % 5 === 0 ? "iron-2" : "iron-1"); // back panel
+  for (const px of [x, x + w - 2]) for (let y = top; y < base; y++) { g.set(px, y, "steel-1"); g.set(px + 1, y, y === top ? "steel-3" : "steel-2"); }
+  for (let i = 0; i < w; i++) g.set(x + i, top, i > w / 2 ? "steel-3" : "steel-2");
+  const items: ((ix: number, iy: number) => number)[] = [
+    (ix, iy) => { for (let j = 0; j < 4; j++) for (let q = 0; q < 4; q++) g.set(ix + q, iy - j, j === 3 ? "plate-4" : q === 3 ? "plate-2" : "plate-3"); g.set(ix + 1, iy - 1, "plate-1"); return 5; }, // a little crate
+    (ix, iy) => { g.ring(ix + 2, iy - 1.5, 2.2, "steel-3"); g.set(ix + 2, iy - 2, "iron-1"); g.set(ix + 3, iy - 4, "haze-2"); g.set(ix, iy - 4, "steel-2"); g.set(ix + 4, iy, "steel-2"); return 6; }, // a gear
+    (ix, iy) => { for (let j = 0; j < 4; j++) { g.set(ix, iy - j, "copper-1"); g.set(ix + 1, iy - j, j === 3 ? "copper-3" : "copper-2"); g.set(ix + 2, iy - j, "copper-0"); } return 4; }, // a can
+    (ix, iy) => { for (let j = 0; j < 4; j++) { g.set(ix, iy - j, "energy-0"); g.set(ix + 1, iy - j, j === 1 ? "energy-2" : "energy-1"); g.set(ix + 2, iy - j, "energy-0"); } g.hline(ix, iy - 4, 3, "brass-2"); g.set(ix + 2, iy - 4, "brass-4"); return 4; }, // a jar
+  ];
+  const rows = [[0, 2, 1], [1, 3, 0], [2, 0, 2]];
   for (let s = 0; s < 3; s++) {
-    const y = top + 3 + s * 6;
-    // the stuff on this shelf, sitting on the board
-    for (let i = 3; i < w - 3;) {
-      const pick = noise(x + i, s, 77), iw = 2 + Math.floor(noise(i, s, 78) * 3);
-      if (pick < 0.35) { for (let j = 0; j < 3; j++) for (let q = 0; q < iw; q++) tone(g, x + i + q, y + 2 - j, WOOD, 0.35 + 0.15 * (q / iw) + (j === 2 ? 0.15 : 0)); }
-      else if (pick < 0.6) { g.ring(x + i + 1.5, y + 0.5, 1.6, "iron-3"); g.set(x + i + 2, y - 1, "iron-4"); g.set(x + i + 1, y + 1, "iron-1"); }
-      else if (pick < 0.72 && s === 1) { g.rect(x + i, y - 1, 2, 3, "energy-0"); g.set(x + i + 1, y - 1, "energy-1"); g.hline(x + i, y - 2, 2, "brass-2"); }
-      else if (pick < 0.85) { g.rect(x + i, y + 1, iw, 2, "plate-1"); g.hline(x + i, y + 1, iw, "plate-2"); }
-      i += iw + 1;
-    }
-    for (let i = 0; i < w; i++) { tone(g, x + i, y + 3, GOLD, 0.34 + 0.2 * (i / w)); g.set(x + i, y + 4, "iron-0"); } // the board, brass-edged
+    const by = top + 7 + s * 7; // the board
+    let ix = x + 3;
+    for (const k of rows[s]) { if (ix + 5 > x + w - 2) break; ix += items[k](ix, by - 1) + 1; }
+    for (let i = 0; i < w; i++) { g.set(x + i, by, i > w * 0.6 ? "brass-3" : "brass-2"); g.set(x + i, by + 1, "brass-0"); }
   }
-  for (let i = 0; i < w; i++) tone(g, x + i, top, DRUM, 0.5 + 0.1 * (i / w)); // the top rail
 }
 
 /** The copper main: out of the boiler, along the back rail on little stands, and down into each machine. */
@@ -142,6 +191,10 @@ function main(raw: Px, ox: number, oy: number, w: number) {
     for (let x = BOILER_RIGHT - 6; x < end; x += 22) { p.vline(x, BACK_Y + 2, 4, "iron-1"); p.set(x + 1, BACK_Y + 2, "iron-2"); p.hline(x - 1, BACK_Y + 6, 3, "iron-0"); }
     tube(p, [[BOILER_RIGHT - 30, BACK_Y], [end, BACK_Y], [end, BACK_Y + 10]], 2.1, CU, { amb: 0.08, gloss: 0.55, bend: 3 });
     for (const dx of drops) tube(p, [[dx, BACK_Y], [dx, BACK_Y + 26]], 1.5, DIM_CU, { amb: 0.06, gloss: 0.4 });
+    for (let x = BOILER_RIGHT + 6; x < end - 4; x += 32) { // bolted brass flanges along the main
+      for (let j = -3; j <= 3; j++) { p.set(x, BACK_Y + j, j < 0 ? "brass-3" : "brass-1"); p.set(x + 1, BACK_Y + j, j < 0 ? "brass-4" : "brass-2"); }
+      p.set(x + 1, BACK_Y - 3, "brass-5"); p.set(x, BACK_Y + 3, "brass-0"); p.set(x + 1, BACK_Y + 3, "brass-0");
+    }
     for (const dx of drops) { // a brass tee collar where each drop leaves the main, and a valve wheel on it
       for (let j = -2; j <= 2; j++) tone(p, dx - 2 + (j + 2), BACK_Y - 2, GOLD, 0.5 + 0.08 * j);
       p.ring(dx + 0.5, BACK_Y + 6.5, 2, "brass-1"); p.set(dx + 2, BACK_Y + 5, "brass-3"); p.set(dx, BACK_Y + 6, "brass-2");
@@ -188,30 +241,39 @@ export function dressFloor(raw: Px, g: Px, w: number, ox: number, oy: number) {
   // the gaps between stations, each dressed differently; nothing within 24 px of a station's centre line
   const gaps = STATIONS.slice(0, -1).map((sx, i) => (sx + STATIONS[i + 1]) / 2);
   gaps.push(Math.min(STATIONS[STATIONS.length - 1] + 40, w - 24));
+  const put = (d: Draw) => stamp(raw, ox, oy, d); // one stamp per item, back to front
   const kit: ((cx: number) => void)[] = [
-    (cx) => { // a crate stack
-      shadow(g, cx - 12, cx + 10, 33); shadow(g, cx + 6, cx + 14, 26, 2);
-      stamp(raw, ox, oy, (p) => { crate(p, cx - 13, 33, 11, 1); crate(p, cx - 1, 33, 8, 2, false); crate(p, cx - 10, 22, 8, 3, false); crate(p, cx + 7, 25, 6, 4); });
+    (cx) => { // a crate stack: one behind, a big one in front with a small one on top
+      shadow(g, cx + 2, cx + 13, 26); shadow(g, cx - 13, cx + 4, 33);
+      put((p) => crate(p, cx + 2, 26, 8, 7, 3, { seed: 4 }));
+      put((p) => crate(p, cx - 13, 33, 13, 10, 4, { seed: 1, stencil: true }));
+      put((p) => crate(p, cx - 10, 23, 8, 7, 3, { brace: false, seed: 3 }));
     },
-    (cx) => { // three drums, one rusty
-      shadow(g, cx - 10, cx + 10, 31);
-      stamp(raw, ox, oy, (p) => { drum(p, cx - 6, 25, 4.2, 12, DRUM, 5); drum(p, cx + 4, 26, 4.2, 12, RUST, 6); drum(p, cx - 1, 34, 4.2, 12, DRUM, 7); });
+    (cx) => { // drums: two against the back, one in front
+      shadow(g, cx - 10, cx + 10, 26); shadow(g, cx - 5, cx + 5, 35);
+      put((p) => drum(p, cx - 5, 26, 4, 11, BLUE));
+      put((p) => drum(p, cx + 5, 26, 4, 11, RED));
+      put((p) => drum(p, cx, 35, 4, 11, BLUE));
     },
-    (cx) => { // the parts shelf against the back rail, gas bottles beside it
-      shadow(g, cx - 12, cx + 12, 22, 2);
-      stamp(raw, ox, oy, (p) => { shelf(p, cx - 13, 22); bottles(p, cx + 12, 23, 2); });
+    (cx) => { // the parts shelf against the back rail, gas bottles chained beside it
+      shadow(g, cx - 14, cx + 10, 25); shadow(g, cx + 11, cx + 22, 26);
+      put((p) => shelf(p, cx - 14, 25));
+      put((p) => bottles(p, cx + 12, 26, 2));
     },
-    (cx) => { // a toolbox and the coiled hose
-      shadow(g, cx - 10, cx + 2, 32); shadow(g, cx + 2, cx + 13, 25, 2);
-      stamp(raw, ox, oy, (p) => { toolbox(p, cx - 10, 32); hose(p, cx + 7, 24); });
+    (cx) => { // pipe offcuts stacked at the back, a toolbox in front
+      shadow(g, cx - 2, cx + 14, 28); shadow(g, cx - 12, cx + 2, 35);
+      put((p) => pipeStack(p, cx - 1, 28));
+      put((p) => toolbox(p, cx - 12, 35));
     },
-    (cx) => { // a crate with a drum on the floor beside it
-      shadow(g, cx - 10, cx + 10, 30);
-      stamp(raw, ox, oy, (p) => { crate(p, cx - 9, 30, 9, 8); drum(p, cx + 6, 31, 3.4, 10, RUST, 9); });
+    (cx) => { // a crate with a rusty drum beside it
+      shadow(g, cx - 11, cx + 2, 32); shadow(g, cx + 3, cx + 11, 34);
+      put((p) => crate(p, cx - 11, 32, 11, 9, 3, { seed: 8 }));
+      put((p) => drum(p, cx + 7, 34, 3, 10, RED));
     },
-    (cx) => { // bottles and a small crate at the far end
-      shadow(g, cx - 8, cx + 8, 26, 2);
-      stamp(raw, ox, oy, (p) => { bottles(p, cx - 8, 24, 3); crate(p, cx - 1, 31, 7, 11); });
+    (cx) => { // bottles by the far rail and a small crate
+      shadow(g, cx - 9, cx + 8, 26); shadow(g, cx - 1, cx + 9, 33);
+      put((p) => bottles(p, cx - 9, 26, 3));
+      put((p) => crate(p, cx - 1, 33, 8, 7, 3, { seed: 11 }));
     },
   ];
   gaps.forEach((cx, i) => { if (cx + 14 < w - 8) kit[i % kit.length](Math.round(cx)); });
