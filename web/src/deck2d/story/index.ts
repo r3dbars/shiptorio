@@ -19,6 +19,7 @@ import type { AttentionView } from "../stations/attention";
 export interface StoryOptions {
   seed?: number; // same seed, same story (crate titles, spawn jitter)
   speed?: number; // accepted for the contract's signature; the page already scales dt by ?speed
+  swipes?: number; // 1: the short front-door version, end right after the first swipe clears the jam (default 3)
   onConnect?(): void; // the last card's yes: "Want to see the real one?" Default: go to the app to sign in
 }
 
@@ -242,6 +243,22 @@ export function createStory(opts: StoryOptions = {}): Story {
     );
   }
 
+  // The short version (a guest at the front door): the one swipe clears the jam, the released crates ship, the line
+  // goes still, and the story ends on its connect card so the page can hand over to setup.
+  function shortEnd() {
+    S.caption = "Swipe, and it moves."; S.captionAt = S.t;
+    after(0.9, () => { S.shippy = { pose: "folded", at: "corner" }; });
+    S.script.push(
+      { run: () => { S.spawnEvery = 0; S.jam = null; S.budget = null; } }, // the whole pile goes, not just a batch
+      { until: () => !STOPS.some((id) => S.st[id].q.length) }, { rest: 0.8 },
+      { run: () => {
+        setPhase("end");
+        S.caption = null;
+        S.card = { id: STORY_CARD.connect, title: "Now let's do this with your repo.", dots: null, line: "Connect GitHub and this deck runs on your real code.", stop: "repo", yes: "See my repo", no: "Replay", setup: true };
+      } },
+    );
+  }
+
   function step(dt: number) {
     // Fixed small steps keep the sim the same at any frame rate or speed.
     while (dt > 0) {
@@ -292,6 +309,7 @@ export function createStory(opts: StoryOptions = {}): Story {
     S.reviewSvc = 0.25;
     S.shippy = { pose: "happy", at: "corner" };
     if (S.approvals >= 3) { goAuto(); return; }
+    if (S.approvals >= (opts.swipes ?? 3)) { shortEnd(); return; }
     S.caption = S.approvals === 1 ? "Swipe, and it moves." : "One more like this and it's automatic.";
     S.captionAt = S.t; S.lastCallAt = S.t;
     if (S.approvals === 1) S.script.push(...reward());

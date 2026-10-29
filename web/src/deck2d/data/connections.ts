@@ -170,7 +170,7 @@ export function createConnections(o: Options) {
     return true;
   }
   if (repo && new URLSearchParams(o.path.split('?')[1]).get('onboard') === 'codex') open('power');
-  return { open, answer, card, view(base: DeckView): DeckView {
+  return { open, answer, card, engineReady: () => !!(status?.online && status.harnesses.includes('codex')), view(base: DeckView): DeckView {
     const c = card();
     return c ? { ...base, card: c, shippy: { at: c.stop, pose: 'inspect' } } : base;
   }, tick() { if (pane === 'power' && !busy && !error && now() >= nextPoll) void refresh(); } };

@@ -12,6 +12,7 @@ import { createMachineInteraction } from "./stations/inspector";
 import { createFirstVisitDemo } from "./stations/first-visit";
 import { createConveyorDemo } from "./engine/conveyor-demo";
 import { createPayoff } from "./payoff";
+import { createFirstRun } from "./data/firstrun";
 
 /** Keyboard and screen-reader access for the existing card; it never invents an action. */
 export function wireDeckAccessibility(canvas: HTMLCanvasElement, host: HTMLElement, caption: HTMLElement) {
@@ -134,6 +135,7 @@ const seed = Number(params.get("seed")) || 0;
     onStart: id => (source as DeckSource & { focusItem?: (id: string) => void }).focusItem?.(id),
   });
   let source: DeckSource;
+  let guestStory: { phase(): string } | null = null;
   const rehearsal = want === "shippy-demo" ? createShippyRehearsal() : null;
   const machines = want === "machine-demo" ? createMachineRehearsal() : null;
   const conveyor = want === "conveyor-demo" ? createConveyorDemo() : null;
@@ -161,7 +163,12 @@ const seed = Number(params.get("seed")) || 0;
       attention: ["review"], jam: null, card: null, shipped: 0, caption: "Sample: this crate waits on your call. Connect your repo to run yours.", shippy: { at: "review", pose: "inspect" } }),
       approve() {}, later() {} };
   }
-  else if (want !== "demo" && story?.createStory) source = storyBeforeSignIn((story.createStory as (o: { seed: number; speed: number }) => DeckSource)({ seed, speed }), connections);
+  else if (want !== "demo" && story?.createStory) {
+    // A guest at the live front door gets the short version: one swipe, it clears, then Shippy and sign-in.
+    const run = (story.createStory as (o: { seed: number; speed: number; swipes?: number }) => DeckSource & { phase(): string })({ seed, speed, swipes: want === "live" ? 1 : undefined });
+    if (want === "live") guestStory = run;
+    source = storyBeforeSignIn(run, connections);
+  }
   else source = createDemo();
 
   const liveState = (source as DeckSource & { state?: () => import("@shiptorio/shared").FactoryState | null }).state;
@@ -189,6 +196,16 @@ const seed = Number(params.get("seed")) || 0;
   }
   if (connectionToolsVisible) document.body.append(connectionTools);
   if (want === "live" && signedIn && !params.has("repo")) connections.open("repo");
+  // The live first run: a guest feels one swipe on the sample, Shippy says hi, then sign in. After that, picking a
+  // repo and connecting Codex each build the next stations, one at a time, with one plain line each.
+  // New accounts only (no repo yet, or the onboarding hand-off); ?firstrun=1 replays it.
+  const repo = signedIn ? params.get("repo") ?? "" : "";
+  if (params.get("firstrun") === "1") try { for (const k of ["", repo]) localStorage.removeItem(`shiptorio:firstrun:${k}`); } catch { /* private mode */ }
+  const firstRun = want === "live" && (!repo || params.get("onboard") === "codex" || params.has("firstrun")) ? createFirstRun({
+    key: repo, store: (() => { try { return localStorage; } catch { return undefined; } })(),
+    stage: () => !signedIn ? (guestStory?.phase() === "end" ? "intro" : null) : !repo ? "hello" : connections.engineReady() ? "engine" : "repo",
+    established: () => !!(source.view() as import('./data/view').LiveDeckView).work,
+  }) : null;
   const engine = createEngine(cv, art, bus, shippy, layers, { onPowerSelect: () => { if (connectionToolsVisible) connections.open("power"); }, onMachineSelect: id => {
     if (id === "repo" && connectionToolsVisible) { connections.open("repo"); return; }
     if (machines) machines.cycling = false;
@@ -255,14 +272,17 @@ const seed = Number(params.get("seed")) || 0;
     }
     connections.tick();
     const base = inspector.view(source.view());
-    const view = payoff.view(connections.view(away ? away.view(base) : base), dt);
+    firstRun?.step(dt);
+    const shown = payoff.view(connections.view(away ? away.view(base) : base), dt);
+    const view = firstRun ? firstRun.view(shown) : shown;
+    document.body.classList.toggle("first-run", !!firstRun?.playing());
     const work = (view as import('./data/view').LiveDeckView).work;
     cv.dataset.workId = work?.id ?? '';
     cv.dataset.workStop = work?.stop ?? '';
     cv.dataset.workMoving = String(!!(view as import('./data/view').LiveDeckView).followItem);
     cv.dataset.allClear = String(!!(view as import('./data/view').LiveDeckView).allClear);
     engine.frame(view, dt);
-    card.show(view.card);
+    card.show(view.card, { quiet: !!firstRun?.playing() });
     accessibility.update(view.card, view.caption);
     if (view.caption !== caption) caption = view.caption;
     toast.classList.toggle("on", !!caption && !view.card); // the card owns the bottom of the screen

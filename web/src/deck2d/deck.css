@@ -58,3 +58,8 @@ body:has(.connection-tools) .toast { width: calc(100% - 24px); max-width: 560px;
   .toast { font-size: 24px; text-shadow: 0 3px 0 #000; }
   body:has(.connection-tools) .toast, .shippy-rehearsal .toast, .factory-watch .toast, .machine-rehearsal .toast { max-width: 960px; }
 }
+
+/* The live first run: Shippy's one line reads like a line, not a footnote, and nothing else competes with it. */
+body.first-run .toast { font-size: 18px; line-height: 1.35; padding: 10px 16px; max-width: 520px; background: #121e2bd9; border: 2px solid #a36915; box-shadow: 0 3px 0 #000; }
+body.first-run .connection-tools { display: none; }
+@media (min-width: 900px) and (min-height: 560px) { body.first-run .toast { font-size: 24px; max-width: 960px; } }
