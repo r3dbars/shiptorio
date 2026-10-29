@@ -47,7 +47,7 @@ test("replay transport performs one read and never writes when sent player actio
 test("live deck folding replays one identity through the issue to launched PR without sending a decision", async () => {
   const c = clock();
   const source = createLiveSource({ kind: "sim", repo: "", scenario: "quiet-morning" }, { replay: { ui: false, search: "?trace=testing-16-sample", timers: c.timers, fetch: (async () => Response.json(fixture)) as typeof fetch } });
-  await flush();
+  await new Promise(r => setTimeout(r, 0)); await flush(); // replay module loads lazily
   expect(source.state()?.items[0].id).toBe("gh-16");
   c.advance(4000);
   const before = source.state();
