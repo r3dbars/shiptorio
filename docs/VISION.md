@@ -36,8 +36,8 @@ It never ends. There is always a bottleneck, always something to optimize, alway
    bigger factory.
 4. **Autonomy is earned by playing.** Day one, Spark asks before it acts. The more you play, the more it's
    allowed to do on its own (advisor → floor → build → per-district launch permits → lights out).
-5. **Verify everything (checks and balances, inspired by Lauren Tan / poteto).** CI → proof → AI review →
-   human merge. Fails loop back to Spark. Every station is visible and clickable, piles show the bottleneck,
+5. **Verify everything (checks and balances, inspired by Lauren Tan / poteto).** Checks (CI + proof) → Review →
+   Gate (your merge). Fails loop back to Spark. Every station is visible and clickable, piles show the bottleneck,
    and the game rewards adding more checks.
 6. **Point at the human bottleneck.** In an agent loop the person is the slow part, so Shiptorio always
    shows what's waiting on you and makes it fast to clear: a swipeable check-in deck of 8 to 12 cards
@@ -135,7 +135,10 @@ The full approved rounds 1–4 and rollout policy are in [GAMEPLAY-PICKS.md](GAM
 
 - **Playable loop:** real GitHub issue → Spark → fix PR (player's agent) → CI inspect / rework → human merge → rocket.
 - **Signal sources (mines):** GitHub, Sentry, PostHog. Stripe is on hold.
-- **Gauntlet:** CI inspector, proof/verify bay, AI review, merge gate (`docs/LOOP.md`).
+- **The line, one name per station everywhere:** Repo → Planner → Builder → Checks → Review → Gate → Launch.
+  Station labels, cards, captions, story, setup copy, runner messages, PR comments and docs all use these exact
+  words (source of truth: `STOP_LABEL` in `web/src/deck2d/contract.ts`). No synonyms (not inspector, verify bay,
+  AI review, merge gate, assembler, inbox or launch pad). Checks runs the CI check and the proof check (`docs/LOOP.md`).
 - **Who it's for:** solo founders and tiny teams with real users. Hosted on shiptorio.com (password-gated for now).
 - **Hackathon:** Meta, submit by noon CT Wed Nov 4. It's a date, not the goal.
 

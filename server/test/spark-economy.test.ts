@@ -6,10 +6,11 @@ const original = globalThis.fetch;
 afterEach(() => { globalThis.fetch = original; });
 const message = [{ role: "user" as const, content: "Review README at revision one" }];
 function provider() {
-  let calls = 0, release!: () => void;
+  let calls = 0, release!: () => void, started!: () => void;
+  const ready = new Promise<void>(resolve => { started = resolve; });
   const gate = new Promise<void>(resolve => { release = resolve; });
-  globalThis.fetch = (async () => { calls++; await gate; return Response.json({ choices: [{ message: { content: "same decision" } }], usage: { total_tokens: 100 } }); }) as unknown as typeof fetch;
-  return { release, calls: () => calls };
+  globalThis.fetch = (async () => { calls++; started(); await gate; return Response.json({ choices: [{ message: { content: "same decision" } }], usage: { total_tokens: 100 } }); }) as unknown as typeof fetch;
+  return { release, ready, calls: () => calls };
 }
 test("identical concurrent decisions share one paid call; later state is evaluated again", async () => {
   const env = sparkTestEnv(), p = provider();
@@ -58,7 +59,7 @@ test("duplicate issue-to-review notifications keep the same plan and verdict wit
       await new Promise(resolve => setTimeout(resolve, 1));
       return Response.json({choices:[{message:{content:JSON.stringify(reply)}}],usage:{total_tokens:100}});
     }) as unknown as typeof fetch;
-    const copies = () => shared ? [env,env] : [{...env},{...env}];
+    const copies = () => shared ? [env,env] : [{...env,planningSignal:new AbortController().signal},{...env,planningSignal:new AbortController().signal}];
     const issue = {title:"Clarify README checks",body:"Explain the existing checks.",labels:[]};
     const classified = await Promise.all(copies().map(e => triage(e,issue,["/"])));
     stage="plan";
@@ -75,4 +76,63 @@ test("duplicate issue-to-review notifications keep the same plan and verdict wit
   expect(after.counts).toEqual({triage:1,plan:2,review:2});
   expect([before.usage.calls,after.usage.calls]).toEqual([10,5]);
   expect([before.usage.tokens,after.usage.tokens]).toEqual([1000,500]);
+});
+
+
+test("a transient account lookup retries before any paid request", async () => {
+  const env = sparkTestEnv(); let lookups = 0, calls = 0;
+  env.budgetAccount = async () => { if (++lookups === 1) throw new Error("Temporary account lookup failure"); return "owner"; };
+  globalThis.fetch = (async () => { calls++; return Response.json({ choices: [{ message: { content: "decision" } }], usage: {total_tokens: 100} }); }) as unknown as typeof fetch;
+  expect(await sparkChat(env, message)).toBe("decision");
+  expect(lookups).toBe(2);
+  expect(calls).toBe(1);
+  expect((await budgetUsage(env,"owner")).calls).toBe(1);
+});
+
+
+test("fresh factory env wrappers share only an identical account and cancellation lifetime", async () => {
+  const env = sparkTestEnv(), p = provider();
+  const first = sparkChat(env,message);
+  const duplicate = sparkChat({...env,budgetAccount: async()=>"owner"},message);
+  const otherAccount = sparkChat({...env,budgetAccount:async()=>"other"},message);
+  const otherSignal = sparkChat({...env,planningSignal:new AbortController().signal},message);
+  p.release();
+  await Promise.all([first,duplicate,otherAccount,otherSignal]);
+  expect(p.calls()).toBe(3);
+});
+
+
+test("a newly paused factory or zero budget cannot join an in-flight decision", async () => {
+  const env = sparkTestEnv(), p = provider();
+  const first=sparkChat(env,message);
+  await p.ready;
+  await env.DB.prepare("INSERT INTO admin_controls(scope,paused) VALUES('*',1)").run();
+  await expect(sparkChat({...env},message)).rejects.toThrow("paused");
+  await env.DB.prepare("DELETE FROM admin_controls").run();
+  await expect(sparkChat({...env,SPARK_DAILY_CALLS:'0'},message)).rejects.toThrow("exhausted");
+  p.release(); await first;
+  expect(p.calls()).toBe(1);
+});
+
+test("aborting shared callers does not cancel a different request lifetime", async () => {
+  const env=sparkTestEnv(), a=new AbortController(), b=new AbortController();
+  let started=0, ready!:()=>void;
+  const waitReady=new Promise<void>(resolve=>{ready=resolve;});
+  const finish:Array<()=>void>=[];
+  globalThis.fetch=((_url:unknown,init?:RequestInit)=>new Promise<Response>((resolve,reject)=>{
+    init?.signal?.addEventListener('abort',()=>reject(init.signal?.reason),{once:true});
+    finish.push(()=>resolve(Response.json({choices:[{message:{content:'decision'}}],usage:{total_tokens:100}})));
+    if(++started===2)ready();
+  })) as unknown as typeof fetch;
+  const first=sparkChat({...env,planningSignal:a.signal},message);
+  const duplicate=sparkChat({...env,planningSignal:a.signal},message);
+  const separate=sparkChat({...env,planningSignal:b.signal},message);
+  const settled=Promise.allSettled([first,duplicate,separate]);
+  await waitReady;
+  a.abort(new Error('Run canceled'));
+  finish.forEach(resolve=>resolve());
+  const results=await settled;
+  expect(results.map(r=>r.status)).toEqual(['rejected','rejected','fulfilled']);
+  expect(started).toBe(2);
+  expect((await budgetUsage(env,'owner')).calls).toBe(2);
 });

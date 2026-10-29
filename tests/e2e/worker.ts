@@ -46,7 +46,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body));
     const dev = body.messages[0].content as string;
     let out: unknown;
-    if (dev.includes('AI review station')) out = { tool: 'verdict', verdict: 'pass', reason: 'Regression covers the fix', findings: [] };
+    if (dev.includes('Review station')) out = { tool: 'verdict', verdict: 'pass', reason: 'Regression covers the fix', findings: [] };
     else if (dev.includes('ONE tool per turn')) {
       const brief = promptJson(body.messages[1].content);
       const read = brief.alreadyRead as string[];
@@ -104,6 +104,11 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext) {
     const url = new URL(req.url);
+    // Fixed historical fixture state: exercise a real legacy override, never a production route.
+    if (url.pathname === '/__test/legacy-quota' && req.method === 'POST') {
+      await env.DB.prepare('INSERT INTO admin_user_limits(user_id,runs) VALUES (123,20) ON CONFLICT(user_id) DO UPDATE SET runs=20').run();
+      return new Response(null, { status: 204 });
+    }
     if (url.pathname === '/__test/waitlist' && req.method === 'GET') {
       const email = url.searchParams.get('email') ?? '';
       if (!email.endsWith('@example.test')) return new Response('fixture email required', { status: 400 });

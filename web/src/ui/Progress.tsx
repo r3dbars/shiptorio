@@ -205,39 +205,6 @@ export function ProgressChip({ p, onOpen }: { p: Progress; onOpen: () => void })
   );
 }
 
-/** "+15 XP · PR shipped", then a bigger moment for a level-up or an unlock. */
-export function XpPop({ pop }: { pop: Pop | null }) {
-  if (!pop) return null;
-  const xp = pop.gains.reduce((n, g) => n + g.xp, 0);
-  const big = pop.levelUp || pop.unlocked.length > 0;
-  return (
-    <div key={pop.id} className={`xp-pop card${big ? " big" : ""}`} role="status" aria-live="polite">
-      {xp > 0 && (
-        <div className="xp-line">
-          <b>{PROGRESS.xp(xp)}</b>
-          <span>{pop.gains.map((g) => g.text).join(" · ")}</span>
-        </div>
-      )}
-      {pop.levelUp && (
-        <div className="xp-level">
-          <Icon name="up" size={16} /> {PROGRESS.levelUp(pop.levelUp.level, pop.levelUp.title)}
-        </div>
-      )}
-      {pop.unlocked.map((u) => (
-        <div className="xp-unlock" key={u.id}>
-          <span className="rs-ico">
-            <Icon name={u.icon as IconName} size={18} />
-          </span>
-          <span>
-            <b>{PROGRESS.unlocked(u.name)}</b>
-            <small>{u.what}</small>
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // ---- the deck trend: the score is how few need you tomorrow ----
 
 export function DeckTrend({ p }: { p: Progress }) {

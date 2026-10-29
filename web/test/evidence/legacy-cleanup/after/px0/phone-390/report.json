@@ -1,0 +1,11 @@
+{
+  "url": "http://localhost:5270/?px=0&source=sim&scenario=quiet-morning&intro=0&tour=0",
+  "readyMs": 470,
+  "canvasColors": -2,
+  "overflow": 0,
+  "problems": [],
+  "apiMisses": [
+    "/api/telemetry/config",
+    "/api/version"
+  ]
+}

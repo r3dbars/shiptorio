@@ -1,7 +1,7 @@
 // The stage the shaft stands on: the scene, the root group (turned 45deg like the mockup, so root +x runs
 // left to right on screen), the look (sky, fog, hemisphere, a sun whose shadow box follows the view), the
-// orthographic camera with its views (framed by frame.ts), and the Black Iron finish. The dev harness (shaft.html) and the game's
-// ShaftScene both draw through this, so a screenshot in the harness is what players see.
+// orthographic camera with its views (framed by frame.ts), and the Black Iron finish. The game's
+// ShaftScene draws through this.
 
 import * as THREE from "three";
 

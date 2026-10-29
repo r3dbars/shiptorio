@@ -14,10 +14,12 @@ import { STAGE_AT } from "../build/build";
 import { GROW_SECONDS } from "../grow/index";
 import { LAUNCH_BUILD_SECONDS } from "../launch/timeline";
 import { STOPS, type CardView, type DeckSource, type DeckView, type Item, type ShippyView, type StopId } from "../contract";
+import type { AttentionView } from "../stations/attention";
 
 export interface StoryOptions {
   seed?: number; // same seed, same story (crate titles, spawn jitter)
   speed?: number; // accepted for the contract's signature; the page already scales dt by ?speed
+  swipes?: number; // 1: the short front-door version, end right after the first swipe clears the jam (default 3)
   onConnect?(): void; // the last card's yes: "Want to see the real one?" Default: go to the app to sign in
 }
 
@@ -89,7 +91,7 @@ export function createStory(opts: StoryOptions = {}): Story {
       spawnEvery: 1, spawnT: 0.9, nextId: 1, shipped: 0,
       budget: 2 as number | null, // how many crates Review may still pass (the first two ship). null = no limit
       reviewSvc: SVC.review,
-      approvals: 0, card: null as CardView | null, laterUntil: 0,
+      approvals: 0, card: null as CardView | null, laterUntil: 0, asked: [] as string[], // crate titles already on a card
       autoReview: false, jam: null as StopId | null, nextJam: null as StopId | null,
       shippy: { pose: "folded", at: "corner" } as ShippyView,
       caption: null as string | null, captionAt: 0,
@@ -97,6 +99,9 @@ export function createStory(opts: StoryOptions = {}): Story {
       script: [] as Step[], stepT: 0, // the running step is script[0]; stepT = seconds into it
       size: "large" as DeckSize, lastCallAt: -99,
       island: "built" as NonNullable<DeckView["deck"]>["island"], islandProgress: undefined as number | undefined,
+      follow: null as string | null, // the crate the camera rides along with (beat 4's no-card crate)
+      watch: null as StopId | null, // where the camera parks while Shippy takes the lever (rockets would pull it away)
+      pace: 1, // > 1 slows every stop, so the one no-card crate reads on camera
     };
   }
   const after = (sec: number, fn: () => void) => S.timers.push({ at: S.t + sec, fn });
@@ -120,7 +125,7 @@ export function createStory(opts: StoryOptions = {}): Story {
       if (!front) continue;
       if (id === "review" && !reviewOpen()) { front.t = 0; continue; }
       front.t += dt;
-      const svc = id === "review" ? S.reviewSvc : SVC[id];
+      const svc = (id === "review" ? S.reviewSvc : SVC[id]) * S.pace;
       if (front.t < svc) continue;
       if (id === "launch") { s.q.shift(); S.shipped++; continue; }
       const to = nextBuilt(i);
@@ -130,18 +135,25 @@ export function createStory(opts: StoryOptions = {}): Story {
       front.t = 0;
       S.st[to].q.push(front);
     }
-    // Looks: plain until checks pass, green after, red bands while stuck waiting on a call, glowing at the front.
+    // Looks: plain until checks pass, green after, yellow while waiting on your call.
     const passed = STOPS.indexOf("checks");
     STOPS.forEach((id, i) => {
       for (const c of S.st[id].q) c.look = i > passed || c.approved ? "ok" : "plain";
     });
     if (S.st.review.built && !reviewOpen()) {
-      S.st.review.q.forEach((c, k) => { c.look = k === 0 && S.card ? "glow" : "wait"; });
+      for (const c of S.st.review.q) c.look = "wait";
     }
   }
 
   function showCall() {
     const n = S.approvals, left = 3 - n;
+    // Titles cycle, so the third call could repeat the first. Each call names a different fix.
+    const head = S.st.review.q[0];
+    if (head?.title && S.asked.includes(head.title)) {
+      const unused = S.fixes.map(f => `Fix ${f}`).find(t => !S.asked.includes(t));
+      if (unused) head.title = unused;
+    }
+    if (head?.title && !S.asked.includes(head.title)) S.asked.push(head.title);
     S.card = {
       id: `${STORY_CARD.call}${n + 1}`,
       title: `Approve ${S.st.review.q[0]?.title?.toLowerCase().replace(/^fix /, "fix for ") ?? "this fix"}?`,
@@ -202,35 +214,57 @@ export function createStory(opts: StoryOptions = {}): Story {
     if (p === "swipe" && !S.card && S.laterUntil > 0 && S.t >= S.laterUntil) { S.laterUntil = 0; showCall(); }
   }
 
+  // Beat 4, the climax: the third yes hands Review to Shippy, and the next crate rolls the whole line with no card while
+  // the camera rides along. One thing at a time: Shippy takes the lever (the AUTOMATED stamp lands), the pile drains,
+  // then the one crate nobody had to call, then the next jam, then the last card.
   function goAuto() {
     setPhase("automatic");
     S.card = null;
-    S.budget = null; S.reviewSvc = 0.35; S.jam = null; S.autoReview = true;
-    S.spawnEvery = 1.0;
-    S.caption = "Same kind, three times. Shippy's got it.";
+    S.spawnEvery = 0; S.jam = null; S.watch = "review"; // the third yes already released a batch; nothing new until Shippy has the lever
+    S.caption = "Same kind, three times."; S.captionAt = S.t;
     S.shippy = { pose: "unfold", at: "corner" };
-    after(1.4, () => { S.shippy = { pose: "walking", at: "review" }; });
-    after(3.0, () => { S.shippy = { pose: "lever", at: "review" }; S.caption = "Review runs itself now."; });
-    after(4.4, () => { S.shippy = { pose: "happy", at: "review" }; });
-    after(6.4, () => {
-      setPhase("next-jam");
-      S.caption = "You're free to fix the next jam.";
-      S.nextJam = "checks"; S.jam = "checks";
-    });
-    after(10, () => {
-      setPhase("end");
-      S.caption = null;
-      S.card = {
-        id: STORY_CARD.connect,
-        title: "That's your repo. Want to see the real one?",
-        dots: null,
-        line: "Connect GitHub and this deck runs on your real code.",
-        stop: "repo",
-        yes: "See my repo",
-        no: "Replay",
-        setup: true,
-      };
-    });
+    S.script.push(
+      { rest: 1.4 }, { run: () => { S.shippy = { pose: "walking", at: "review" }; } },
+      { rest: 1.6 }, { run: () => { S.shippy = { pose: "lever", at: "review" }; S.autoReview = true; S.budget = null; S.reviewSvc = 0.35; } },
+      { say: "Review runs itself now." }, { rest: 1.4 }, { run: () => { S.shippy = { pose: "happy", at: "review" }; } },
+      { until: () => !STOPS.some((id) => S.st[id].q.length) }, { rest: REST_SEC },
+      { run: () => { S.watch = null; S.pace = 1.6; S.follow = `story-${S.nextId}`; spawn(); S.caption = "Shippy's got these now. No card."; S.captionAt = S.t; } },
+      { until: () => !STOPS.some((id) => S.st[id].q.some((c) => c.id === S.follow)) },
+      { run: () => { S.follow = null; S.pace = 1; } }, { rest: 1.2 },
+      { run: () => { setPhase("next-jam"); S.nextJam = "checks"; S.jam = "checks"; S.spawnEvery = 1.0; S.spawnT = 0.9; } },
+      { say: "You're free to fix the next jam." }, { rest: 3.6 },
+      { run: () => {
+        setPhase("end");
+        S.caption = null;
+        S.card = {
+          id: STORY_CARD.connect,
+          title: "That's your repo. Want to see the real one?",
+          dots: null,
+          line: "Connect GitHub and this deck runs on your real code.",
+          stop: "repo",
+          yes: "See my repo",
+          no: "Replay",
+          setup: true,
+        };
+      } },
+    );
+  }
+
+  // The short version (a guest at the front door): the one swipe clears the jam, the released crates ship, the line
+  // goes still, and the story ends on its connect card so the page can hand over to setup.
+  let shippedAt = 0;
+  function shortEnd() {
+    S.caption = "Swipe, and it moves."; S.captionAt = S.t;
+    after(0.9, () => { S.shippy = { pose: "folded", at: "corner" }; });
+    S.script.push(
+      { run: () => { S.spawnEvery = 0; S.jam = null; S.budget = null; shippedAt = S.shipped; } }, // the whole pile goes, not just a batch
+      { until: () => !S.st.review.q.length && S.shipped > shippedAt }, { rest: 0.8 }, // the jam is gone and one ships: enough
+      { run: () => {
+        setPhase("end");
+        S.caption = null;
+        S.card = { id: STORY_CARD.connect, title: "Now let's do this with your repo.", dots: null, line: "Connect GitHub and this deck runs on your real code.", stop: "repo", yes: "See my repo", no: "Replay", setup: true };
+      } },
+    );
   }
 
   function step(dt: number) {
@@ -250,19 +284,22 @@ export function createStory(opts: StoryOptions = {}): Story {
     fns.forEach((fn) => fn());
   }
 
-  function view(): DeckView {
+  function view(): AttentionView & { followItem?: string } {
     const stops = STOPS.map((id) => {
       const s = S.st[id];
       const automated = id === "review" && S.autoReview;
       let state: DeckView["stops"][number]["state"] = s.q.length ? "working" : "idle";
       let waiting: string | undefined;
-      if (id === "review" && s.built && !reviewOpen() && s.q.length) { state = "jammed"; waiting = "REVIEW WAITING"; }
+      // Every bottleneck in the story waits on your call, so it's yellow (attention), never red (stuck).
+      if (id === "review" && s.built && !reviewOpen() && s.q.length) { state = "idle"; waiting = "REVIEW WAITING"; }
       if (automated) state = "auto";
-      if (id === S.nextJam) { state = "jammed"; waiting = "CHECKS WAITING"; }
+      if (id === S.nextJam) { state = "idle"; waiting = "CHECKS WAITING"; }
       return { id, built: s.built, state, automated, items: s.q.map(({ id, title, look }) => ({ id, title, look })), ...(waiting ? { waiting } : {}) };
     });
+    const call = S.jam && stops.find((s) => s.id === S.jam)?.waiting ? S.jam : null;
     return {
-      stops, jam: S.jam, card: S.card ? { ...S.card } : null, shippy: { ...S.shippy }, shipped: S.shipped, caption: S.card ? null : S.caption,
+      stops, jam: null, attention: call ? [call] : [], card: S.card ? { ...S.card } : null, shippy: { ...S.shippy }, shipped: S.shipped, caption: S.card ? null : S.caption,
+      ...(S.follow ? { followItem: S.follow } : {}), ...(S.watch ?? S.jam ? { focus: S.watch ?? S.jam! } : {}),
       deck: {
         size: S.size, island: S.island,
         ...(S.islandProgress != null ? { islandProgress: S.islandProgress } : {}),
@@ -280,6 +317,7 @@ export function createStory(opts: StoryOptions = {}): Story {
     S.reviewSvc = 0.25;
     S.shippy = { pose: "happy", at: "corner" };
     if (S.approvals >= 3) { goAuto(); return; }
+    if (S.approvals >= (opts.swipes ?? 3)) { shortEnd(); return; }
     S.caption = S.approvals === 1 ? "Swipe, and it moves." : "One more like this and it's automatic.";
     S.captionAt = S.t; S.lastCallAt = S.t;
     if (S.approvals === 1) S.script.push(...reward());

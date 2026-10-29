@@ -5,6 +5,9 @@
 PR #598 (`codex/dev-deck-default`) makes authorized bare visits to shiptorio.dev open the approved pixel deck with the automatic Shippy watch loop. Explicit repo/onboarding links and production behavior stay unchanged; the existing access gate still runs first. Justin requested this as the staging default.
 
 - #66: exact duplicate Meta requests share only an in-flight result within the same run/account; later decisions are fresh. Duplicate triage/plan/review fixture: 10 → 5 calls, 1000 → 500 reported tokens, identical outputs; sequential happy-path savings are not claimed.
+- #60: retired the always-on remote intro flag; onboarding query/preferences and all safety kill switches remain. Other live/preview flags are inventoried in the PR and retained.
+- #56 (Claude): AGENTS.md cut from 284 to 135 lines (today only); docs/context/README.md is a short "read these 5 first" index; 13 retired docs + feedback-factory/ moved to docs/context/archive/ with a why-note on each.
+- #52 (Claude, 2026-10-29): deck first load on a throttled phone 11.0s → ~5.0s, 3.8 MB → 1.0 MB before the first frame. tube() in props/boiler2d.ts only checks nearby samples (byte-identical), the pixel deck preloads only the pictures it draws, and web/public art/fonts/sound get `private, max-age=300` instead of no-store.
 
 ## Deck visual iteration (Codex, 2026-10-28)
 
@@ -21,6 +24,15 @@ The final pass adds layered cascading cliffs, animated cyan seams and floating f
 Session cookies and preview-form proofs now reuse the existing bounded, isolate-local HMAC key cache. Before: every sign/verification imported a key; after: concurrent checks with the same secret share one import. Cookie signatures, expiry, password rotation and fresh authorization checks remain unchanged. Focused session/gate/cache tests pass; full check and exact-head dev CI govern merge. This CPU reduction is not a claim that the connection latency target has been achieved.
 
 ## Hosted tester playthrough fixes (Codex, 2026-10-28)
+
+- 2026-10-29 (#48): full promotion suite exposed retired admin UI assumptions; browser coverage now checks confirmed, audited Pause/Resume; quota form coverage ships with its separate repair.
+- 2026-10-29 (#48): start the local fixture runner when onboarding enters its repo directly, so the current automatic entry path is tested without copying a real install command.
+
+- 2026-10-29 (#48): player actions use one captured card and reject stale replacements; unknown Later is never selected, and held Launch/explicit deferrals are recorded.
+
+- 2026-10-29 (#48): guest smoke shares one 30s budget between document commitment and the real rendered-deck marker, and reports outstanding resource paths on failure; story proof stays required.
+
+- 2026-10-29 (#48): private provider credentials use non-colliding fixture-only sentinels; the actual private Worker/DO runner is checked through launch. Bot decisions record scoped card actions and wait instead of clicking busy cards.
 
 - 2026-10-29 (#48): the fixture player follows Open inbox after repo selection instead of pressing Escape into Unplug, and refuses destructive primary actions.
 
@@ -42,6 +54,8 @@ Backend GitHub connection reliability: cancellation, missing setup, invalid prov
 #467 updates the shared Wordmark, password gate and server-page brand image to the approved polished asset, with a quiet gate background. Password/session/CSRF code is untouched. The approved brass public welcome page remains byte-for-byte unchanged. Product-source local check: 1,421 passed, two existing skips, zero failures; lint/types/build green. Earlier Miniflare previews at 390×844 and 1440×900 verified image loading, full form visibility and wrong-password feedback. Refreshed onto dev; exact-head quick CI, Stranger and CodeQL govern merge. Production remains an explicit dev-to-main promotion.
 
 ## Simplify the whole game UI (Claude, 2026-10-28)
+
+- 2026-10-29, Codex #70: trace retained deck, judge, px=0 and art entries; remove only unreferenced legacy widgets and their orphan CSS, preserving all working routes.
 
 - Justin: the live factory is overwhelming (4 ways to say "needs you", 3 "not connected" mine tags, a stale red Steer card, two different 12s). Audit + 10 A/B picks: https://claude.ai/artifact/F2Rd8CtzAxJhH1sfDCriLT. Rules in docs/SIMPLE-UI.md.
 - Built behind `?simple=1` (`simpleOn()` in web/src/flags.ts): `SlowSpotLine` (one sentence: "You · 3 waiting" / the jammed stage / all clear, `ui/slowSpot.ts`), `TaskTray` (one card, "2 of 9", swipe or arrows browse and fly the camera via `setFocus(move.focus)`, Go / Later / Edit-More, autonomy "N more ..., then the factory stops asking"), quiet shaft HUD (`ShaftHud.quiet`: no chips, tags or pings except the card's machine), compact floor card. Don't add new map labels or second "needs you" surfaces; asks go in the tray.
@@ -104,7 +118,7 @@ unmerged in the read-only 2026-10-27 11:53 UTC recheck. The earlier Actions bill
 local deployment handoff are historical: Shiptorio Deploy40498676438 succeeded at61ef296.
 The receipt does not certify current runner/process state or a completed rework and in-game
 Launch. No factory PR was merged directly by this documentation run.
-[Evidence and remaining proof](testing-live-acceptance.md).
+[Evidence and remaining proof](archive/testing-live-acceptance.md).
 
 ## Codex isolated tester rebase onto dev — PR #354
 
@@ -134,6 +148,8 @@ Entry-point splitting keeps judge off default factory startup and preserves curr
 With the earlier 16-group cap, local SwiftShader repeated losses at 390×844 and 1440×900 produced completed first images in 0.86–1.06s and completed full-original frames in 12.96–15.94s. These are separate milestones, not instant full-lighting recovery. Native Metal: all 14 recovery/physical-hold/fresh-canvas/React/WebGL/invalid-vertex/invalid-fragment cases pass; trusted Menu input took 1–144ms from event timestamp to actual UI effect during recovery. Browser-clock deadlines remain 2s/30s; a separate host hang bound prevents tracing/snapshot transport latency from masquerading as product latency. Normal-art frozen native comparisons across six views differ at no more than 54 of 329,160 pixels (>3 channel delta), visually unchanged. Linux CI exposed a 33.1–33.7s full-original recovery at the 16-group cap and cold full-detail startup on replacement canvases. The 24-group cap reduces repeated warm-up draws; only SCENE_REBUILD generations now start with the recovery renderer, leaving ordinary startup unchanged. Product deadlines remain 2s first image, 6s replacement and 30s full originals; exact-head dev CI governs merge and production promotion is separate.
 
 ## Codex: pre-hackathon security pass (2026-10-26)
+
+- 2026-10-29 (#68): reviewed live-deck auth, webhook verification, secret redaction and pairing limits; added anonymous pairing admission and same-origin logout guards. The approved two-line pairing form hook rejects oversized streams before buffering them.
 
 - Completed the server route, factory isolation, GitHub/Sentry signature,
   Spark tool/secret and logging audit at baseline `44942fd` (63 source files),
@@ -198,7 +214,7 @@ is the only copy agents outside it (Codex) can see.
 
 ## Staging burst harness — PR #372 (Codex, 2026-10-28)
 
-Staging fixtures/analytics and public judge/version recovery produced failed supplemental 250-socket receipts; the requested 200 judge HTTP/sim + 50 socket profile remains unmeasured. Rebased onto dev as harness/docs/evidence only, withdrawing unproven runtime changes. Local CLI tests now require loopback and verify the socket adapter before startup after a possible 50 unauthenticated staging-handshake escape from an ineffective mock. Full local check: 1,506 passed, two existing platform skips, zero failures. No further hosted load or production promotion; exact-head quick checks and Staging are separate gates. Evidence and limitations: [reliability.md](reliability.md).
+Staging fixtures/analytics and public judge/version recovery produced failed supplemental 250-socket receipts; the requested 200 judge HTTP/sim + 50 socket profile remains unmeasured. Rebased onto dev as harness/docs/evidence only, withdrawing unproven runtime changes. Local CLI tests now require loopback and verify the socket adapter before startup after a possible 50 unauthenticated staging-handshake escape from an ineffective mock. Full local check: 1,506 passed, two existing platform skips, zero failures. No further hosted load or production promotion; exact-head quick checks and Staging are separate gates. Evidence and limitations: [reliability.md](archive/reliability.md).
 
 ## Codex: public judge replay (2026-10-26)
 
@@ -352,6 +368,8 @@ Prompt packs for Justin live in the Claude project's files under `shiptorio/code
 
 ## Spark spend and factory budgets (Codex, 2026-10-26; PR #255)
 
+- #66 follow-up: transient account lookups retry before paid calls; equivalent factory wrappers share only pending requests with the same account and cancellation lifetime. Current pause/zero budgets still refuse joining.
+
 - Checkpoint: Friday cost/power guardrails. `codex/spark-spend` adds migration `0012_spark_spend.sql` (checked against #150's gapless-number guard).
 - D1 records each factory's UTC day, calls, measured input/output/cache tokens and estimated USD. Default daily budget: **$5 per factory**; the stable payer can change it in whole cents, including $0 to pause.
 - Before each Meta attempt, reserve UTF-8 input upper bound plus capped output at Spark 1.3 standard rates. Concurrent reservations are atomic. Reported usage settles once; missing usage/errors keep a conservative reservation and show as unmeasured. Existing account call/token limits remain in force. Unknown model prices fail closed.
@@ -387,7 +405,7 @@ Historical check-only receipts above predate the dev-first flow; the ten-minute 
 
 ## Factory-triggered Spark spend proof (Codex, 2026-10-26)
 
-- [Live proof](spark-spend-live-proof.md): recovered the exhausted 20/day allowance to 21 without resetting usage, after quota fix #269 deployed. Requested Plan #10 through the testing factory's real websocket action; Spark completed a plan awaiting approval.
+- [Live proof](archive/spark-spend-live-proof.md): recovered the exhausted 20/day allowance to 21 without resetting usage, after quota fix #269 deployed. Requested Plan #10 through the testing factory's real websocket action; Spark completed a plan awaiting approval.
 - Five real Worker Meta calls, 2,795 input / 2,231 output tokens (369 cached input), $0.0125696 estimated; zero unmeasured calls. Admin and owner endpoint match; real browser admin row, HUD chip and How it thinks panel verified. Build run usage stayed 20/21 throughout planning. Public [Spark docs](../site/spark.md) now describe spend and quota recovery.
 
 ## Quota recovery (Codex, 2026-10-26; PR #269)
@@ -451,6 +469,8 @@ links the successful Deploy run, including D1 migration application and live smo
 
 ## Live quota admin form recovery (Codex, 2026-10-26)
 
+- 2026-10-29, Codex: repaired the #63 regression by restoring only the focused Raise limit form, keeping admin authorization, native same-origin save, validation and recorded usage; no retired waitlist/abuse panels restored.
+
 - 2026-10-29, Codex #63: trim admin to factories, pause/resume, kill switches and spend; retire unused pages after authorization while retaining operational admission POSTs and all security guards. PR #632.
 
 Follow-up [PR #284](https://github.com/r3dbars/shiptorio/pull/284) to #269 on `codex/quota-admin-origin`: verified Deploy run 40432397609
@@ -467,7 +487,7 @@ The rejected production saves left all original account limits intact.
 
 ## Overnight paper-cut sweep (Codex, Oct 26–27, 2026)
 
-Oct 26, 9:22–10:08 PM CT: #302 merged (browser QA imports), 160 page checks, 10 logged cuts; GitHub billing blocked Deploy and report #309. Protected work untouched. Receipts/resume: [papercuts.md](papercuts.md).
+Oct 26, 9:22–10:08 PM CT: #302 merged (browser QA imports), 160 page checks, 10 logged cuts; GitHub billing blocked Deploy and report #309. Protected work untouched. Receipts/resume: [papercuts.md](archive/papercuts.md).
 ## Runner overnight recovery
 
 Codex: eight-hour grant expiry plus final-hour, job-loop-only renewal explains the
@@ -819,8 +839,12 @@ Verified whole-App regressions: Hono response assignment replaced appended App t
 - 2026-10-29 Claude ("Rebuild the main deck's underside art", `claude/project-thread-j8qkum`): the pixel deck's sides and underside are rebuilt in code to match the launch island (props/underside.ts): riveted rim band with copper pillars, chiselled warm boulders tapering to the middle, cyan shard pairs, and a steel engine with a glowing core window hung at the exact middle. The orb, underside vents/steam, pipe loops and hanging lanterns are gone.
 
 - 2026-10-29 Claude ("Plan what's next and load up Codex", `claude/project-thread-ry4a4x`): plan to Nov 3 in `docs/context/demo-plan.md` (where we are, five moves, demo line). Codex batch #43-#48 handed out: trust level-up on the real loop, stale factory cleanup, demo replay, first two minutes, Shippy's brain picks the bottleneck, green CI. Deck batch #36-#42 retired (Justin's Codex deck work #596-#611 superseded it).
+- **Codex #72 — deck front door:** signed-out live visits play the story before the existing sign-in card; setup chips require a signed-in live repo; Zoom out replaces See all. Builds on #628 keyboard accessibility. Tests and phone/desktop evidence: `web/test/evidence/deck-front-door/`.
 - 2026-10-29 · Codex #46 · `codex/deck-first-run`: new-account deck → GitHub → repo → Codex → first issue browser walk; fixture Worker/runner only, PR #617.
 
 
 - Codex #74: watch reset retains the built view until the replacement snapshot arrives; no replayed station construction. PR #633; frame regression and 390/1280 before/after PNGs.
-- Codex #73 (2026-10-29): shorten setup/watch copy, put Unplug behind Options, make Check primary after copying, and use Ship it consistently in the conveyor. Scoped card/action tests and phone/desktop browser interactions pass; full check: 1,886 passed, two existing platform skips, zero failures. PR #634 includes before/after PNG evidence.
+- Codex #73 (2026-10-29): shorten setup/watch copy, put Unplug behind Options, make Check primary after copying, and use Ship it consistently in the conveyor. Scoped card/action tests and phone/desktop browser interactions pass; full check: 1,886 passed, two existing platform skips, zero failures. PR #634 includes before/after PNG evidence. Follow-up: shorten the issue action to Plan so Next issue stays inside the existing card.
+- 2026-10-29 Claude ("Make every link land on the deck", `claude/project-thread-whfwny`, Codex #55 done by Claude): shiptorio.dev has one front door. server/src/redirect.ts `deckFrontDoor` 302s `/`, old `/?onboard=`, the old live map `/?source=live&repo=` (keeps repo), `?simple=1` and `/deck?px=0` to `/deck?source=live`; demos (`?source=sim|replay`, `?scenario=`), /judge and shiptorio.com unchanged. Route table in server/test/redirect.test.ts.
+- 2026-10-29 Claude thread "Delete the old experiments and preview pages" (Codex #49): removed /deck3d, /bakeoff, /arttest, /lab, /construct, /floorbuild, /shaft dev pages + their src and vite configs; boiler2d moved to web/src/deck2d/props/. /art/ pages kept (Settings + judge panel link them).
+- Claude #54 bug bash (2026-10-29, thread "Bug bash the whole loop"): reload no longer re-fires an old rocket or a fake "Shipped" beat (loading view is a baseline), two tabs count one ship once, a call dealt again after Later shows (story no longer stalls). Tests: web/test/deck2d-bugbash.test.ts. Branch claude/project-thread-8dlyuy.

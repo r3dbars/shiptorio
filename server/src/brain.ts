@@ -66,7 +66,7 @@ function applies(signalId: string, candidate: LiveBottleneckCandidate): boolean 
 }
 
 /** Zero additional model calls: project the existing budgeted brain's current pick onto real work.
- * Its oldest applicable candidate wins; unknown/stale picks use the stable queue fallback.
+ * Its most urgent applicable candidate wins (a call waiting on the player before plain work), then the oldest; unknown/stale picks use the stable queue fallback.
  * Wording is generated from actual actions, not copied from untrusted issue or model text.
  */
 export function projectLiveBottleneck(state: FactoryState, jobs: readonly BottleneckJob[] = [], now = Date.now()): LiveBottleneckPick | null {
@@ -74,7 +74,7 @@ export function projectLiveBottleneck(state: FactoryState, jobs: readonly Bottle
   if (!candidates.length) return null;
   const brain = state.holdingBack;
   const current = brain?.by === "spark" && brain.decidedAt <= now && now - brain.decidedAt <= PICK_MAX_AGE_MS;
-  const chosen = current ? brain.signalIds.map(id => candidates.filter(c => applies(id, c)).sort((a, b) => a.since - b.since || a.id.localeCompare(b.id))[0]).find(Boolean) : undefined;
+  const chosen = current ? brain.signalIds.map(id => candidates.filter(c => applies(id, c)).sort((a, b) => a.priority - b.priority || a.since - b.since || a.id.localeCompare(b.id))[0]).find(Boolean) : undefined;
   const candidate = chosen ?? candidates[0];
   return { stop: candidate.stop, ...(candidate.itemId ? { itemId: candidate.itemId } : {}), reason: candidate.reason, source: chosen ? "spark" : "fallback" };
 }

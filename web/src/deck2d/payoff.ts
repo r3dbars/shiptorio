@@ -5,8 +5,8 @@ import type { CardView, DeckEvent, DeckView } from "./contract";
 //
 //   live / replay  every ship gets a beat. After a held Ship it, the next card also waits for that ship (up to 20s),
 //                  so it doesn't pop up while the merge is still landing.
-//   story / demo   crates ship all the time there, so only the first ship after each yes gets a beat, and only
-//                  while the story is in its swipe phase (the level-up climax keeps its own captions).
+//   story / demo   crates ship all the time there, so only the first ship after each yes gets a beat (and counts),
+//                  and only while the story is in its swipe phase (the level-up climax keeps its own captions).
 
 export const PAYOFF = {
   afterLaunch: 2.0, // ignition, then the rocket clears the pad, then the words
@@ -35,14 +35,16 @@ export function createPayoff(o: PayoffOptions) {
   let mode: "idle" | "lift" | "away" | "beat" = "idle", t = 0;
   let session = 0, line = ""; // the line is fixed when the beat starts, so the number never ticks while it reads
 
-  const read = () => {
-    try { const v = JSON.parse(o.store?.get(KEY) ?? "null"); return v?.day === day() ? Number(v.n) || 0 : 0; } catch { return 0; }
+  const saved = (): { n: number; at?: number } => {
+    try { const v = JSON.parse(o.store?.get(KEY) ?? "null"); return v?.day === day() ? { n: Number(v.n) || 0, at: typeof v.at === "number" ? v.at : undefined } : { n: 0 }; } catch { return { n: 0 }; }
   };
-  const today = () => o.store ? read() : session;
-  const count = (n: number) => {
+  const today = () => o.store ? saved().n : session;
+  // `at` is the factory's ship total last counted, so a second tab seeing the same ship doesn't count it again
+  const count = (n: number, total: number) => {
     session += n;
     if (!o.store) return;
-    try { o.store.set(KEY, JSON.stringify({ day: day(), n: read() + n })); } catch { /* private mode: session count is fine */ }
+    const v = saved(), fresh = v.at === undefined ? n : Math.max(0, total - v.at);
+    try { o.store.set(KEY, JSON.stringify({ day: day(), n: v.n + fresh, at: Math.max(total, v.at ?? 0) })); } catch { /* private mode: session count is fine */ }
   };
 
   return {
@@ -54,13 +56,15 @@ export function createPayoff(o: PayoffOptions) {
       if (e.type === "launch" && mode === "lift") { mode = "away"; t = 0; }
     },
     view(v: DeckView, dt: number): DeckView {
+      if ((v as DeckView & { loading?: boolean }).loading) { last = null; return v; } // no snapshot yet: the first one is the baseline
       if (v.card) lastCard = v.card;
       const shipped = v.shipped ?? 0;
       const delta = last == null ? 0 : shipped - last;
       last = shipped;
       if (delta > 0) {
-        count(delta);
         const quiet = o.phase ? o.phase() !== "swipe" : false;
+        // Story: count only the ship the player's own yes sent, so the number never reads inflated.
+        if (o.every) count(delta, shipped); else if (armed && !quiet) count(1, shipped);
         if (armed && !quiet && mode === "idle") { mode = "lift"; t = 0; }
         if (!o.every) armed = false;
         waitT = 0;

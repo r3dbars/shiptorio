@@ -14,13 +14,13 @@ const PAPER: Ramp = ["plate-2", "plate-3", "plate-4", "sun-6", "haze-3", "white"
 const CLOTH: Ramp = ["steel-0", "steel-1", "steel-2", "steel-3"];
 const LIT: Record<StopState, Ramp> = {
   idle: ["soot", "iron-1", "iron-2", "iron-3", "iron-4"],
-  working: ["sun-1", "sun-3", "sun-4", "sun-5", "sun-6", "white"],
+  working: ["energy-0", "energy-0", "energy-1", "energy-2", "energy-3", "white"],
   jammed: ["jam-0", "jam-1", "jam-1", "jam-2", "jam-2", "haze-3"],
   auto: ["ok-0", "ok-1", "ok-1", "ok-2", "ok-2", "white"],
 };
-const GLOW: Record<StopState, Color | null> = { idle: null, working: "sun-5", jammed: "jam-2", auto: "ok-2" };
+const GLOW: Record<StopState, Color | null> = { idle: null, working: "energy-2", jammed: "jam-2", auto: "ok-2" };
 
-const STATUS: [Ramp, Color][] = [[LIT.auto, "ok-2"], [LIT.working, "sun-5"], [LIT.jammed, "jam-2"]];
+const STATUS: [Ramp, Color][] = [[LIT.auto, "ok-2"], [LIT.working, "energy-2"], [LIT.jammed, "jam-2"]];
 
 function lampBall(g: Px, cx: number, cy: number, r: number, ramp: Ramp, base = 0.55) {
   for (let y = Math.floor(cy - r); y <= cy + r; y++) for (let x = Math.floor(cx - r); x <= cx + r; x++) {
@@ -68,7 +68,7 @@ export const planner: StationDef = {
         if (s === "jammed") for (let i = 0; i < 5; i++) { g.set(ix + i, iy + i, "jam-2"); g.set(ix + 4 - i, iy + i, "jam-2"); }
         else for (const [x, y] of [[0, 2], [1, 3], [2, 4], [3, 3], [4, 2], [4, 1]]) g.set(ix + x, iy + y, "ok-2");
       } else {
-        if (s === "working" && k === f % 3) { g.box(ix - 1, iy - 1, 7, 7, "sun-4"); g.glow(ix - 2, iy - 2, 9, 9, "sun-5", 0.25); }
+        if (s === "working" && k === f % 3) { g.box(ix - 1, iy - 1, 7, 7, "energy-1"); g.glow(ix - 2, iy - 2, 9, 9, "energy-2", 0.25); }
         icon(g, ix, iy, k);
       }
       if (k < 2) { g.set(ix + 6, iy + 2, "steel-1"); g.set(ix + 5, iy + 1, "steel-2"); g.set(ix + 5, iy + 3, "steel-2"); }

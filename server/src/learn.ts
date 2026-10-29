@@ -124,5 +124,8 @@ export function dismissNote(card: Move, scope: string): string {
 }
 
 export function learnedList(book: DeckBook): Learned[] {
-  return Object.entries(book.auto ?? {}).map(([key, v]) => ({ key, label: v.label, since: v.since })).sort((a, b) => a.since - b.since).slice(0, 40);
+  return Object.entries(book.auto ?? {}).map(([key, v]) => {
+    const items = (book.autoRuns ?? []).filter(r => r.key === key).map(r => r.itemId);
+    return { key, label: v.label, since: v.since, ...(items.length ? { items } : {}) };
+  }).sort((a, b) => a.since - b.since).slice(0, 40);
 }

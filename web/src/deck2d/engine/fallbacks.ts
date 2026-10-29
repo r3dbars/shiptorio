@@ -1,6 +1,6 @@
-import { FLOOR_Y, STOP_X, type ArtLoader, type CardView, type MountCard, type ShippyModule, type ShippyView } from "../contract";
+import { FLOOR_Y, STOP_X, type ArtLoader, type ShippyModule, type ShippyView } from "../contract";
 
-// Simple stand-ins so the deck runs before shippy/ and card/ land. main.ts swaps in the real modules when they exist.
+// A simple stand-in Shippy for dev pages and for when shippy/ fails to load. main.ts swaps in the real one when it exists.
 
 export function fallbackShippy(art: ArtLoader): ShippyModule {
   let v: ShippyView = { pose: "folded", at: "corner" }, t = 0, poseT = 0, unfoldT = 0;
@@ -39,33 +39,3 @@ export function fallbackShippy(art: ArtLoader): ShippyModule {
     },
   };
 }
-
-export const fallbackCard: MountCard = (host, h) => {
-  host.innerHTML = `<div class="card" hidden><h1></h1><ol class="dots"><li></li><li></li><li></li></ol><p></p>
-    <div class="btns"><button class="btn" type="button" data-a="later">&larr; Later</button><button class="btn go" type="button" data-a="approve">Approve &rarr;</button></div></div>`;
-  const el = host.firstElementChild as HTMLElement;
-  let card: CardView | null = null, sx: number | null = null;
-  const act = (a: string) => { if (!card) return; const id = card.id; if (a === "approve") h.onApprove(id); else h.onLater(id); };
-  el.addEventListener("click", (e) => { const a = (e.target as HTMLElement).closest("button")?.dataset.a; if (a) act(a); });
-  el.addEventListener("pointerdown", (e) => { if ((e.target as HTMLElement).closest("button")) return; sx = e.clientX; el.setPointerCapture(e.pointerId); });
-  el.addEventListener("pointermove", (e) => { if (sx !== null) el.style.transform = `translate(calc(-50% + ${e.clientX - sx}px), 0) rotate(${(e.clientX - sx) / 40}deg)`; });
-  el.addEventListener("pointerup", (e) => { if (sx === null) return; const dx = e.clientX - sx; sx = null; el.style.transform = ""; if (dx > 80) act("approve"); else if (dx < -80) act("later"); });
-  const key = (e: KeyboardEvent) => { if (e.key === "ArrowRight") act("approve"); if (e.key === "ArrowLeft") act("later"); };
-  addEventListener("keydown", key);
-  return {
-    show(next) {
-      if (next?.id === card?.id && next?.title === card?.title) return;
-      card = next;
-      if (!next) { el.classList.add("gone"); setTimeout(() => { if (!card) el.hidden = true; }, 300); return; }
-      el.hidden = false; el.classList.remove("gone");
-      el.querySelector("h1")!.textContent = next.title;
-      el.querySelector("p")!.textContent = next.line;
-      el.querySelector<HTMLElement>("[data-a=approve]")!.textContent = (next.yes ?? "Approve") + " \u2192";
-      el.querySelector<HTMLElement>("[data-a=later]")!.textContent = "\u2190 " + (next.no ?? "Later");
-      const dots = el.querySelector(".dots") as HTMLElement;
-      dots.hidden = !next.dots;
-      [...dots.children].forEach((d, i) => d.classList.toggle("on", !!next.dots && i < next.dots.have));
-    },
-    destroy() { removeEventListener("keydown", key); host.innerHTML = ""; },
-  };
-};

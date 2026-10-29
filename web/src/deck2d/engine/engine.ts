@@ -1,12 +1,12 @@
 import {
   ART_PX, BELT_Y, DECK_DX, DECK_END, HULL, snap, FLOOR_Y, LAUNCH_Y, LOOK, PALETTE, PALETTE_48, STOPS, STOP_X,
-  type ArtLoader, type DeckBus, type DeckLayer, type DeckView, type Item, type LayerSlot, type ShippyModule, type StopId,
+  type ArtLoader, type DeckBus, type DeckLayer, type DeckView, type Item, type LayerSlot, type ShippyModule, type Stop, type StopId,
 } from "../contract";
 import { pixelOn } from "../../flags";
 import { createPixelCanvas } from "./pixel";
 import * as pd from "./pxdraw";
 import { FLIGHT } from "../launch/flight";
-import { BOILER_H, BOILER_W, boilerFrame } from "../../bakeoff/boiler2d";
+import { BOILER_H, BOILER_W, boilerFrame } from "../props/boiler2d";
 import { stationSize, type StationId } from "../stations";
 import { advanceBeltDistance, beltConnectionAt } from "./flow";
 import { needsAttention, type AttentionView } from "../stations/attention";
@@ -23,7 +23,7 @@ const drawStation = (Object.values(import.meta.glob("../stations/index.ts", { ea
 const PAD = { x: 1905 + DECK_DX, y: -50, s: 0.72 }; // bridge + rocket island sprite; its bridge meets the deck's right edge
 const BRIDGE_Y = PAD.y + PAD.s * 560;
 const ORB = HULL.orb;
-/** The twin boiler: in pixel mode it is drawn in code at full art size (bakeoff/boiler2d.ts), standing on the back
+/** The twin boiler: in pixel mode it is drawn in code at full art size (props/boiler2d.ts), standing on the back
  * edge of the floor behind Repo and Planner; ?px=0 keeps the small boiler-on picture. */
 const BOILER = { x: DECK_DX ? 280 : 240, base: 182 };
 const BOUNDS = { x0: -20, x1: PAD.x + 1533 * PAD.s + 20, y0: -30, y1: DECK_DX ? 800 : 670 }; // pixel mode: the whole underside, lanterns and all
@@ -97,6 +97,9 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   function focusX(v: DeckView) {
     const pin = cam.pin ?? (v as AttentionView).focus ?? v.card?.stop ?? v.jam;
     if (pin) return STOP_X[pin] + (pin === "launch" ? -200 : 60);
+    // All clear: nothing to look at but Shippy resting on his dock, so a phone parks there.
+    const resting = (v as DeckView & { allClear?: boolean }).allClear && (shippy as ShippyModule & { readonly state?: { x: number } }).state;
+    if (resting) return resting.x + 80;
     if (v.shippy.at !== "corner") return STOP_X[v.shippy.at] + 120;
     if (rocket.mode === "count" || rocket.mode === "up") return STOP_X.launch - 200;
     const fresh = STOPS.find((s) => s !== "launch" && drop[s] > 0 && drop[s] < 1);
@@ -216,7 +219,8 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
 
   // ---------- views -> motion + events ----------
   function take(v: DeckView, dt: number) {
-    const p = prev;
+    // Until the first snapshot nothing is known, so the first real view isn't news (no old rocket, no rebuild).
+    const p = (prev as DeckView & { loading?: boolean } | null)?.loading ? null : prev;
     if (v.card && v.card.id !== p?.card?.id) cam.manual = 0;
     for (const s of v.stops) {
       const was = p?.stops.find((x) => x.id === s.id);
@@ -237,7 +241,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
 
     // crates: every item has a spot (its stop, minus its place in the queue); crates only ever slide forward
     const blocked = blockedZones(v);
-    const cargoBlocked = (distance: number) => blocked.some(zone => at(distance)[0] >= zone.left && at(distance)[0] <= zone.right);
+    const cargoBlocked = (distance: number) => blocked.some(zone => zone.kind === "jam" && at(distance)[0] >= zone.left && at(distance)[0] <= zone.right);
     const seen = new Set<string>();
     crates.forEach(c => { c.moving = false; });
     for (const s of v.stops) s.items.forEach((it, k) => {
@@ -415,19 +419,21 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     }
     cx.globalAlpha = 1;
   }
+  // A stuck stop holds its bay red; a stop whose crates wait on your call holds it yellow.
+  const holdOf = (v: DeckView, s: Stop) => s.state === "jammed" || s.id === v.jam ? "jam" as const : needsAttention(v, s.id) && s.items.length ? "wait" as const : null;
   function blockedZones(v: DeckView) {
-    return v.stops.filter((s) => s.built && (s.state === "jammed" || s.id === v.jam)).map((s) => {
+    return v.stops.filter((s) => s.built && holdOf(v, s)).map((s) => {
       const i = STOPS.indexOf(s.id), x = STOP_X[s.id];
       const left = i > 0 ? STOP_X[STOPS[i - 1]] : x;
       const right = i > 0 ? x : STOP_X[STOPS[1]];
-      return { left: Math.min(left, x - s.items.length * GAP - 60), right };
+      return { left: Math.min(left, x - s.items.length * GAP - 60), right, kind: holdOf(v, s)! };
     });
   }
   function belt(v: DeckView) {
     const segs = islandUp ? SEGS : SEGS.slice(0, 1);
     if (px) {
       const blocked = blockedZones(v);
-      const blockedAt = (x: number) => blocked.some((zone) => x >= zone.left && x <= zone.right);
+      const blockedAt = (x: number) => blocked.find((zone) => x >= zone.left && x <= zone.right)?.kind ?? false;
       for (const g of segs) pd.beltRun(cx, g.ax, g.ay, g.bx, g.by, islandUp ? g.len : Math.min(g.len, deckEnd() - 100 - g.ax), t, SPEED, blockedAt, x => beltPhases.get(beltConnectionAt(x)) ?? 0);
       return;
     }
@@ -464,10 +470,11 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     if (px && drawStation) drawStation(cx, id, v.jam === id ? "jammed" : s.state, t, STOP_X[id], BELT_Y + L.drop + fall, ART_PX, needsAttention(v, id));
     else put(`${id}-${s.state}`, STOP_X[id], BELT_Y + L.drop + fall + bob, L.h);
     cx.globalAlpha = 1;
-    if (s.state === "jammed") {
-      // the one marker on the deck: a steady beacon with a slow breath, not a strobe
+    const hold = s.state === "jammed" ? "jam" : s.waiting && needsAttention(v, id) ? "wait" : null;
+    if (hold) {
+      // the one marker on the deck: a steady beacon with a slow breath, not a strobe (red stuck, yellow your call)
       const x = STOP_X[id], top = BELT_Y + L.drop - L.h;
-      if (px) pd.beacon(cx, x, top, t);
+      if (px) pd.beacon(cx, x, top, t, hold);
       else { glow(x, top, 130, "255,60,40", 0.22 + 0.08 * Math.sin(t * 2.4)); put("beacon", x, top + 18, 54); }
       if (s.waiting && put("plate", x - 6, BELT_Y + 106, 52)) {
         cx.fillStyle = "#2b1a0a"; cx.textAlign = "center"; cx.textBaseline = "middle"; cx.font = "15px Silkscreen, monospace";
@@ -481,7 +488,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     if (!rv.built) return;
     const e = 1 - drop.review, fall = -420 * e * e;
     if (prev && v.shippy.at === "review" && v.shippy.pose === "lever") lever = 0.4;
-    const mode = lever > 0 ? "down" : rv.state === "jammed" ? "glow" : "up";
+    const mode = lever > 0 ? "down" : needsAttention(v, "review") ? "glow" : "up";
     if (px) pd.lever(cx, LEVER.x, LEVER.base + fall, mode);
     else put("lever-" + mode, LEVER.x, LEVER.base + fall, LEVER.h);
   }

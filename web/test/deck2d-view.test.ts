@@ -5,7 +5,7 @@ import { connectSim } from "../src/sim/engine";
 import type { Source, SourceConfig } from "../src/source";
 import { createLiveSource } from "../src/deck2d/data/source";
 import { createWatchSource, isWatchMode } from "../src/deck2d/data/watch";
-import { deckView, FIRST_LINE, itemStop } from "../src/deck2d/data/view";
+import { ALL_CLEAR, deckView, FIRST_LINE, itemStop } from "../src/deck2d/data/view";
 import { createBuild } from "../src/deck2d/build/build";
 import { createBus } from "../src/deck2d/contract";
 
@@ -120,7 +120,7 @@ describe("the 2D deck's view of a factory", () => {
     expect(v.card).toMatchObject({ id: "plan", stop: "planner", dots: { have: 1, need: 3 }, line: "Approve 2 more like this and then it's automatic.", hold: false, waitingCards: 2, attention: "approve" });
     expect(v.jam).toBeNull();
     expect(v.attention).toContain("planner");
-    expect(stop(v, "planner")).toMatchObject({ state: "idle", items: [{ id: "a", look: "plain" }] });
+    expect(stop(v, "planner")).toMatchObject({ state: "idle", items: [{ id: "a", look: "wait" }] }); // yellow: waiting on your call
     expect(v.stops.some(x => x.state === "jammed")).toBe(false);
     expect(v.shippy).toEqual({ pose: "inspect", at: "planner" });
   });
@@ -128,6 +128,18 @@ describe("the 2D deck's view of a factory", () => {
   test("a merge card sits at the gate and asks for a held press", () => {
     const v = deckView(base({ deck: [card("ship", "request_merge", { kind: "ship" })] }), { now: 1e12 });
     expect(v.card).toMatchObject({ stop: "gate", hold: true, dots: null, line: FIRST_LINE });
+  });
+
+  test("the Ship it card says which PR, what changed and that checks passed", () => {
+    const pr = item("gh-7", "on_pad", { prNumber: 27, title: "Login typo.", district: "web" });
+    const ok = [{ station: "CI inspector", ok: true }, { station: "AI review", ok: true }];
+    const ship = card("ship", "request_merge", { kind: "ship", itemId: "gh-7", evidence: ok });
+    for (const visualFlow of [false, true]) {
+      const v = deckView(base({ items: [pr], deck: [ship] }), { now: 1e12, visualFlow });
+      expect(v.card).toMatchObject({ title: "Ship PR #27?", line: "Fixes: Login typo, in web/. Checks passed. Hold to ship.", yes: "Ship it", hold: true });
+    }
+    const unproven = deckView(base({ items: [pr], deck: [{ ...ship, evidence: [ok[0], { station: "AI review", ok: false }] }] }), { now: 1e12 });
+    expect(unproven.card?.line).toBe("Fixes: Login typo, in web/. Not passed yet: AI review.");
   });
 
   test("clicking an attention station selects its own real decision", () => {
@@ -403,4 +415,39 @@ test("a new brain pick waits for cargo arrival before changing active item ident
   source.arrive(one.id, "checks");
   expect(source.view().work?.id).toBe(two.id);
   source.close();
+});
+
+test("all clear: nothing asks and nothing moves, so Shippy docks under one plain line and no card", () => {
+  const watched = item("gh-16", "launched", { prNumber: 27, orbit: { since: 0, until: 1e13, state: "watching" } });
+  for (const visualFlow of [true, false]) {
+    const v = deckView(base({ items: visualFlow ? [watched] : [] }), { visualFlow, now: 1e12 });
+    expect(v.allClear).toBe(true);
+    expect(v.caption).toBe(ALL_CLEAR);
+    expect(v.card).toBeNull();
+    expect(v.shippy).toEqual({ pose: "folded", at: "corner" });
+    expect(v.stops.every(x => x.state !== "working" && x.state !== "jammed")).toBe(true);
+  }
+});
+
+test("not all clear while anything needs you, is stuck, or is moving", () => {
+  const flow = { visualFlow: true, now: 1e12 };
+  expect(deckView(base({ deck: [card("a", "approve_runner_job")] }), flow).allClear).toBe(false);
+  expect(deckView(base({ items: [item("gh-16", "rejected")] }), flow).allClear).toBe(false);
+  expect(deckView(base({ items: [item("gh-16", "working")] }), flow).allClear).toBe(false);
+  const waiting = deckView(base({ items: [item("gh-16", "ore")] }), flow);
+  expect(waiting.allClear).toBe(false);
+  expect(waiting.caption).toBe("1 issue waiting in Repo. Choose one to start.");
+  // a fresh, empty factory isn't "clear", it hasn't started
+  expect(deckView(base({ machines: [], stations: [] }), { now: 1e12 }).allClear).toBe(false);
+});
+
+test("a launched crate is followed through its flight, then the deck rests", () => {
+  const launched = item("gh-16", "launched", { prNumber: 27, orbit: { since: 0, until: 1e13, state: "watching" } });
+  expect(deckView(base({ items: [launched] }), { visualFlow: true, activeItemId: "gh-16" }).work?.stop).toBe("launch");
+  expect(deckView(base({ items: [launched] }), { visualFlow: true, activeItemId: null }).work).toBeUndefined();
+});
+
+test("a focus on a crate with no card never hides the call that waits on the player", () => {
+  const s = base({ items: [item("gh-9", "working"), item("gh-16", "queued")], deck: [card("approve16", "approve_runner_job", { itemId: "gh-16" })], liveBottleneck: { stop: "builder", itemId: "gh-9", reason: "The coding engine is working on #9.", source: "spark" } });
+  expect(deckView(s, { visualFlow: true }).card?.id).toBe("approve16");
 });

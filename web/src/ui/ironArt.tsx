@@ -89,57 +89,6 @@ export function Medallion({ tier, icon, got, size = 40 }: { tier: Tier; icon: Ic
   );
 }
 
-// ---------- the pressure gauge (level + XP) ----------
-
-const GW = 44;
-const GH = 26;
-/** A brass-bezel pressure gauge. `into` (0..1) is how far the needle has swung toward the next level. */
-export function PressureGauge({ into, size = 132 }: { into: number; size?: number }) {
-  const v = Math.max(0, Math.min(1, into));
-  const cx = 21.5;
-  const cy = 22.5;
-  const px: Px[] = [];
-  const needle = Math.PI * (1 - v); // 180° (empty, left) → 0° (full, right)
-  const nx = Math.cos(needle);
-  const ny = -Math.sin(needle);
-  for (let y = 0; y < GH; y++)
-    for (let x = 0; x < GW; x++) {
-      const dx = x - cx;
-      const dy = y - cy;
-      const r = Math.hypot(dx, dy);
-      if (dy > 1.5) {
-        // the base plate under the dial
-        if (y >= GH - 3 && Math.abs(dx) < 19) px.push([x, y, y === GH - 1 ? "#000" : y === GH - 3 ? "#8a6a4c" : "#2a211b"]);
-        continue;
-      }
-      if (r > 21.4) continue;
-      const a = Math.atan2(-dy, dx); // 0 right, π left
-      let c: string | null = null;
-      if (r > 20.4) c = "#000";
-      else if (r > 18.4) c = a > Math.PI * 0.55 ? "#ffd27a" : a > Math.PI * 0.25 ? "#d0a24e" : "#7a5418"; // brass bezel, lit top left
-      else if (r > 17.4) c = "#0a0604";
-      else {
-        c = "#1e1814"; // the dial face
-        // the pressure band: lit amber up to the needle, dark iron after
-        if (r > 13.2 && r < 16.4) c = a >= needle - 0.02 ? (a > Math.PI * 0.85 ? "#ff7a2a" : "#ffb020") : "#3a2e26";
-        // ticks every 22.5°, red zone at the top end
-        const t = (a / Math.PI) * 8;
-        if (r >= 16.4 && Math.abs(t - Math.round(t)) < 0.09 * (18 / r) * 4) c = Math.round(t) <= 1 ? "#ff4a32" : "#b8a48a";
-        // needle: within half a pixel of the ray from the hub
-        const along = dx * nx + dy * ny;
-        const off = Math.abs(dx * ny - dy * nx);
-        if (along > 0 && along < 15 && off < 0.62) c = "#f4ead8";
-        if (r < 2.4) c = r < 1.2 ? "#ffd27a" : "#000";
-      }
-      if (c) px.push([x, y, c]);
-    }
-  return (
-    <svg className="iron-gauge" width={size} height={(size * GH) / GW} viewBox={`0 0 ${GW} ${GH}`} shapeRendering="crispEdges" aria-hidden="true">
-      {rects(px, "g")}
-    </svg>
-  );
-}
-
 // ---------- brass map pin (empire) ----------
 
 const PIN = ["..oooo..", ".ohhbbo.", "ohhbbbbo", "obbbbbdo", "obbbbddo", ".obddo..", "..oso...", "...s...."];

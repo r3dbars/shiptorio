@@ -1112,7 +1112,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     this.openMoves = this.openMoves!.filter(m => m.itemId !== itemId);
     await this.refreshDecisions();
     await this.scheduleTick();
-    this.log("info", "AI review queued again for the same PR commit. Earlier review evidence is retained; nothing is approved or merged.", itemId);
+    this.log("info", "Review queued again for the same PR commit. Earlier review evidence is retained; nothing is approved or merged.", itemId);
     return true;
   }
 
@@ -2482,21 +2482,21 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           if (stageOf(item, "ci")?.state === "passed" && result.headSha === item.inspection?.headSha) continue;
           const fresh = { ...item, state: "inspecting" as const, inspection: freshInspection(result.headSha) };
           await this.patch({ items: [setStage(fresh, "ci", "passed", result.summary)] });
-          this.log("success", `CI inspector passed PR #${item.prNumber}. On to the verify bay.`, item.id);
+          this.log("success", `Checks: CI passed PR #${item.prNumber}. Next, the proof check.`, item.id);
           await this.scheduleTick();
           continue;
         }
         const onPad = this.state!.machines.some((m) => m.type === "launch_pad");
         await this.patch({ items: [{ ...item, state: onPad ? "on_pad" : "passed", failure: undefined, updatedAt: Date.now() }] });
-        this.log("success", `Inspector passed PR #${item.prNumber}. Ready to launch.`, item.id);
+        this.log("success", `Checks passed PR #${item.prNumber}. Ready for Gate.`, item.id);
       } else if (item.branch?.startsWith("shiptorio/runner-")) {
         await this.patch({ items: [setStage(item, "ci", "rework", result.summary.split("\n")[0] || "CI failed")] });
-        this.log("warn", `CI inspector sent PR #${item.prNumber} back: ${result.summary.split("\n")[0]}`, item.id);
+        this.log("warn", `Checks: CI sent PR #${item.prNumber} back: ${result.summary.split("\n")[0]}`, item.id);
         await this.noteRework(item);
         await this.scheduleTick();
       } else {
         await this.patch({ items: [{ ...item, state: "rejected", failure: result.summary, updatedAt: Date.now() }] });
-        this.log("warn", `Inspector rejected PR #${item.prNumber}: ${result.summary}`, item.id);
+        this.log("warn", `Checks sent PR #${item.prNumber} back: ${result.summary}`, item.id);
         await this.scheduleTick();
       }
     }
@@ -2582,7 +2582,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.refreshDecisions();
     this.log("success", auto ? `Rocket launched on its own: PR #${prNumber} merged on the ${launched.lane} launch permit.` : `Rocket launched: PR #${prNumber} merged.`, launched.id);
     // A merge on GitHub doesn't wait for the gauntlet. Say which stations never got to look, so a missing review is explained.
-    const skipped = (launched.inspection?.stages ?? []).filter(st => st.gate !== "human" && st.state !== "passed").map(st => st.gate === "ai" ? "AI review" : st.gate === "ci" ? "CI" : "the verify bay");
+    const skipped = (launched.inspection?.stages ?? []).filter(st => st.gate !== "human" && st.state !== "passed").map(st => st.gate === "ai" ? "Review" : st.gate === "ci" ? "the CI check" : "the proof check");
     if (skipped.length) this.log("warn", `PR #${prNumber} was merged before ${skipped.join(" and ")} finished, so ${skipped.length === 1 ? "it" : "they"} never signed off.`, launched.id);
     if (this.state!.move?.itemId === launched.id) await this.publishGauntletMove(null);
   }
@@ -2656,10 +2656,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         if (!now) return;
         advanced = setStage(now, "verify", v.passed ? "passed" : "rework", v.reason);
         await this.patch({ items: [advanced] });
-        this.log(v.passed ? "success" : "warn", `Verify bay ${v.passed ? "passed" : "sent back"} PR #${pr}: ${v.reason}`, item.id);
+        this.log(v.passed ? "success" : "warn", `Checks: proof ${v.passed ? "passed" : "sent back"} PR #${pr}: ${v.reason}`, item.id);
         if (!v.passed) await this.noteRework(now);
       } else {
-        this.log("info", `AI review is reading PR #${pr} (${builder} built it, a different model reviews).`, item.id);
+        this.log("info", `Review is reading PR #${pr} (${builder} built it, a different model reviews).`, item.id);
         // Docs that name code get that code, read at the PR head, so the reviewer can check the examples work.
         const context = (await Promise.all(referencedFiles(files).map(async path => {
           const content = await fileContent(token, this.meta!.repo, path, headSha).catch(error => { throw new RepositoryReadUnavailable(error); });
@@ -2678,7 +2678,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         if (!afterComment) return;
         advanced = setStage(afterComment, "ai", verdict.verdict === "pass" ? "passed" : "rework", verdict.reason);
         await this.patch({ items: [advanced] });
-        this.log(verdict.verdict === "pass" ? "success" : "warn", `AI review ${verdict.verdict === "pass" ? "passed" : "sent back"} PR #${pr}: ${verdict.reason}`, item.id);
+        this.log(verdict.verdict === "pass" ? "success" : "warn", `Review ${verdict.verdict === "pass" ? "passed" : "sent back"} PR #${pr}: ${verdict.reason}`, item.id);
         if (verdict.verdict !== "pass") await this.noteRework(now);
       }
       await this.scheduleTick();
@@ -2696,7 +2696,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         await this.patch({ items: [failed] });
         await this.noteRework(failed);
       }
-      this.log("warn", `The ${gate === "ai" ? "AI review" : gate === "checks" ? "researched checks" : "verify bay"} couldn't run on PR #${pr} (${e instanceof Error ? e.message : "unknown error"}). The player can approve another attempt.`, item.id);
+      this.log("warn", `${gate === "ai" ? "Review" : gate === "checks" ? "The researched checks" : "The proof check"} couldn't run on PR #${pr} (${e instanceof Error ? e.message : "unknown error"}). The player can approve another attempt.`, item.id);
     } finally {
       this.gauntletRunning = false;
     }
@@ -2709,14 +2709,14 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   private async postReviewComment(token: string, pr: number, body: string, itemId?: string, tries = 0): Promise<boolean> {
     try {
       await gh(`/repos/${this.meta!.repo}/issues/${pr}/comments`, token, { method: "POST", body: JSON.stringify({ body }) });
-      if (tries) this.log("success", `AI review comment posted on PR #${pr} after ${tries} ${tries === 1 ? "retry" : "retries"}.`, itemId);
+      if (tries) this.log("success", `Review comment posted on PR #${pr} after ${tries} ${tries === 1 ? "retry" : "retries"}.`, itemId);
       return true;
     } catch (e) {
       const why = e instanceof Error ? e.message : "unknown error";
       const queue = (await this.ctx.storage.get<PendingComment[]>("pendingReviewComments")) ?? [];
       const giveUp = tries + 1 >= REVIEW_COMMENT_TRIES;
       await this.accountPut("pendingReviewComments", [...queue.filter(c => c.pr !== pr), ...(giveUp ? [] : [{ pr, body, itemId, tries: tries + 1 }])]);
-      this.log(giveUp ? "error" : "warn", giveUp ? `AI review comment on PR #${pr} still won't post (${why}). Gave up after ${REVIEW_COMMENT_TRIES} tries; check the app's pull request and issue write permission.` : `AI review comment on PR #${pr} didn't post (${why}). Retrying.`, itemId);
+      this.log(giveUp ? "error" : "warn", giveUp ? `Review comment on PR #${pr} still won't post (${why}). Gave up after ${REVIEW_COMMENT_TRIES} tries; check the app's pull request and issue write permission.` : `Review comment on PR #${pr} didn't post (${why}). Retrying.`, itemId);
       await this.note({ decision: "review", by: "spark", ms: 0, itemId, title: `Comment on PR #${pr}`, outcome: giveUp ? "Verdict made, but the comment never reached GitHub" : "Verdict made, comment didn't post yet; retrying", reason: why });
       return false;
     }
@@ -2867,7 +2867,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         throw new Error("Current checks changed while launch was being refreshed.");
       }
       const mergeSha = await mergePullRequest(token, this.meta.repo, item.prNumber, head, item.title);
-      const reason = by === "overrule" ? "You overruled the gauntlet and merged." : by === "autonomy" ? `Launch permit: ${item.lane}. Every station passed on this commit.` : "You merged at the merge gate.";
+      const reason = by === "overrule" ? "You overruled the gauntlet and merged." : by === "autonomy" ? `Launch permit: ${item.lane}. Every station passed on this commit.` : "You merged at Gate.";
       const stages = (item.inspection?.stages ?? []).map((st) => (st.gate === "human" ? { ...st, state: "passed" as const, reason } : st));
       // A merge webhook may already have launched this item. Add approval to the
       // current state, never the old pad snapshot, before publishing our launch.
@@ -3747,7 +3747,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         // Without Spark, a keyword guess shouldn't override a stack frame or route a mine already placed.
         const district = (!t?.reason && item.district !== "/" ? item.district : t?.district) ?? item.district;
         await this.patch({ items: [{ ...item, kind: t?.kind ?? item.kind, district, state: "queued", updatedAt: now }] });
-        this.broadcast({ type: "log", level: "info", text: `Splitter sorted "${item.title}" as ${t?.kind ?? item.kind} → ${district}`, at: Date.now(), itemId: item.id, ...(t?.reason ? { actor: "spark" as const, tool: "triage", reason: t.reason } : {}) });
+        this.broadcast({ type: "log", level: "info", text: `Planner sorted "${item.title}" as ${t?.kind ?? item.kind} → ${district}`, at: Date.now(), itemId: item.id, ...(t?.reason ? { actor: "spark" as const, tool: "triage", reason: t.reason } : {}) });
       } else if (item.state === "rejected") {
         if (item.attempts >= MAX_ATTEMPTS) continue; // stays rejected until a human steps in
         if (item.branch?.startsWith("shiptorio/runner-")) continue; // local builds rework only with player approval
@@ -3859,7 +3859,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const task = { title: item.title, body: item.body ?? "", district: item.district, failure: item.failure };
       const ref = item.branch ?? s.baseBranch;
 
-      this.log("info", `Assembler ${machineId} is reading the code`, itemId);
+      this.log("info", `Builder ${machineId} is reading the code`, itemId);
       const wanted = await pickFiles(this.sparkEnv(), task, inDistrict.length ? inDistrict : paths);
       const files = (
         await Promise.all(wanted.map(async (path) => ({ path, content: await fileContent(token, this.meta!.repo, path, ref) })))
@@ -3871,7 +3871,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       buildStarted = true;
       await this.ctx.storage.delete(`planningRetry:${itemId}`);
       await this.patch({ items: [{ ...get(), attempts: get().attempts + 1, updatedAt: Date.now() }] });
-      this.log("info", `Assembler ${machineId} is writing a fix`, itemId);
+      this.log("info", `Builder ${machineId} is writing a fix`, itemId);
       const fix = await writeFix(this.sparkEnv(), task, files);
       const bad = fix.changes.find((c) => !SAFE_PATH.test(c.path));
       if (bad) throw new Error(`refused to write ${bad.path}`);
@@ -3887,7 +3887,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           head: branch,
           base: s.baseBranch,
           title: fix.title,
-          body: `${fix.summary}\n\n${issueNumber ? `Closes #${issueNumber}\n\n` : ""}_Built by a Muse Spark assembler in Shiptorio._`,
+          body: `${fix.summary}\n\n${issueNumber ? `Closes #${issueNumber}\n\n` : ""}_Built by Muse Spark at Builder in Shiptorio._`,
         });
         prNumber = pr.number;
         prUrl = pr.html_url;
@@ -3896,7 +3896,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         items: [{ ...get(), state: "inspecting", branch, prNumber, prUrl, updatedAt: Date.now() }],
         machines: machine() ? [{ ...machine()!, state: "idle" }] : [],
       });
-      this.log("success", `PR #${prNumber} is on the belt to the inspector`, itemId);
+      this.log("success", `PR #${prNumber} is on the belt to Checks`, itemId);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (!buildStarted) {
@@ -3907,7 +3907,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         items: [{ ...get(), state: buildStarted ? "rejected" : "queued", failure: msg, updatedAt: Date.now() }],
         machines: machine() ? [{ ...machine()!, state: "idle" }] : [],
       });
-      this.log("error", `Assembler ${machineId} failed: ${msg}`, itemId);
+      this.log("error", `Builder ${machineId} failed: ${msg}`, itemId);
     } finally {
       this.running.delete(itemId);
       await this.scheduleTick();

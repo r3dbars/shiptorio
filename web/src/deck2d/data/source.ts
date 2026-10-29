@@ -24,6 +24,10 @@ export interface LiveDeckSource extends DeckSource {
   focusItem(id: string): void;
 }
 
+// The live outbox gives up on a decision after 60s (decision-outbox.ts). A card the server still holds after this long
+// was never applied, so it comes back instead of staying hidden until a reload.
+export const UNCONFIRMED_MS = 75_000;
+
 export function fold(s: FactoryState | null, msg: ServerToWeb): FactoryState | null {
   if (msg.type === "snapshot") return msg.state;
   if (!s) return s;
@@ -45,6 +49,8 @@ export function createLiveSource(cfg: SourceConfig = readConfig(), opts: { onPow
   let completed: { stop: StopId; at: number } | null = null;
   let selectedStop: StopId | null = null;
   const hidden = new Set<string>(); // answered here, gone before the server agrees
+  const hiddenAt = new Map<string, number>();
+  const hide = (id: string) => { hidden.add(id); hiddenAt.set(id, now()); };
   const journey = createJourney();
   let activeItemId: string | null = null;
   const fns = new Set<() => void>();
@@ -61,7 +67,7 @@ export function createLiveSource(cfg: SourceConfig = readConfig(), opts: { onPow
     state = next;
     // forget answers the server has dropped, so the set never grows
     const open = new Set([...(state?.deck ?? []), ...(state?.move ? [state.move] : [])].map((m) => m.id));
-    for (const id of hidden) if (!open.has(id)) hidden.delete(id);
+    for (const id of hidden) if (!open.has(id)) { hidden.delete(id); hiddenAt.delete(id); }
     changed();
   }, (s) => { status = s; changed(); });
   const find = (id: string): Move | undefined => state?.deck?.find((m) => m.id === id) ?? (state?.move?.id === id ? state.move : undefined);
@@ -69,6 +75,7 @@ export function createLiveSource(cfg: SourceConfig = readConfig(), opts: { onPow
 
   return {
     view: () => {
+      for (const [id, at] of hiddenAt) if (now() - at >= UNCONFIRMED_MS) { hidden.delete(id); hiddenAt.delete(id); }
       if (activeItemId && journey.finished() === activeItemId) activeItemId = null;
       const picked = state?.liveBottleneck?.itemId;
       // A new focus may take over only after the current cargo reaches its machine.
@@ -90,7 +97,7 @@ export function createLiveSource(cfg: SourceConfig = readConfig(), opts: { onPow
       if (isSetupCard(move) && opts.onPower) return opts.onPower(); // a local agent is set up in Power, never via a connector
       const option = continueOption(move);
       openUnlockLink(move, option);
-      hidden.add(id);
+      hide(id);
       pulled = { stop: cardStop(state, move), at: now() };
       send({ type: "choose_move", moveId: id, optionId: option.id });
       changed();
@@ -98,7 +105,7 @@ export function createLiveSource(cfg: SourceConfig = readConfig(), opts: { onPow
     later(id) {
       if (replay) return;
       if (!find(id) || hidden.has(id)) return;
-      hidden.add(id);
+      hide(id);
       send({ type: "defer_move", moveId: id });
       changed();
     },

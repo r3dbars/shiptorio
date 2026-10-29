@@ -38,6 +38,7 @@ import { currentUser, MAX_PROGRESS_BYTES, readPrefs, readProgress, reposFor, wri
 
 import { isAllowed } from "./session";
 import { isJudgeAsset, isPublicDocs, previewAccess, publicRoute, secureTransport, selfhostSetupAccess } from "./access";
+import { deckFrontDoor } from "./redirect";
 import { joinWaitlist } from "./waitlist";
 import { judgePage, landingPage, publicFile } from "./landing";
 
@@ -596,8 +597,8 @@ app.on(["GET", "POST"], "/runner/pair", async c => {
   if (!CODE_RE.test(code)) return c.html(runnerPage("Connect your machine", "<p>Start the installer on your computer to get a fresh pairing code. <a href='/docs/runner'>Runner instructions</a>.</p>"), 400, headers);
   if (c.req.method === "POST") {
     if (c.req.header("origin") !== new URL(c.req.url).origin) return c.text("invalid origin", 403);
-    const raw = await c.req.text();
-    if (raw.length > 1024) return c.text("too large", 413);
+    const raw = await boundedBody(c.req.raw, 1024);
+    if (raw === null) return c.text("too large", 413);
     const repo = String(new URLSearchParams(raw).get("repo") ?? "").trim().toLowerCase();
     const installation = await deviceRepoAccess(c.env, user, repo);
     if (!installation) {
@@ -1068,13 +1069,9 @@ app.all("/connect/*", (c) => c.notFound());
 
 // Everything else is the web app.
 app.all("*", async (c) => {
-  // The staging product starts inside the pixel deck, including sign-in and repo selection.
-  // Explicit factory/onboarding URLs keep their own route; the preview gate has already run.
-  const url = new URL(c.req.url);
-  if (["GET", "HEAD"].includes(c.req.method) && ["shiptorio.dev", "www.shiptorio.dev"].includes(url.hostname)
-    && url.pathname === "/" && !url.search) {
-    return c.redirect("/deck?source=live", 302);
-  }
+  // The staging product starts inside the pixel deck (redirect.ts deckFrontDoor); the preview gate has already run.
+  const deck = ["GET", "HEAD"].includes(c.req.method) ? deckFrontDoor(new URL(c.req.url)) : null;
+  if (deck) return c.redirect(deck, 302);
   const response = await c.env.ASSETS.fetch(c.req.raw);
   // Only trusted static art contains inline executable scripts. Never add nonces
   // to user-provided text or relax the application/API policy to allow them.

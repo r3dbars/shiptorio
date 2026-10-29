@@ -6,6 +6,22 @@ order: 3
 ---
 # Glossary
 
+## The line
+
+Every station has one name, and the game uses it everywhere: on the deck, on cards, in captions and on GitHub.
+
+| Station | What happens there |
+| --- | --- |
+| **Repo** | Your GitHub issues wait here |
+| **Planner** | Spark reads an issue and writes a plan |
+| **Builder** | Your agent (Codex or Claude Code) builds the change and opens a PR |
+| **Checks** | The CI check, the proof check and any researched checks run on the PR |
+| **Review** | Spark reviews the diff, from a different model family than the builder |
+| **Gate** | You decide: hold Ship it to merge |
+| **Launch** | The merge lands and the rocket goes up |
+
+## Other words
+
 | Game word | Real thing |
 | --- | --- |
 | **Factory** | One GitHub repo |
@@ -13,14 +29,12 @@ order: 3
 | **Ore** | A piece of work: a GitHub issue, a Sentry error, a PostHog drop |
 | **Mine** | A source of ore. See [Mines](/docs/sources) |
 | **Biter** | A Sentry error swarming a district |
-| **Spark**, **the planner** | Meta Muse Spark, the model that sorts, plans, reviews and picks your next card. See [How Spark decides](/docs/spark) |
-| **Assembler** | Your agent (Claude Code or Codex) building a change |
+| **Spark** | Meta Muse Spark, the model that sorts, plans, reviews and picks your next card. See [How Spark decides](/docs/spark) |
 | **Power plant** | A signed-in agent subscription on your machine. See [Connect your machine](/docs/runner) |
 | **Gauntlet** | The checks every PR runs. See [The gauntlet](/docs/gauntlet) |
-| **Station** | One check on the line: CI inspector, verify bay, AI review, merge gate, orbit watch, or a researched check |
+| **Station** | One stop on the line: Repo, Planner, Builder, Checks, Review, Gate or Launch |
 | **Rework belt** | Where failed PRs go back, with a scar tag |
 | **Scar tag** | Which station failed a PR, why, the evidence, and the strike number |
-| **Launch pad** | PRs that passed and wait for a merge |
 | **Rocket** | A merged PR |
 | **Orbit watch** | The 24 hours after a merge. See [Orbit watch](/docs/orbit-watch) |
 | **Science pack** | One shipped PR, spent on research |

@@ -20,8 +20,10 @@ export interface LiveCardView extends CardView {
 export interface LiveDeckView extends AttentionView {
   card: LiveCardView | null;
   intake?: (Item & { badge: string })[];
-  work?: { id: string; title: string; stop: StopId; badge: string; status: string };
+  work?: { id: string; title: string; stop: StopId; badge: string; status: string; auto?: boolean }; // auto: Shippy started it, no card
   followItem?: string;
+  allClear?: boolean; // nothing needs the player and nothing is moving: Shippy docks, one caption, no card
+  loading?: boolean; // no snapshot yet: nothing is known, so the first real view is a baseline, not a change
 }
 
 export interface DeckOpts {
@@ -37,6 +39,7 @@ export interface DeckOpts {
 const LEVER_MS = 1200;
 const HAPPY_MS = 4000;
 export const FIRST_LINE = "Approve it and it moves.";
+export const ALL_CLEAR = "All clear. Nothing needs you right now.";
 
 const STAGE_STOP: Record<Stage, StopId> = { intake: "repo", triage: "planner", build: "builder", resources: "builder", power: "builder", inspect: "checks", pad: "gate", release: "launch", impact: "launch" };
 const STATION_STOP: Partial<Record<StationKind, StopId>> = { ci: "checks", verify: "checks", custom: "checks", review: "review", merge: "gate", orbit: "launch", measure: "launch" };
@@ -86,6 +89,18 @@ export function cardStop(s: FactoryState, move: Move): StopId {
 }
 
 export const isLaunchCard = (m: Move) => continueOption(m).actions.some((a) => a.tool === "request_merge");
+/** The scariest tap gets the plainest card: which PR, what it changes, and whether every check passed. Only claims what
+ * the move's own evidence says; without a PR or evidence it keeps the server's words. */
+const SHIP_VERB: Partial<Record<FactoryItem["kind"], string>> = { bug: "Fixes", feature: "Adds" };
+export function shipCard(s: FactoryState, move: Move): { title: string; line: string } | null {
+  const item = move.itemId ? s.items.find((x) => x.id === move.itemId) : undefined;
+  if (!item?.prNumber) return null;
+  const where = item.district && item.district !== "/" ? `, in ${item.district.replace(/\/+$/, "")}/` : "";
+  const proof = move.evidence ?? [];
+  const failed = proof.filter((e) => !e.ok).map((e) => e.station);
+  const checks = !proof.length ? "" : failed.length ? ` Not passed yet: ${failed.join(", ")}.` : " Checks passed. Hold to ship.";
+  return { title: `Ship PR #${item.prNumber}?`, line: `${SHIP_VERB[item.kind] ?? "Changes"}: ${item.title.trim().replace(/[.!?]+$/, "")}${where}.${checks}` };
+}
 export const isSetupCard = (m: Move) => continueOption(m).actions.some((a) => a.tool === "connect_source" && (a.args.kind === "claude" || a.args.kind === "codex"));
 /** Only show the agent on recommendations with matching Meta evidence, never from copy alone. */
 export function metaGuided(s: FactoryState, move: Move): boolean {
@@ -159,7 +174,7 @@ export function workStop(s: FactoryState, item: FactoryItem): StopId | null {
 
 export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckView {
   const now = opts.now ?? Date.now();
-  if (!s) return { stops: STOPS.map((id) => ({ id, built: false, state: "idle", automated: false, items: [] })), jam: null, card: null, shippy: { pose: "folded", at: "corner" }, shipped: 0, caption: null };
+  if (!s) return { stops: STOPS.map((id) => ({ id, built: false, state: "idle", automated: false, items: [] })), jam: null, card: null, shippy: { pose: "folded", at: "corner" }, shipped: 0, caption: null, loading: true };
 
   const deck = (s.deck?.length ? s.deck : s.move ? [s.move] : []).filter((m) => !opts.hidden?.has(m.id));
   const flow = opts.visualFlow === true;
@@ -167,10 +182,13 @@ export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckV
   const focus = flow && s.liveBottleneck && (!s.liveBottleneck.itemId || s.items.some(it => it.id === s.liveBottleneck!.itemId && it.state !== "launched")) ? s.liveBottleneck : null;
   const candidates = s.items.filter(it => workStop(s, it));
   const ongoing = candidates.filter(it => it.state !== 'launched');
-  const selectable = ongoing.length ? ongoing : candidates;
-  const active = flow ? candidates.find(it => it.id === opts.activeItemId) ?? candidates.find(it => it.id === focus?.itemId) ?? selectable.sort((a, b) => b.updatedAt - a.updatedAt)[0] : undefined;
+  // A launched crate stays in view only while it's the one being followed (its flight); after that the line is done with it.
+  const active = flow ? candidates.find(it => it.id === opts.activeItemId) ?? candidates.find(it => it.id === focus?.itemId) ?? ongoing.sort((a, b) => b.updatedAt - a.updatedAt)[0] : undefined;
   const activeStop = active && workStop(s, active);
-  const relevant = focus?.itemId ? deck.filter(m => m.itemId === focus.itemId || isSetupCard(m)) : active ? deck.filter(m => m.itemId === active.id || isSetupCard(m)) : deck;
+  // Prefer the card for the focused (or followed) crate, but never hide a call that waits on the player.
+  const forItem = (id?: string) => id ? deck.filter(m => m.itemId === id || isSetupCard(m)) : [];
+  const scoped = forItem(focus?.itemId ?? active?.id);
+  const relevant = scoped.length ? scoped : deck;
   const move = (opts.selectedStop && pickCard(relevant.filter(m => cardStop(s, m) === opts.selectedStop))) || pickCard(relevant);
   // green means you handed it over (beat 4), so CI and AI review, which never asked you, stay plain working / idle
   const handed = handedStops(s);
@@ -191,8 +209,9 @@ export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckV
     const jammed = jam === id;
     const automated = handed.has(id);
     const held = active && s.pipeline?.some(p => p.itemIds.includes(active.id) && p.state === "waiting_player");
+    const waits = !jammed && (attention.has(id) || !!(here.length && held)); // yellow crates: waiting on your call
     const state: StopState = jammed ? "jammed" : attention.has(id) || here.length && held ? "idle" : automated ? "auto" : here.length || busy.has(id) && (!flow || id === activeStop) ? "working" : "idle";
-    const stop: Stop = { id, built: built(s, id) || here.length > 0 || jammed, state, automated, items: here.map((it) => flow ? crate(it, jammed) : (({ badge, ...plain }) => plain)(crate(it, jammed))) };
+    const stop: Stop = { id, built: built(s, id) || here.length > 0 || jammed, state, automated, items: here.map((it) => flow ? crate(it, waits) : (({ badge, ...plain }) => plain)(crate(it, waits))) };
     if (jammed) stop.waiting = `${STOP_LABEL[id].toUpperCase()} WAITING`;
     return stop;
   });
@@ -200,13 +219,14 @@ export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckV
   let card: LiveCardView | null = null;
   if (move) {
     const learn = move.learn ?? null;
+    const ship = isLaunchCard(move) ? shipCard(s, move) : null;
     card = {
       id: move.id,
-      title: move.title,
+      title: ship?.title ?? move.title,
       stop: flow && continueOption(move).actions.some(a => a.tool === "plan_runner_job") ? "repo" : cardStop(s, move),
       dots: learn ? { have: learn.have, need: learn.need } : null,
-      line: !flow ? (learn ? LEARN.line(Math.max(1, learn.need - learn.have)) : move.why || FIRST_LINE) : `Shippy: ${move.why || FIRST_LINE}${move.plan?.find(p => p.startsWith('Files:')) ? ` ${move.plan.find(p => p.startsWith('Files:'))}` : ''}${learn ? ` ${LEARN.line(Math.max(1, learn.need - learn.have))}` : ''}`,
-      yes: !flow ? undefined : isLaunchCard(move) ? "Ship it" : continueOption(move).actions.some(a => a.tool === "plan_runner_job") ? "Start issue" : continueOption(move).actions.some(a => a.tool === "approve_runner_job") ? "Start build" : "Continue",
+      line: ship ? ship.line : !flow ? (learn ? LEARN.line(Math.max(1, learn.need - learn.have)) : move.why || FIRST_LINE) : `Shippy: ${move.why || FIRST_LINE}${move.plan?.find(p => p.startsWith('Files:')) ? ` ${move.plan.find(p => p.startsWith('Files:'))}` : ''}${learn ? ` ${LEARN.line(Math.max(1, learn.need - learn.have))}` : ''}`,
+      yes: isLaunchCard(move) ? "Ship it" : !flow ? undefined : continueOption(move).actions.some(a => a.tool === "plan_runner_job") ? "Start issue" : continueOption(move).actions.some(a => a.tool === "approve_runner_job") ? "Start build" : "Continue",
       no: flow ? "Later" : undefined,
       hold: isLaunchCard(move),
       setup: isSetupCard(move),
@@ -218,11 +238,20 @@ export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckV
 
   const shipped = s.metrics?.rockets ?? s.items.filter((it) => it.state === "launched").length;
   const status = activeStop ? s.pipeline?.find(p => p.id === activeStop && p.itemIds.includes(active!.id))?.state ?? 'working' : '';
-  const work = active && activeStop ? { id: active.id, title: active.title, stop: activeStop, badge: crate(active, false).badge, status } : undefined;
-  const caption = focus?.reason ?? (!flow ? (card ? null : handed.size ? "Shippy has this. Fix the next jam." : "Software is a factory.") : work ? `${work.badge} · ${work.title} · ${STOP_LABEL[work.stop]}${status === 'waiting_player' ? ' needs your approval' : ' is working'}` : `${intake.length} issues waiting in Repo. Choose one to start.`);
+  const auto = !!active && (s.learned ?? []).some(l => l.items?.includes(active.id));
+  const work = active && activeStop ? { id: active.id, title: active.title, stop: activeStop, badge: crate(active, false).badge, status, ...(auto ? { auto } : {}) } : undefined;
   // Keep the existing one-shot level-up celebration even while its first automatic crate starts work.
   const leveledUp = (s.learned ?? []).some(l => now >= l.since && now - l.since < HAPPY_MS);
-  return { stops, jam, focus: focus?.stop, attention: [...attention], card, intake, work, shippy: work && !card && !leveledUp ? { at: work.stop, pose: work.stop === 'builder' ? 'weld' : 'inspect' } : shippyOf(s, stops, jam, card, opts, now), shipped, caption };
+  // All clear: a built line with no card, no jam, nothing asking, nothing moving. Calm rule: say so once and rest.
+  const allClear = !card && !jam && !focus && !work && !intake.length && attention.size === 0
+    && (flow || stops.filter(x => x.built).length > 1) && !stops.some(x => x.state === "working" || x.items.length);
+  // The climax wins the one caption line: the next one of a learned kind started with no card.
+  const caption = flow && work?.auto && !card ? LEARN.ranItself(work.badge) : focus?.reason ?? (!flow
+    ? (card ? null : allClear && !leveledUp ? ALL_CLEAR : handed.size ? "Shippy has this. Fix the next jam." : "Software is a factory.")
+    : work ? `${work.badge} · ${work.title} · ${STOP_LABEL[work.stop]}${status === 'waiting_player' ? ' needs your approval' : ' is working'}`
+    : intake.length ? `${intake.length} ${intake.length === 1 ? "issue" : "issues"} waiting in Repo. Choose one to start.`
+    : allClear ? ALL_CLEAR : null);
+  return { stops, jam, focus: focus?.stop, attention: [...attention], card, intake, work, shippy: work && !card && !leveledUp ? { at: work.stop, pose: work.stop === 'builder' ? 'weld' : 'inspect' } : shippyOf(s, stops, jam, card, opts, now), shipped, caption, allClear };
 }
 
 function shippyOf(s: FactoryState, stops: Stop[], jam: StopId | null, card: CardView | null, opts: DeckOpts, now: number): ShippyView {

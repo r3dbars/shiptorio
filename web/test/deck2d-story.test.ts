@@ -26,8 +26,11 @@ test("the story plays all four beats and ends on the connect card", () => {
   expect(t).toBeLessThan(15);
   const v2 = s.view();
   const review = v2.stops.find((x) => x.id === "review")!;
-  expect(v2.jam).toBe("review");
-  expect(review.state).toBe("jammed");
+  // waiting on your call is yellow (attention), never a red jam
+  expect(v2.jam).toBeNull();
+  expect(v2.focus).toBe("review");
+  expect(v2.attention).toEqual(["review"]);
+  expect(review.state).toBe("idle");
   expect(review.waiting).toBe("REVIEW WAITING");
   expect(review.items.length).toBeGreaterThanOrEqual(3);
   expect(review.items.slice(1).every((i) => i.look === "wait")).toBe(true);
@@ -67,9 +70,24 @@ test("the story plays all four beats and ends on the connect card", () => {
   expect(auto.automated).toBe(true);
   expect(auto.state).toBe("auto");
 
+  // the climax: once the pile clears, one crate rolls the whole line with no card and the camera rides along
+  t += run(s, () => !!(s.view() as { followItem?: string }).followItem, 20);
+  const hero = (s.view() as { followItem?: string }).followItem!;
+  expect(s.view().caption).toBe("Shippy's got these now. No card.");
+  const before = s.view().shipped;
+  for (let k = 0; k < 200 && (s.view() as { followItem?: string }).followItem; k++) {
+    s.step!(0.1); t += 0.1;
+    expect(s.view().card).toBeNull();
+    expect(s.view().stops.find((x) => x.id === "review")!.state).toBe("auto");
+  }
+  expect(s.view().stops.some((x) => x.items.some((c) => c.id === hero))).toBe(false);
+  expect(s.view().shipped).toBe(before + 1);
+
   // the next jam, then the last card
   t += run(s, () => s.view().card?.id === STORY_CARD.connect, 20);
-  expect(s.view().jam).toBe("checks");
+  expect(s.view().focus).toBe("checks");
+  expect(s.view().attention).toEqual(["checks"]);
+  expect(s.view().stops.some((x) => x.state === "jammed")).toBe(false);
   expect(s.view().card).toMatchObject({ yes: "See my repo", no: "Replay", setup: true });
   s.approve(STORY_CARD.connect);
   expect(connected).toBe(1);
@@ -98,5 +116,30 @@ test("item ids stay stable as crates move stop to stop", () => {
       if (prev != null) expect(k).toBeGreaterThanOrEqual(prev); // only moves forward
       seen.set(it.id, k);
     }));
+  }
+});
+
+test("the front door's short story ends right after one swipe clears the jam", () => {
+  const s = createStory({ seed: 1, swipes: 1 });
+  run(s, () => !!s.view().card);
+  s.approve(s.view().card!.id);
+  const t = run(s, () => s.phase() === "end", 60);
+  expect(t).toBeLessThan(15);
+  expect(s.view().card?.id).toBe(STORY_CARD.connect);
+  expect(s.view().stops.find((x) => x.id === "review")!.items).toEqual([]); // the jam fully cleared
+  expect(s.view().shipped).toBeGreaterThan(2); // and a crate it held has shipped
+});
+
+test("the three story calls each name a different fix", () => {
+  for (const seed of [1, 2, 3, 7, 42]) {
+    const story = createStory({ seed });
+    const titles: string[] = [];
+    for (let t = 0; t < 600 && titles.length < 3; t += 0.1) {
+      story.step?.(0.1);
+      const card = story.view().card;
+      if (card?.id.startsWith("story-call-") && !titles.includes(card.title)) { titles.push(card.title); story.approve(card.id); }
+    }
+    expect(titles).toHaveLength(3);
+    expect(new Set(titles).size).toBe(3);
   }
 });

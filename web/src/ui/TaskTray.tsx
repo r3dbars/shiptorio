@@ -13,7 +13,7 @@ import { LearnDots } from "./LearnDots";
 import { because } from "./because";
 import { openUnlockLink } from "./unlockLink";
 import { sound } from "../sound/engine";
-import { isSetup, taskOrder, type SlowSpot } from "./slowSpot";
+import { isSetup, taskOrder } from "./slowSpot";
 import { moving } from "./moving";
 import "./TaskTray.css";
 
@@ -387,19 +387,6 @@ export function TaskTray({ deck, send, onFocus, onPower, onCaughtUp, items, nudg
         )}
       </section>
     </div>
-  );
-}
-
-/** The one line that always says what's slow. Tap it to open or close the task tray. */
-export function SlowSpotLine({ spot, open, onToggle, ideas }: { spot: SlowSpot; open: boolean; onToggle: () => void; ideas: number }) {
-  const has = spot.who === "you" || ideas > 0;
-  return (
-    <button type="button" className={`slowspot ${spot.who}`} aria-expanded={has ? open : undefined} aria-label={TASKS.lineLabel(spot.text)} onClick={onToggle} disabled={!has && spot.who === "clear"}>
-      <span className="k">{TASKS.slow}</span>
-      <b>{spot.text}</b>
-      {spot.who !== "you" && ideas > 0 && <span className="ideas">{TASKS.ideas(ideas)}</span>}
-      {has && <span className="go">{open ? TASKS.hide : TASKS.open}</span>}
-    </button>
   );
 }
 

@@ -17,7 +17,15 @@ test('staging opens the live deck setup by default and preserves explicit routes
     expect(response.status).toBe(302);
     expect(response.headers.get('location')).toBe('/deck?source=live');
   }
-  for(const url of ['https://shiptorio.com/','https://shiptorio.dev/?source=live&repo=owner/repo','https://shiptorio.dev/?onboard=repo','https://shiptorio.dev/deck']) {
+  // Old entry points (the onboarding tour, the live map, sign-in returns to "/") land on the deck too.
+  for(const [path,target] of [['/?onboard=repo','/deck?source=live'],['/?source=live&repo=owner/repo','/deck?source=live&repo=owner%2Frepo'],['/deck?source=live&px=0','/deck?source=live']]) {
+    const response=await app.fetch(new Request(`https://shiptorio.dev${path}`,{headers:{cookie}}),e as never);
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe(target);
+  }
+  const install=await app.fetch(new Request('https://shiptorio.dev/github/installed',{headers:{cookie}}),e as never);
+  expect(install.headers.get('location')).toBe('/deck?source=live');
+  for(const url of ['https://shiptorio.com/','https://shiptorio.com/?onboard=repo','https://shiptorio.com/?source=live&repo=owner/repo','https://shiptorio.dev/deck','https://shiptorio.dev/?source=sim&scenario=first-run']) {
     const response=await app.fetch(new Request(url,{headers:{cookie}}),e as never);
     expect(response.status).toBe(200);
     expect(await response.text()).toBe('factory app');
@@ -174,4 +182,86 @@ test('configured owner has uncapped resources and a 200-run floor with no allowl
   await e.DB.prepare("DELETE FROM signup_allowlist WHERE login='r3dbars'").run();
   expect((await runQuotaStatus({ ...e, ADMIN_LOGINS: 'someone-else' }, 'r3dbars')).limit).toBe(20);
   expect((await runQuotaStatus({ ...e, ADMIN_LOGINS: undefined }, 'r3dbars')).limit).toBe(20);
+});
+
+test('Raise limit opens only the selected account and a native save returns to persisted quotas',async()=>{
+  const e=env(), admin=await signedInCookie(e,'r3dbars');
+  await e.DB.prepare("INSERT INTO signup_allowlist(login,approved_by,updated_at,factories,repos,runs_daily,spark_calls_daily,spark_tokens_daily) VALUES('quota-player','r3dbars',0,4,5,20,30,4000),('other-account','r3dbars',0,1,1,1,1,1)").run();
+  const get=()=>app.fetch(req('/admin/signup?login=quota-player',admin),e as never);
+  const page=await get();
+  expect(page.status).toBe(200);
+  expect(page.headers.get('referrer-policy')).toBe('same-origin');
+  expect(page.headers.get('cache-control')).toBe('no-store');
+  const html=await page.text();
+  expect(html).toContain('Account limits');
+  expect(html).toContain('quota-player');
+  expect(html).not.toContain('other-account');
+  expect(html).not.toContain('Abuse flags');
+  expect(html).not.toContain('Create one-use invite');
+  expect(html).toContain('name="runs" type="number" min="0" max="99999" value="20"');
+  expect(html).toContain('action="/admin/signup?login=quota-player"');
+  for(let i=0;i<3;i++) expect(await runQuota(e as never,'quota-player')).toBe(true);
+  const saved=await app.fetch(req('/admin/signup?login=quota-player',admin,{action:'limits',login:'quota-player',factories:'6',repos:'7',runs:'25',spark_calls:'50',spark_tokens:'8000'}),e as never);
+  expect(saved.status).toBe(303);
+  expect(saved.headers.get('location')).toBe('/admin/signup?login=quota-player');
+  const refreshed=await (await get()).text();
+  expect(refreshed).toContain('name="runs" type="number" min="0" max="99999" value="25"');
+  expect(refreshed).toContain('name="factories" type="number" min="0" max="99999" value="6"');
+  expect(await runQuotaStatus(e as never,'quota-player')).toMatchObject({used:3,limit:25});
+  expect(await e.DB.prepare("SELECT spark_calls_daily,spark_tokens_daily FROM signup_allowlist WHERE login='quota-player'").first()).toEqual({spark_calls_daily:50,spark_tokens_daily:8000});
+});
+
+test('focused quota editor keeps admin, Origin and input validation boundaries',async()=>{
+  const e=env(), admin=await signedInCookie(e,'r3dbars'), player=await signedInCookie(e,'player');
+  expect((await app.fetch(req('/admin/signup?login=player',player),e as never)).status).toBe(403);
+  expect((await app.fetch(req('/admin/signup?login=player'),e as never)).status).toBe(403);
+  const form={action:'limits',login:'player',runs:'25'};
+  expect((await app.fetch(req('/admin/signup?login=player',admin,form,'https://evil.example'),e as never)).status).toBe(403);
+  expect((await app.fetch(req('/admin/signup?login=player',admin,{...form,spark_calls:'bad',spark_tokens:'10'}),e as never)).status).toBe(400);
+  expect(await e.DB.prepare("SELECT 1 FROM signup_allowlist WHERE login='player'").first()).toBeNull();
+  const invalid=await app.fetch(req('/admin/signup?login=%22%3E%3Cscript%3E',admin),e as never);
+  expect(invalid.status).toBe(302);expect(invalid.headers.get('location')).toBe('/admin');
+});
+
+test('quota save updates existing effective overrides and blank Spark values restore defaults',async()=>{
+  const {accountBudgetLimits,budgetLimits}=await import('../src/budget');
+  const e=env(), admin=await signedInCookie(e,'r3dbars');
+  await signedInCookie(e,'quota-player');
+  const user=await e.DB.prepare("SELECT id FROM users WHERE login='quota-player'").first<{id:number}>();
+  await e.DB.prepare("INSERT INTO signup_allowlist(login,approved_by,updated_at,runs_daily,spark_calls_daily,spark_tokens_daily) VALUES('quota-player','r3dbars',0,100,200,3000)").run();
+  await e.DB.prepare('INSERT INTO admin_user_limits(user_id,runs,spark_calls,spark_tokens) VALUES(?,5,7,900)').bind(user!.id).run();
+  const page=await (await app.fetch(req('/admin/signup?login=quota-player',admin),e as never)).text();
+  expect(page).toContain('name="runs" type="number" min="0" max="99999" value="5"');
+  expect(page).toContain('name="spark_calls" type="number" min="0" max="999999999" value="7"');
+  expect(page).toContain('name="spark_tokens" type="number" min="0" max="999999999" value="900"');
+  for(let i=0;i<3;i++) expect(await runQuota(e as never,'quota-player')).toBe(true);
+  const save=(calls:string,tokens:string)=>app.fetch(req('/admin/signup?login=quota-player',admin,{action:'limits',login:'quota-player',runs:'25',spark_calls:calls,spark_tokens:tokens}),e as never);
+  expect((await save('40','5000')).status).toBe(303);
+  expect(await e.DB.prepare('SELECT runs,spark_calls,spark_tokens FROM admin_user_limits WHERE user_id=?').bind(user!.id).first()).toEqual({runs:25,spark_calls:40,spark_tokens:5000});
+  expect(await runQuotaStatus(e as never,'quota-player')).toMatchObject({used:3,limit:25});
+  expect(await accountBudgetLimits(e as never,`user:${user!.id}`)).toMatchObject({calls:40,tokens:5000});
+  expect((await save('','')).status).toBe(303);
+  expect(await e.DB.prepare('SELECT spark_calls,spark_tokens FROM admin_user_limits WHERE user_id=?').bind(user!.id).first()).toEqual({spark_calls:null,spark_tokens:null});
+  expect(await e.DB.prepare("SELECT spark_calls_daily,spark_tokens_daily FROM signup_allowlist WHERE login='quota-player'").first()).toEqual({spark_calls_daily:null,spark_tokens_daily:null});
+  const defaults=budgetLimits(e as never);
+  expect(await accountBudgetLimits(e as never,`user:${user!.id}`)).toMatchObject({calls:defaults.calls,tokens:defaults.tokens});
+});
+
+test('quota editor preserves the owner floor unless an explicit existing run override applies',async()=>{
+  const e=env(), admin=await signedInCookie(e,'r3dbars');
+  const user=await e.DB.prepare("SELECT id FROM users WHERE login='r3dbars'").first<{id:number}>();
+  await e.DB.prepare("INSERT INTO signup_allowlist(login,approved_by,updated_at,runs_daily) VALUES('r3dbars','r3dbars',0,20)").run();
+  await e.DB.prepare('INSERT INTO admin_user_limits(user_id,runs,spark_calls,spark_tokens) VALUES(?,NULL,NULL,NULL)').bind(user!.id).run();
+  const get=async()=> (await app.fetch(req('/admin/signup?login=r3dbars',admin),e as never)).text();
+  const save=(runs:string)=>app.fetch(req('/admin/signup?login=r3dbars',admin,{action:'limits',login:'r3dbars',runs,spark_calls:'',spark_tokens:''}),e as never);
+  expect(await get()).toContain('name="runs" type="number" min="0" max="99999" value="200"');
+  expect((await save('25')).status).toBe(303);
+  expect(await e.DB.prepare('SELECT runs FROM admin_user_limits WHERE user_id=?').bind(user!.id).first()).toEqual({runs:null});
+  expect(await runQuotaStatus(e as never,'r3dbars')).toMatchObject({limit:200});
+  expect((await save('250')).status).toBe(303);
+  expect(await runQuotaStatus(e as never,'r3dbars')).toMatchObject({limit:250});
+  await e.DB.prepare('UPDATE admin_user_limits SET runs=40 WHERE user_id=?').bind(user!.id).run();
+  expect(await get()).toContain('name="runs" type="number" min="0" max="99999" value="40"');
+  expect((await save('50')).status).toBe(303);
+  expect(await runQuotaStatus(e as never,'r3dbars')).toMatchObject({limit:50});
 });

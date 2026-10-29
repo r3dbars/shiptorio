@@ -248,7 +248,7 @@ export type MoveKind = z.infer<typeof MoveKind>;
 
 // One gauntlet stamp on a card: a station that passed, failed or never ran.
 export const MoveEvidence = z.object({
-  station: z.string(), // "CI", "Verify bay", or a Station id
+  station: z.string(), // "CI check", "Proof check", or a Station id
   ok: z.boolean(),
   note: z.string().optional(), // "repro'd, then gone"
 });
@@ -279,7 +279,10 @@ export const Move = z.object({
 export type Move = z.infer<typeof Move>;
 
 // docs/LEARN.md: a kind of card the factory now answers on its own, after the player said yes enough times in a row.
-export const Learned = z.object({ key: z.string(), label: z.string(), since: z.number() });
+export const Learned = z.object({
+  key: z.string(), label: z.string(), since: z.number(),
+  items: z.array(z.string()).max(50).optional(), // items the factory started on its own under this key, so the deck can say so
+});
 export type Learned = z.infer<typeof Learned>;
 
 export const DistrictTrust = z.object({
@@ -387,7 +390,7 @@ export function scorecard(brain: Brain | undefined): Scorecard {
 // A station action is a Next Move option scoped to one station (docs/LOOP.md "Click any station").
 export const StationAction = z.object({
   id: z.string(),
-  label: z.string(), // "Build a second verify bay"
+  label: z.string(), // "Build a second proof check"
   recommended: z.boolean().default(false), // Spark's pick
 });
 export type StationAction = z.infer<typeof StationAction>;
@@ -395,7 +398,7 @@ export type StationAction = z.infer<typeof StationAction>;
 export const Station = z.object({
   id: z.string(),
   kind: StationKind,
-  name: z.string(), // "Verify bay"
+  name: z.string(), // "Proof check"
   machineId: z.string().optional(), // the machine on the map that is this station
   districts: z.array(z.string()).optional(), // districts whose launch permit needs it; absent = all
   wip: z.number().int(), // items in line

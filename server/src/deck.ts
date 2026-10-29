@@ -8,7 +8,7 @@ import { attentionOf, type FactoryState, type Item, type Move, type MoveKind } f
 // A customer waiting on a reply gets the same nudge: answering people is a real result.
 export const GROW_BONUS: Partial<Record<MoveKind, number>> = { verify: 10, input: 10, automate: 10, reply: 10 };
 const FALLBACK_VALUE = { bug: 5, feature: 3, tests: 2, cleanup: 1 };
-const REQUIRED = [{ gate: "ci", name: "CI inspector" }, { gate: "verify", name: "Verify bay" }, { gate: "ai", name: "AI review" }] as const;
+const REQUIRED = [{ gate: "ci", name: "CI check" }, { gate: "verify", name: "Proof check" }, { gate: "ai", name: "Review" }] as const;
 export interface DeckRule { kind: MoveKind; scope: string }
 export interface DeckOptions {
   now?: number;

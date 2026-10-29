@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { botAdmissionPath, prepareBotPersona, deckFixtureIdentity, FIXTURE_INSTALL, isFixtureInstallPage } from "./setup.mjs";
+import { botAdmissionPath, prepareBotPersona, deckFixtureIdentity, FIXTURE_INSTALL, isFixtureInstallPage, isFixtureDeckPage } from "./setup.mjs";
 
 function harness(options: { gated?: boolean; wrongPassword?: boolean; loginStatus?: number; resetStatuses?: number[] } = {}) {
   const events: string[] = [];
@@ -11,13 +11,13 @@ function harness(options: { gated?: boolean; wrongPassword?: boolean; loginStatu
   };
   const navigate = (url: string) => {
     current = new URL(url);
-    if (!gated && current.pathname === "/test/login") { mounts++; events.push("game-mounted"); current = new URL("https://shiptorio.dev/?source=live&onboard=repo"); }
+    if (!gated && current.pathname === "/test/login") { mounts++; events.push("game-mounted"); current = new URL("https://shiptorio.dev/deck?source=live&onboard=repo"); }
   };
   const page = {
     goto: async (url: string) => { events.push(`page:${new URL(url).pathname}`); navigate(url); return { status: () => gated ? 401 : 200 }; },
     getByLabel: () => passwordField,
     getByRole: () => ({ click: async () => { events.push("password-submitted"); if (!options.wrongPassword) { gated = false; navigate(current.href); } } }),
-    waitForURL: async (_predicate: unknown) => {},
+    waitForURL: async (predicate: (url: URL) => boolean) => { await Promise.resolve(); if (!options.wrongPassword) expect(predicate(current)).toBe(true); },
     waitForTimeout: async (ms: number) => { expect(ms).toBe(2000); events.push("reset-wait"); },
   };
   const context = { request: {
@@ -86,4 +86,15 @@ test("install navigation recognizes the local provider and immediate staging red
     expect(isFixtureInstallPage(new URL(address), "https://shiptorio.dev")).toBe(true);
   for (const address of ["https://github.com/apps/real/installations/new", "https://evil.test/test/install", "https://shiptorio.dev/deck", "https://shiptorio.dev/test/install?confirm=1"])
     expect(isFixtureInstallPage(new URL(address), "https://shiptorio.dev")).toBe(false);
+});
+
+
+test("preview login accepts the current deck and its automatic repo continuation only", () => {
+  for (const url of ["https://shiptorio.dev/deck?source=live", "https://shiptorio.dev/deck?source=live&repo=test-fixture%2Ftest-newbie&onboard=codex"])
+    expect(isFixtureDeckPage(new URL(url), "https://shiptorio.dev")).toBe(true);
+  for (const url of ["https://evil.test/deck?source=live", "https://shiptorio.dev/?source=live", "https://shiptorio.dev/deck?source=sim"])
+    expect(isFixtureDeckPage(new URL(url), "https://shiptorio.dev")).toBe(false);
+  expect(isFixtureDeckPage(new URL("http://localhost:8809/?source=live&onboard=repo"), "http://localhost:8809", true)).toBe(true);
+  expect(isFixtureDeckPage(new URL("https://shiptorio.dev/?source=live"), "https://shiptorio.dev", true)).toBe(false);
+  expect(isFixtureDeckPage(new URL("http://localhost:8809/?source=sim"), "http://localhost:8809", true)).toBe(false);
 });

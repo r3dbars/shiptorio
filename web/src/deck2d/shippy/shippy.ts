@@ -51,7 +51,7 @@ const FOLD_S = 0.32 + STEP * UNFOLD.length + 0.35; // fall in, fold, clunk + wob
 const DROP_S = 0.42;
 const LAND_S = 0.3;
 const LEAVE_S = 0.4;
-const CYAN = "95,220,255", AMBER = "255,176,32", GREEN = "70,224,122", RED = "255,74,50";
+const CYAN = "95,220,255", AMBER = "253,199,39", GREEN = "70,224,122", RED = "255,74,50"; // amber = waiting on you only
 
 const easeIn = (t: number) => t * t;
 const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
@@ -230,7 +230,7 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
       case "weld": {
         // torch flickers between the two frames, a shower of sparks at the tip
         const f = still ? 0 : Math.floor(t / 0.09) % 2;
-        return { ...base, frame: f ? "shippy-weld-1" : "shippy-weld-0", px: f ? "weld1" : "weld0", flip: o.pixel ? base.flip : false, x: base.x + (f ? u * 0.01 : 0), glow: 0.7 + 0.3 * f, color: AMBER };
+        return { ...base, frame: f ? "shippy-weld-1" : "shippy-weld-0", px: f ? "weld1" : "weld0", flip: o.pixel ? base.flip : false, x: base.x + (f ? u * 0.01 : 0), glow: 0.7 + 0.3 * f, color: CYAN };
       }
       case "carry": {
         return { ...base, frame: "shippy-carry-0", px: "carry0" };

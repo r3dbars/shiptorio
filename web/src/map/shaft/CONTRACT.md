@@ -54,7 +54,7 @@ github, inbox, sentry, posthog; power: `steam` (−6, z −2.2), `dyn-1` (−0.4
 
 ## Files and ownership
 ```
-web/src/map/shaft/core.js, layout.js, stage.ts, finish.ts, bake.ts, harness.ts, *.d.ts, CONTRACT.md   integrator only
+web/src/map/shaft/core.js, layout.js, stage.ts, finish.ts, bake.ts, *.d.ts, CONTRACT.md   integrator only
 web/src/map/shaft/modules/world.js      STRUCTURE agent  (IRON.world + IRON.look)
 web/src/map/shaft/modules/mine.js       MINE agent       (IRON.underside, carriers 'cart' + 'cage')
 web/src/map/shaft/modules/belts.js      CONVEYORS agent  (IRON.belts, carrier 'bucket')
@@ -253,18 +253,8 @@ The game runs on phones. After the static merge, with everything built: the BUIL
 
 ## Testing
 A dev server runs at http://127.0.0.1:5173 (if it's down: `cd /home/user/shiptorio/web && (nohup bunx vite --port 5173
---host 127.0.0.1 --strictPort > /tmp/vite.log 2>&1 &)`). The harness page `shaft.html` runs the whole shaft on the auto
-driver with whatever modules exist (missing ones are blockouts). Screenshot tool:
-```
-node /home/user/shiptorio/web/scripts/shaft-shot.mjs --base=http://127.0.0.1:5173 --out=/tmp/shaft-<you>/shot \
-   --views=build,station:asm-1 [--warm=20] [--q=only=world,belts&asm=1] [--mobile] [--verify] [--hud=0] [--w=1440 --h=900]
-```
-Views: `stack` (ALL), `mine`, `build`, `checks`, `launch`, `line` (build + mine), `follow`, `station:<id>`. Query:
-`only=`/`skip=` modules, `asm=1|2|3`, `checks=ci,custom:secrets,custom:types,verify,review`, `sources=github,sentry`, `measure=1`.
-It prints draw calls, triangles, module failures, console errors and the line's stats (shipped / rework counts prove items
-flow end to end). Use your OWN output folder. Look at your screenshots next to the mockup refs and iterate many times:
-build → shoot → compare → refine. Shoot at least desktop 1440×900 and phone (`--mobile`), and with `--verify`.
-Other agents are building at the same time; their modules may be missing or half done — use `only=` to isolate yourself.
+--host 127.0.0.1 --strictPort > /tmp/vite.log 2>&1 &)`). The dev harness page (`shaft.html`) and its screenshot tool
+were removed on 2026-10-29 (the 2D deck is the product); see the shaft in the game with `?world=shaft`.
 
 ## Done means
 Your area matches the mockup's fidelity and style in side-by-side shots; every state reads; items never teleport; `--verify`

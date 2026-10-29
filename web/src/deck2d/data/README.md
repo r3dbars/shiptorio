@@ -17,7 +17,7 @@ only produces them.
 | planner | `queued` | a learned `plan_runner_job`, or autonomy `build`+ |
 | builder | `working`, `rejected` (rework rides back) | a learned `approve_runner_job` / sim `start_job`, or autonomy `build`+ |
 | checks | `inspecting`, CI / verify / researched checks pending | never (it never asks you) |
-| review | `inspecting`, AI review pending | never |
+| review | `inspecting`, Review pending | never |
 | gate | `inspecting` with the human gate pending, `passed`, `on_pad` | any launch permit, or `lights_out` |
 | launch | `launched` while orbit watch is on | same as gate |
 

@@ -1,6 +1,7 @@
 import { PALETTE as C, type StopState } from "../contract";
 
-export const machineSignal = (state: StopState, attention = false) => state === "jammed" ? C.jam : attention ? C.brass : state === "working" || state === "auto" ? C.ok : C.steel;
+// One meaning per color: yellow = waiting on you, red = actually stuck, green = automatic, cyan = running.
+export const machineSignal = (state: StopState, attention = false) => state === "jammed" ? C.jam : attention ? C.brass : state === "auto" ? C.ok : state === "working" ? C.energy : C.steel;
 
 /** A steady shared status light, mounted in the same front-foot position on every machine. */
 export function statusLamp(ctx: CanvasRenderingContext2D, state: StopState, x: number, feet: number, scale: number, attention = false) {
