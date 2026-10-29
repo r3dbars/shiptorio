@@ -38,8 +38,8 @@ const seed = Number(params.get("seed")) || 0;
   if (rehearsal) source = rehearsal;
   else if (machines) { source = machines; document.body.classList.add("machine-rehearsal"); }
   else if (want === "attention-demo") source = createFirstVisitDemo({ ready: () => {
-    const actor = shippy as typeof shippy & { state?: { world: string } };
-    return !actor.state || actor.state.world === "stand";
+    const actor = shippy as typeof shippy & { state?: { world: string; dockPhase?: string } };
+    return !actor.state || (actor.state.world === "stand" && (!actor.state.dockPhase || actor.state.dockPhase === "awake"));
   } });
   else if (isWatchMode(location.search)) {
     source = createWatchSource();

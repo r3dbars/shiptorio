@@ -36,6 +36,8 @@ After Start, Shippy activates the Planner before heading to the Builder. The act
 to arrive, and the camera keeps the startup in view. When no work remains, he returns to the recessed
 charging dock in the far-left corner. Its small cyan battery cells fill while he is parked; Charge on
 the Shippy rehearsal page holds this quiet home view for review.
+At the dock he retracts into the existing compact-box sprite. A new job plays the original leg-extension
+frames before walking; an interrupted wake-up reverses back into the box without moving off the pad.
 
 `/stations.html?only=code` still provides the original sprite comparison sheet. The in-deck preview is
 for focused motion review with the actual floor, shadows, spacing, conveyor and orb.

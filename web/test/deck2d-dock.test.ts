@@ -29,3 +29,30 @@ test("the dock sits clear of the line and rests quietly once charged", () => {
     expect(mark.box.every(n => Number.isInteger(n / 5))).toBe(true);
   }
 });
+
+test("Shippy extends his legs before leaving and retracts them only after returning", () => {
+  const s = createShippy({ get: () => null, ready: async () => {} }, { pixel: true, reducedMotion: true });
+  expect(s.state.dockPhase).toBe("compact");
+  s.update(0.1, { at: "builder", pose: "weld" });
+  expect(s.state.dockPhase).toBe("waking");
+  expect(s.state.x).toBe(DOCK_HOME_X);
+  for (let i = 0; i < 5; i++) s.update(0.1, { at: "builder", pose: "weld" });
+  expect(s.state.x).toBe(DOCK_HOME_X);
+  for (let i = 0; i < 80; i++) s.update(0.1, { at: "builder", pose: "weld" });
+  expect(s.state.dockPhase).toBe("awake");
+  let foldedAfterArrival = false;
+  for (let i = 0; i < 100; i++) {
+    s.update(0.1, { at: "corner", pose: "idle" });
+    if (s.state.dockPhase === "folding") { foldedAfterArrival = true; expect(s.state.x).toBe(DOCK_HOME_X); }
+  }
+  expect(foldedAfterArrival).toBe(true);
+  expect(s.state).toMatchObject({ x: DOCK_HOME_X, dockPhase: "compact", docked: true });
+});
+
+test("cancelling a wake-up folds back down without sliding away from the dock", () => {
+  const s = createShippy({ get: () => null, ready: async () => {} }, { pixel: true });
+  s.update(0.1, { at: "builder", pose: "weld" });
+  s.update(0.1, { at: "builder", pose: "weld" });
+  for (let i = 0; i < 10; i++) s.update(0.1, { at: "corner", pose: "idle" });
+  expect(s.state).toMatchObject({ x: DOCK_HOME_X, dockPhase: "compact", docked: true });
+});
