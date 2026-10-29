@@ -25,7 +25,8 @@ try {
   if (local) fixture = await localFactory(persona, url.origin);
   browser = await chromium.launch({ headless: true, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : { channel: "chromium" }), ...(process.platform === "linux" ? { args: ["--use-angle=swiftshader", "--enable-webgl", "--enable-unsafe-swiftshader"] } : {}) });
   for (const width of [390, 1280]) {
-    const context = await browser.newContext({ viewport: { width, height: width === 390 ? 844 : 800 } });
+    // The pixel deck animates every frame; under CI software GL that starves page.screenshot.
+    const context = await browser.newContext({ viewport: { width, height: width === 390 ? 844 : 800 }, reducedMotion: "reduce" });
     if (fixture) await context.route("https://github.com/**", route => fixture.stub.browser(route));
     const page = await context.newPage();
     lastPage = page;
