@@ -70,6 +70,9 @@ export function createLiveSource(cfg: SourceConfig = readConfig(), opts: { onPow
   return {
     view: () => {
       if (activeItemId && journey.finished() === activeItemId) activeItemId = null;
+      const picked = state?.liveBottleneck?.itemId;
+      // A new focus may take over only after the current cargo reaches its machine.
+      if (picked && !journey.transferring()) activeItemId = picked;
       const base = deckView(state, { now: now(), pulled, completed, hidden, selectedStop, activeItemId, visualFlow: cfg.kind === "live" });
       activeItemId = base.work?.id ?? null;
       return cfg.kind === "live" ? journey.view(base) : base;

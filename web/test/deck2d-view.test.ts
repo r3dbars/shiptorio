@@ -308,3 +308,60 @@ test("Shippy guide requires matching Meta evidence, and ignores unrelated or fal
   expect(deckView({ ...planned, brain: { ...planned.brain!, thoughts: [{ ...thought, itemId: "other" }] } }).card?.guide).toBeUndefined();
   expect(deckView({ ...planned, brain: { ...planned.brain!, thoughts: [thought, { ...thought, id: "new", at: 2, by: "fallback" }] } }).card?.guide).toBeUndefined();
 });
+
+test("live brain focus parks on the picked approval without painting a healthy station red", () => {
+  const s = base({ items: [item("gh-16", "queued")], deck: [card("approve16", "approve_runner_job", { itemId: "gh-16" })], liveBottleneck: { stop: "builder", itemId: "gh-16", reason: "Waiting on your call: start the build for #16.", source: "spark" } });
+  const v = deckView(s, { visualFlow: true });
+  expect(v.focus).toBe("builder");
+  expect(v.caption).toBe(s.liveBottleneck!.reason);
+  expect(v.card?.id).toBe("approve16");
+  expect(v.attention).toContain("builder");
+  expect(v.jam).toBeNull();
+  expect(v.stops.find(x => x.id === "builder")?.state).not.toBe("jammed");
+});
+
+test("a real fault stays red while the brain supplies its single explanation", () => {
+  const v = deckView(base({ items: [item("gh-16", "rejected", { failure: "Check failed" })], liveBottleneck: { stop: "builder", itemId: "gh-16", reason: "A fix is needed before #16 can continue.", source: "fallback" } }), { visualFlow: true });
+  expect(v.focus).toBe("builder");
+  expect(v.jam).toBe("builder");
+  expect(v.caption).toBe("A fix is needed before #16 can continue.");
+});
+
+test("live pick patches and null clears survive the actual source fold; removed work cannot hold focus", async () => {
+  const { fold } = await import("../src/deck2d/data/source");
+  const pick = { stop: "builder" as const, itemId: "gh-16", reason: "Waiting on your call: start the build for #16.", source: "spark" as const };
+  const s = base({ items: [item("gh-16", "queued")] });
+  const picked = fold(s, { type: "patch", patch: { liveBottleneck: pick } })!;
+  expect(deckView(picked, { visualFlow: true }).focus).toBe("builder");
+  expect(deckView({ ...picked, items: [] }, { visualFlow: true }).focus).toBeUndefined();
+  const cleared = fold(picked, { type: "patch", patch: { liveBottleneck: null } })!;
+  expect(cleared.liveBottleneck).toBeNull();
+  expect(deckView(cleared, { visualFlow: true }).focus).toBeUndefined();
+});
+
+test("the live source retains a settled brain focus and caption through the conveyor journey", () => {
+  let receive!: (message: ServerToWeb) => void;
+  const source = createLiveSource({ kind: "live", repo: "r3dbars/Testing" }, { connect: (_config, callback) => { receive = callback; return { send() {}, close() {} }; } });
+  receive({ type: "snapshot", state: base({ items: [item("gh-16", "inspecting", { prNumber: 27 })], liveBottleneck: { stop: "checks", itemId: "gh-16", reason: "Waiting for checks on PR #27.", source: "spark" } }) });
+  const view = source.view();
+  expect(view.focus).toBe("checks");
+  expect(view.caption).toBe("Waiting for checks on PR #27.");
+  source.close();
+});
+
+test("a new brain pick waits for cargo arrival before changing active item identity", () => {
+  let receive!: (message: ServerToWeb) => void;
+  const source = createLiveSource({ kind: "live", repo: "r3dbars/Testing" }, { connect: (_config, callback) => { receive = callback; return { send() {}, close() {} }; } });
+  const one = item("gh-16", "working");
+  const two = item("gh-17", "working", { updatedAt: -1 });
+  const pick = (id: string) => ({ stop: "builder" as const, itemId: id, reason: "The coding engine is working.", source: "spark" as const });
+  receive({ type: "snapshot", state: base({ items: [one, two], liveBottleneck: pick(one.id) }) });
+  expect(source.view().work?.id).toBe(one.id);
+  receive({ type: "patch", patch: { items: [{ ...one, state: "inspecting", prNumber: 27 }] } });
+  source.step!(1); source.view();
+  receive({ type: "patch", patch: { liveBottleneck: pick(two.id) } });
+  expect(source.view().work?.id).toBe(one.id);
+  source.arrive(one.id, "checks");
+  expect(source.view().work?.id).toBe(two.id);
+  source.close();
+});
