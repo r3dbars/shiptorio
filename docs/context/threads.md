@@ -259,6 +259,8 @@ Rebased the guest-only save routes onto dev without replacing administrator view
 
 ## Codex: self-host runner origin and live pairing (2026-10-26)
 
+- 2026-10-29, Codex #59: staging installs and launchers keep their own directory, artifact downloads overlap before checksum validation, and missing tools fail clearly; clean-home and platform-shaped fixture tests cover repeats and quoted paths.
+
 - `codex/selfhost-runner-origin` fixes the Power panel install command to use the current origin and pass it to the shell side of the pipeline. The installer downloads that origin's bundle, saves its endpoint for later invocations, and rejects cross-server reuse of existing pairings. The CLI accepts self-hosted HTTPS origins and loopback-only HTTP.
 - Preserves the concurrently merged single-use join-code command: join arguments stay on the shell side of the same-origin installer pipeline; focused join-code and legacy device-pairing tests both pass.
 - Narrow `web/` lane exception: `RunnerConnection.tsx` and its command helper, needed to correct the self-host setup defect; no layout/art changes or shared protocol changes.
