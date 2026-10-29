@@ -182,8 +182,9 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
 
   // drag to pan, pinch or wheel to zoom
   const ptrs = new Map<number, [number, number]>(); let pinch = 0, moved = 0;
-  cv.addEventListener("pointerdown", (e) => { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, [e.clientX, e.clientY]); moved = 0; });
+  cv.addEventListener("pointerdown", (e) => { if (zoomLevel === "city") return; cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, [e.clientX, e.clientY]); moved = 0; });
   cv.addEventListener("pointermove", (e) => {
+    if (zoomLevel === "city") return;
     const p = ptrs.get(e.pointerId); if (!p) return;
     ptrs.set(e.pointerId, [e.clientX, e.clientY]);
     moved += Math.abs(e.clientX - p[0]) + Math.abs(e.clientY - p[1]);
@@ -235,6 +236,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   cv.addEventListener("gestureend", (e) => { e.preventDefault(); gestureScale = 1; }, { passive: false });
   cv.addEventListener("dblclick", () => { cam.manual = 0; cam.pin = null; });
   function zoomAt(screenX: number, screenY: number, f: number) {
+    if (zoomLevel === "city") { cam.manual = 0; return; }
     const world = px ? px.toWorld(screenX, screenY) : [cam.x + (screenX - W / 2) / cam.s, cam.y + (screenY - H / 2) / cam.s];
     cam.s = Math.max(fitAll().s * 0.8, Math.min(1.6, cam.s * f));
     if (px) {
@@ -480,7 +482,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   function crate(c: Crate) {
     const [x, y] = at(c.d);
     if (px) {
-      if (c.fade > 0.5) { pd.crate(cx, x, y, c.look as Item["look"]); if (c.badge) pd.crateBadge(cx, x, y, c.badge); }
+      if (c.fade > 0.5) { pd.crate(cx, x, y, c.look as Item["look"]); if (c.badge && zoomLevel !== "city") pd.crateBadge(cx, x, y, c.badge); }
       return;
     }
     if (c.look === "wait") glow(x, y - 18, 46, "255,70,50", 0.3);
@@ -547,7 +549,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     take(v, dt); rocketStep(zoomLevel === "city" ? 0 : dt);
     const shot = v.shot ?? previewShot;
     if (shot !== lastShot) { lastShot = shot; cam.manual = 0; } // a new story shot takes the camera back from a drag
-    if (performance.now() >= cam.manual) {
+    if (zoomLevel === "city" || performance.now() >= cam.manual) {
       const tg = target(v), rate = shot ? SHOT_RATE : undefined;
       if (first || zoomLevel === "city" || reduced.matches) Object.assign(cam, tg);
       else {
@@ -567,6 +569,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     const qx = (Math.random() - 0.5) * quake, qy = (Math.random() - 0.5) * quake;
     if (px) {
       cx = renderPx!.begin({ x: cam.x + qx, y: cam.y + qy, s: cam.s });
+      cv.dataset.pixelZoom = String(renderPx!.k);
       const bw = cx.canvas.width, bh = cx.canvas.height, world = cx.getTransform();
       cx.setTransform(1, 0, 0, 1, 0, 0);
       cx.fillStyle = "#291b17"; cx.fillRect(0, 0, bw, bh);

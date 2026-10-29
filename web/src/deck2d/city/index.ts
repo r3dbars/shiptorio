@@ -57,7 +57,7 @@ export const createLayer: CreateLayer = () => {
   const scale = () => 1 / (ART_PX * 2 * Math.min(2, devicePixelRatio || 1));
   function positions(): [number, number][] {
     return portrait()
-      ? [[-60,-258],[66,-144],[-64,139],[65,257],[-65,-335]]
+      ? [[-60,-258],[66,-144],[-64,139],[65,257],[-65,-365]]
       : [[-440,-108],[-380,118],[-45,145],[435,102],[470,-215]];
   }
   function screenWorld(x: number, y: number): [number, number] {

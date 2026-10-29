@@ -86,7 +86,7 @@ async function startClip(context, page, dir) {
       const concat = list.map((f, i) => `file '${f.file}'\nduration ${Math.max(0.001, ((list[i + 1]?.at ?? end) - f.at)).toFixed(3)}`).join('\n') + `\nfile '${list.at(-1).file}'\n`;
       await writeFile(join(frames, 'list.txt'), concat);
       const mp4 = spawnSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', join(frames, 'list.txt'),
-        '-vf', 'fps=30,scale=trunc(iw/2)*2:trunc(ih/2)*2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', join(dir, 'clip.mp4')]);
+        '-vf', 'fps=30,scale=trunc(iw/2)*2:trunc(ih/2)*2', '-t', String(CLIP_S), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', join(dir, 'clip.mp4')]);
       if (mp4.error || mp4.status !== 0) return console.warn(`${name}: no ffmpeg on PATH (or it failed), frames kept in ${frames}`);
       await rm(frames, { recursive: true, force: true });
     },
@@ -120,6 +120,7 @@ async function run(browser, base, view) {
   await sleep(3000);
   await page.screenshot({ path: join(dir, '01-settled.png') });
   await page.screenshot({ path: join(dir, '02-full.png'), fullPage: true });
+  let cityChecks;
   if (CITY) {
     await page.screenshot({ path: join(dir, 'station.png') });
     if (CLIP_S) clip = await startClip(context, page, dir);
@@ -132,6 +133,15 @@ async function run(browser, base, view) {
     await page.waitForFunction(() => document.body.dataset.deckZoom === 'city');
     await sleep(1000);
     await page.screenshot({ path: join(dir, 'city.png') });
+    cityChecks = await page.evaluate(() => {
+      const canvas = document.querySelector('#world'), ctx = canvas.getContext('2d');
+      const pixels = ctx.getImageData(0,0,canvas.width,canvas.height).data, colors=new Set();
+      for(let i=0;i<pixels.length;i+=4) colors.add(`${pixels[i]},${pixels[i+1]},${pixels[i+2]}`);
+      const labels=[...document.querySelectorAll('.city-labels span')].map(el=>{
+        const r=el.getBoundingClientRect(); return { text:el.textContent, fits:r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<innerHeight-40 };
+      });
+      return { title:document.title, labels, paletteColors:colors.size, integerZoom:Number.isInteger(Number(canvas.dataset.pixelZoom)), caption:document.querySelector('#toast').textContent, reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches };
+    });
     if (CLIP_S) await sleep(Math.max(0, CLIP_S * 1000 - 3000));
     if (clip) { await clip.stop(view.name); clip = null; }
     await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
@@ -141,9 +151,15 @@ async function run(browser, base, view) {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   if (CLIP_S && !CITY) await sleep(CLIP_S * 1000 - 3300);
   const problems = [...errors];
+  if (cityChecks) {
+    if (cityChecks.title !== 'Shiptorio') problems.push('wrong page title');
+    if (cityChecks.labels.length !== 6 || cityChecks.labels.some(l=>!l.fits)) problems.push('city labels clipped or missing');
+    if (!cityChecks.integerZoom || cityChecks.paletteColors > 48) problems.push('city violates integer zoom or 48-color palette');
+    if (cityChecks.caption !== 'The factory must grow.') problems.push('missing city caption');
+  }
   if (colors >= 0 && colors < 4) problems.push(`canvas looks blank (${colors} colors)`);
   if (overflow > 1) problems.push(`page is ${overflow}px wider than the screen`);
-  await writeFile(join(dir, 'report.json'), JSON.stringify({ url: `${base}${PATH}`, readyMs, canvasColors: colors, overflow, problems, apiMisses: [...apiMisses] }, null, 2));
+  await writeFile(join(dir, 'report.json'), JSON.stringify({ url: `${base}${PATH}`, readyMs, canvasColors: colors, overflow, problems, cityChecks, apiMisses: [...apiMisses] }, null, 2));
   if (clip) await clip.stop(view.name);
   await context.close();
   console.log(`${view.name}: ready in ${readyMs}ms, ${colors} colors${problems.length ? `, ${problems.length} problem(s)` : ', ok'}`);
@@ -156,7 +172,7 @@ const executablePath = process.env.CHROMIUM_PATH || (existsSync('/opt/pw-browser
 const browser = await chromium.launch({ executablePath });
 let failed = false;
 try {
-  for (const view of VIEWS.filter(v => !process.env.ONLY || v.name === process.env.ONLY)) {
+  for (const view of VIEWS.filter(v => !process.env.ONLY || process.env.ONLY.split(',').includes(v.name))) {
     try {
       const problems = await run(browser, server.url, view);
       if (problems.length) { failed = true; console.error(`${view.name}:`, problems); }

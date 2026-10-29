@@ -1,0 +1,41 @@
+{
+  "url": "http://localhost:5198/deck.html?source=conveyor-demo&shot=builder",
+  "readyMs": 88,
+  "canvasColors": 32,
+  "overflow": 0,
+  "problems": [],
+  "cityChecks": {
+    "title": "Shiptorio",
+    "labels": [
+      {
+        "text": "Errors",
+        "fits": true
+      },
+      {
+        "text": "Traffic",
+        "fits": true
+      },
+      {
+        "text": "Inbox",
+        "fits": true
+      },
+      {
+        "text": "Customers",
+        "fits": true
+      },
+      {
+        "text": "Marketing",
+        "fits": true
+      },
+      {
+        "text": "shiptorio",
+        "fits": true
+      }
+    ],
+    "paletteColors": 46,
+    "integerZoom": true,
+    "caption": "The factory must grow.",
+    "reducedMotion": false
+  },
+  "apiMisses": []
+}
