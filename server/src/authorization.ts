@@ -44,7 +44,7 @@ export async function repoAccess(env: AuthorizationEnv, user: AccessUser, name: 
     ]);
     // A failed repository lookup used to throw from first(), even for a caller
     // that treats relationship lookup failures as a denial. Preserve that order.
-    if (!results[0] || results[0].success === false || !Array.isArray(results[0].results)) throw new Error('Repository lookup unavailable');
+    if (!results[0] || (results[0] as { success?: boolean }).success === false || !Array.isArray(results[0].results)) throw new Error('Repository lookup unavailable');
     row = results[0].results[0];
     if (!row?.installation_id) return null;
     const relationships = results.slice(1);
