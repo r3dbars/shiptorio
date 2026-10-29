@@ -31,7 +31,10 @@ const seed = Number(params.get("seed")) || 0;
   const want = params.get("source");
   const rehearsal = want === "shippy-demo" ? createShippyRehearsal() : null;
   if (rehearsal) source = rehearsal;
-  else if (isWatchMode(location.search)) source = createWatchSource();
+  else if (isWatchMode(location.search)) {
+    source = createWatchSource();
+    document.body.classList.add("factory-watch");
+  }
   else if (want === "launch-demo") source = createLaunchDemo();
   else if (want === "orb-demo") source = createOrbDemo();
   else if ((want === "live" || want === "sim") && data?.createLiveSource) source = await (data.createLiveSource as () => Promise<DeckSource> | DeckSource)();

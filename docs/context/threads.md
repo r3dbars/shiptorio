@@ -4,6 +4,8 @@
 
 PR #596 (`codex/deck-visuals`) adds a deeper foreground floor, grounded machines and Shippy, green/red conveyor flow, a pulsing blocked-state orb, persistent macOS pinch zoom, and detailed rocket launch/return effects. Justin approved the descent and fast side jets; later requests add a substantial fractured-rock underside and a short, braced engine cradle instead of the long exposed center pipe. Before/after phone and desktop shots are in `docs/evidence/deck-visuals/`. Targets `dev`; no deployment or merge is authorized by this visual PR.
 
+The final pass adds layered cascading cliffs, animated cyan seams and floating fragments, Shippy's walking/building rehearsal, real factory job-driven poses, and a simulator-only automatic build → failed check → repair → rocket loop (`/deck.html?source=sim&scenario=deck-watch&watch=1`). Justin selected this style as the baseline going forward. Live factory approvals remain manual.
+
 ## Browser signing key reuse (Codex, 2026-10-28)
 
 Session cookies and preview-form proofs now reuse the existing bounded, isolate-local HMAC key cache. Before: every sign/verification imported a key; after: concurrent checks with the same secret share one import. Cookie signatures, expiry, password rotation and fresh authorization checks remain unchanged. Focused session/gate/cache tests pass; full check and exact-head dev CI govern merge. This CPU reduction is not a claim that the connection latency target has been achieved.

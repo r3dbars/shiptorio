@@ -55,5 +55,5 @@ body { -webkit-tap-highlight-color: transparent; overscroll-behavior: none; user
   margin: 0; font-size: 14px; color: var(--ink); text-shadow: 0 2px 0 #000; opacity: 0; transition: opacity .4s; pointer-events: none; white-space: nowrap;
 }
 .toast.on { opacity: 1; }
-.shippy-rehearsal .toast { width: calc(100% - 24px); max-width: 560px; white-space: normal; text-align: center; }
+.shippy-rehearsal .toast, .factory-watch .toast { width: calc(100% - 24px); max-width: 560px; white-space: normal; text-align: center; }
 @media (prefers-reduced-motion: reduce) { .card, .card.gone { animation: none; } }
