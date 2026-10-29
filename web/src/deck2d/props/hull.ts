@@ -19,15 +19,15 @@ export const A = {
   back: Math.round(HULL.back / ART_PX),
   front: Math.round(HULL.front / ART_PX) + FRONT_DEPTH,
   skirt: Math.round(HULL.skirt / ART_PX) + FRONT_DEPTH,
-  orb: { x: HULL.orb.x / ART_PX, y: HULL.orb.y / ART_PX + FRONT_DEPTH },
+  orb: { x: HULL.orb.x / ART_PX, y: HULL.orb.y / ART_PX + FRONT_DEPTH + 58 },
 };
 /** The canvas starts TOP art px above y 0 (lanterns on the back rail) and is H tall (orb at the bottom). */
-export const TOP = 20, H = 196, PAD = 2;
+export const TOP = 20, H = 250, PAD = 2;
 
 /** Warm dark iron for the skirt and posts: the deck reads brown-black like the mockups, not blue. */
 const WARM: Ramp = ["soot", "iron-0", "iron-1", "iron-2", "plate-1", "iron-3", "iron-4"];
 const POST: Ramp = ["soot", "brass-0", "plate-1", "brass-1", "plate-2", "brass-2", "brass-3", "brass-4"];
-const ROCK: Ramp = ["soot", "iron-0", "iron-1", "iron-2", "haze-0", "iron-3", "iron-4"];
+const ROCK: Ramp = ["soot", "iron-0", "iron-1", "iron-2", "steel-1", "iron-3", "iron-4"];
 const ENERGY: Ramp = ["steel-0", "energy-0", "energy-1", "energy-1", "energy-2", "energy-2", "energy-3"];
 const LAMP: Ramp = ["sun-1", "sun-3", "sun-4", "sun-5", "sun-6", "white"];
 
@@ -41,7 +41,7 @@ const xr = (y: number, w: number) => w - 1 - Math.max(0, CH - (y - A.back));
 export const orbX = (w: number) => (w >= A.orb.x + 24 ? A.orb.x : w / 2);
 /** The two steam vents ride with the right-hand end. */
 export const ventXs = (w: number) => [w - 98, w - 78];
-export const VENT_MOUTH = 106 + FRONT_DEPTH;
+export const VENT_MOUTH = 122 + FRONT_DEPTH;
 
 // ---------- floor ----------
 // Rows compress toward the rear rail and open up toward the viewer.
@@ -183,46 +183,49 @@ function hangers(g: Px, w: number) {
 
 // ---------- rock underside ----------
 function depth(x: number, w: number) {
-  const k = 1 - ((x - w / 2) / (w / 2)) ** 2;
-  return 8 + 40 * Math.pow(Math.max(0, k), 0.6) + (blotch(x, 0, 7, 31) - 0.5) * 10;
-}
-/** A boulder: flattened, dark, lit faintly from the upper right, with warm bounce light from the sunset clouds on its
- * underside and a soot crease where it meets its neighbours. */
-function boulder(g: Px, cx: number, cy: number, r: number, seed: number) {
-  const ry = r * 0.8;
-  for (let y = Math.floor(cy - ry); y <= cy + ry; y++) for (let x = Math.floor(cx - r); x <= cx + r; x++) {
-    const dx = (x + 0.5 - cx) / r, dy = (y + 0.5 - cy) / ry, d = dx * dx + dy * dy;
-    const lump = 0.82 + 0.18 * blotch(x, y, 2, seed);
-    if (d > lump) continue;
-    const nz = Math.sqrt(Math.max(0, 1 - d));
-    let v = 0.2 + 0.62 * Math.max(0, dx * 0.45 - dy * 0.75 + nz * 0.35) + (noise(x, y, seed) - 0.5) * 0.12;
-    if (d > lump * 0.75 && dx < 0.2 && dy < 0) v -= 0.12; // the crease on the shadow side
-    tone(g, x, y, ROCK, v);
-    if (dy > 0.45 && d > lump * 0.55) g.set(x, y, dy > 0.75 && noise(x, y, seed + 1) < 0.7 ? "plate-1" : "haze-0"); // warm bounce from below
-  }
+  const k = 1 - Math.abs((x - w / 2) / (w / 2));
+  return 10 + 68 * Math.pow(Math.max(0, k), 0.65) + (blotch(x, 0, 13, 31) - 0.5) * 8;
 }
 function rocks(g: Px, w: number) {
   const y0 = A.skirt;
-  // a dark mass first so the boulders never show sky between them
-  for (let x = 1; x < w - 1; x++) { const d = depth(x, w) * 0.72; for (let y = y0; y < y0 + d; y++) g.set(x, y, (x + y) & 1 ? "iron-0" : "soot"); }
-  const n = Math.round(w / 3);
-  const bs: { x: number; y: number; r: number; s: number }[] = [];
-  for (let i = 0; i < n; i++) {
-    const x = 3 + hash(i, 1, 33) * (w - 6), d = depth(x, w), r = 4 + hash(i, 2, 33) * 4.5 + d * 0.05;
-    bs.push({ x, y: y0 + 1 + hash(i, 3, 33) * Math.max(1, d - r * 0.8), r, s: i });
-  }
-  bs.sort((a, b) => a.y - b.y);
-  for (const b of bs) {
-    boulder(g, b.x, b.y, b.r, b.s);
-    // under the deck the top of each rock sits in the skirt's shadow
-    for (let y = Math.floor(b.y - b.r); y < b.y - b.r * 0.4; y++) for (let x = Math.floor(b.x - b.r); x <= b.x + b.r; x++) if (y < y0 + 4 && g.has(x, y) && ((x + y) & 1)) g.set(x, y, "soot");
+  // Interlocking, irregular stone faces: every pixel belongs to one fracture cell.
+  // Jittered seeds avoid repeating diamonds, with vertical compression producing
+  // long strata and small broken ledges instead of rounded piles or empty fill.
+  const cell = 17;
+  const seeds = new Map<string, { x: number; y: number; tone: number }>();
+  const seedAt = (i: number, j: number) => {
+    const key = `${i}:${j}`;
+    let s = seeds.get(key);
+    if (!s) { s = { x: (i + 0.18 + hash(i, j, 101) * 0.64) * cell, y: (j + 0.18 + hash(i, j, 102) * 0.64) * cell, tone: hash(i, j, 103) }; seeds.set(key, s); }
+    return s;
+  };
+  for (let x = 1; x < w - 1; x++) {
+    const d = Math.round(depth(x, w) - hash(Math.floor(x / 5), 0, 107) * 4);
+    for (let j = 0; j < d; j++) {
+      const y = y0 + j, gx = Math.floor(x / cell), gy = Math.floor(j / cell);
+      let best = Infinity, second = Infinity, owner = seedAt(gx, gy);
+      for (let a = gx - 1; a <= gx + 1; a++) for (let b = gy - 1; b <= gy + 1; b++) {
+        const s = seedAt(a, b), dist = (x - s.x) ** 2 + ((j - s.y) * 0.78) ** 2;
+        if (dist < best) { second = best; best = dist; owner = s; } else if (dist < second) second = dist;
+      }
+      const face = (x - owner.x) * 0.65 - (j - owner.y) * 0.35;
+      let light = 0.28 + owner.tone * 0.2 + (face > 1.5 ? 0.13 : face < -3 ? -0.06 : 0);
+      light -= Math.max(0, j / d - 0.65) * 0.16;
+      const seam = second - best;
+      if (seam < 7) light = 0.08; // narrow fracture depth
+      else if (seam < 19 && face > 0) light += 0.16; // chipped lip catches the sun
+      if (j < 4) light -= (4 - j) * 0.045; // the hull overhang occludes the stone
+      tone(g, x, y, ROCK, light + (noise(x, y, 109) - 0.5) * 0.035);
+      if (j > d - 3 && x % 5 < 2) g.set(x, y, "iron-2"); // little exposed chips on the silhouette
+      if (owner.tone > 0.75 && j % 11 === 4 && seam > 20 && noise(x, y, 110) > 0.65) g.set(x, y, "copper-0");
+    }
   }
   // cyan cracks: steady energy seams running down through the rock, some forked (they never pulse)
   const nc = Math.max(2, Math.round(w / 44));
   for (let i = 0; i < nc; i++) {
     const x0 = Math.round(16 + ((i + 0.5) / nc) * (w - 32) + (hash(i, 7, 41) - 0.5) * 16);
     if (Math.abs(x0 - orbX(w)) < 22 || ventXs(w).some((v) => Math.abs(x0 - v) < 10)) continue;
-    const len = Math.min(Math.round(depth(x0, w)) - 4, 10 + Math.round(hash(i, 8, 41) * 12));
+    const len = Math.min(Math.round(depth(x0, w)) - 4, 24 + Math.round(hash(i, 8, 41) * 28));
     const run = (x: number, y: number, n: number, seed: number) => {
       for (let k = 0; k < n; k++) {
         g.set(x, y, k % 4 === 2 ? "energy-3" : "energy-2"); if (g.has(x - 1, y)) g.set(x - 1, y, "energy-0");
@@ -254,9 +257,17 @@ function orb(g: Px, w: number, blocked = false, phase = 0) {
   const core: Ramp = blocked
     ? (bright ? ["jam-1", "jam-2", "white"] : ["jam-0", "jam-1", "jam-2"])
     : (bright ? ["energy-1", "energy-2", "energy-3", "white"] : ["energy-0", "energy-1", "energy-2"]);
-  // the riser that holds it: copper with brass collars, from the skirt down through the rock
-  cylV(g, cx - 3.5, A.skirt - 1, 7, cy - R - A.skirt + 2, CU, { amb: 0.15, gloss: 1.1 });
-  for (const y of [A.skirt + 2, A.skirt + 10]) cylV(g, cx - 5.5, y, 11, 2, BRASS, { amb: 0.15, gloss: 1 });
+  // A short pressure neck seats into a bolted cradle in the rock. The feed pipe
+  // is buried in the island instead of reading as a long pole over its face.
+  const neck = cy - R - 13;
+  strap(g, cx - 15.5, neck - 7, 31, 5, IRON);
+  for (const dx of [-12, 12]) rivet(g, cx + dx - 0.5, neck - 5, "brass-3", "soot");
+  for (const side of [-1, 1]) {
+    tube(g, [[cx + side * 14, neck - 3], [cx + side * 10, neck + 8], [cx + side * 6, neck + 12]], 2.2, IRON, { amb: 0.14, gloss: 0.5 });
+    cylV(g, cx + side * 10 - 1.5, neck - 2, 3, 7, CU, { amb: 0.18, gloss: 0.75 });
+  }
+  cylV(g, cx - 3.5, neck, 7, 15, CU, { amb: 0.15, gloss: 1.1 });
+  for (const y of [neck, neck + 7, neck + 12]) cylV(g, cx - 5.5, y, 11, 2, BRASS, { amb: 0.15, gloss: 1 });
   // the glass and its glowing core
   ball(g, cx, cy, R - 0.5, energy, { amb: 0.12, gloss: 0.35 });
   const drift = phase < 4 ? -1 : 1;
@@ -302,7 +313,7 @@ export function orbFrame(blocked: boolean, phase: number): HTMLCanvasElement {
   const key = `${blocked}:${phase}`;
   let cv = orbFrames.get(key);
   if (!cv) {
-    const raw = new Px(76, 100);
+    const raw = new Px(76, 160);
     orb(shift(raw, 38 - Math.round(A.orb.x), 2 - A.skirt), A.orb.x + 24, blocked, phase);
     raw.outline();
     cv = raw.bake();

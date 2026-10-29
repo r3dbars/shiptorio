@@ -18,8 +18,8 @@ const CLIP_S = process.env.CLIP ? (Number(process.env.CLIP) > 1 ? Number(process
 const VIEWS = [
   { name: 'desktop-1440', options: { viewport: { width: 1440, height: 900 } } },
   { name: 'desktop-1280', options: { viewport: { width: 1280, height: 720 } } },
-  { name: 'phone-390', options: { ...devices['iPhone 14'], deviceScaleFactor: 2 } },
-  { name: 'phone-390-reduced', options: { ...devices['iPhone 14'], deviceScaleFactor: 2, reducedMotion: 'reduce' } },
+  { name: 'phone-390', options: { ...devices['iPhone 14'], viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 } },
+  { name: 'phone-390-reduced', options: { ...devices['iPhone 14'], viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, reducedMotion: 'reduce' } },
 ];
 const out = resolve(process.argv[2] || (existsSync('/mnt/project-files/') ? '/mnt/project-files/shiptorio/deck/shots' : 'deck-shots'));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
