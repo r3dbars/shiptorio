@@ -19,7 +19,9 @@ export function createConnections(o: Options) {
   let leaving = '', onboarding = false; // leaving: the one repo we're opening. onboarding: go straight to the inbox once Codex is ready.
   const repo = o.repo && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(o.repo) && !o.repo.split('/').some(part => part === '.' || part === '..') ? o.repo : undefined;
   const api = `/api/repos/${repo}`;
-  const liveUrl = (name: string) => `${o.path.split('?')[0]}?source=live&repo=${encodeURIComponent(name)}&onboard=codex`;
+  // Only ever our own deck page: the current path is page input (//other.site/deck would leave the site).
+  const deckPage = o.path.startsWith('/deck.html') ? '/deck.html' : '/deck';
+  const liveUrl = (name: string) => `${deckPage}?source=live&repo=${encodeURIComponent(name)}&onboard=codex`;
   async function json<T>(url: string, init?: RequestInit): Promise<T> {
     const response = await request(url, { cache: 'no-store', ...init });
     if (!response.ok) {
