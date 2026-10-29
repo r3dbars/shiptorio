@@ -332,7 +332,7 @@ app.get("/auth/logout", async (c) => {
 });
 // The App's Setup URL: GitHub sends a player here after they install it. The install webhook has
 // already given them the repo, so send them back to the repo picker (new-user-path.md, snag 3).
-app.get("/github/installed", (c) => c.redirect("/?onboard=repo&source=live", 302));
+app.get("/github/installed", (c) => c.redirect(new URL(c.req.url).hostname === "shiptorio.dev" ? "/deck?source=live" : "/?onboard=repo&source=live", 302));
 app.post("/auth/owner-session", (c) => ownerSession(c.req.raw, c.env));
 app.get("/setup", (c) => setupPage(publicUrl(new URL(c.req.url), c.env), c.env));
 app.get("/setup/callback", (c) => setupCallback(new URL(c.req.url), c.env));
@@ -350,10 +350,10 @@ app.get("/api/me", async (c) => {
       await touchGuest(c.env, guest);
       c.header("Set-Cookie", await guestCookie(c.env, guest.id));
     }
-    return c.json({ login: null, guest: true, allowed: false, prefs: guest.save.prefs, installUrl: null });
+    return c.json({ login: null, guest: true, allowed: false, prefs: guest.save.prefs, installUrl: null, githubConfigured: !!(c.env.GITHUB_CLIENT_ID && c.env.GITHUB_CLIENT_SECRET) });
   }
   const view = await readAdminView(c.env,c.req.raw);
-  return c.json({ login: user.login, allowed: true, admin: configuredAdmin(c.env,user.login), viewingAs: view && {login:view.login,repo:view.repo,writable:view.writable}, prefs: await readPrefs(c.env, view ? {id:view.userId,login:view.login} : user), installUrl: await installUrl(c.env) });
+  return c.json({ login: user.login, allowed: true, githubConfigured: !!(c.env.GITHUB_CLIENT_ID && c.env.GITHUB_CLIENT_SECRET), admin: configuredAdmin(c.env,user.login), viewingAs: view && {login:view.login,repo:view.repo,writable:view.writable}, prefs: await readPrefs(c.env, view ? {id:view.userId,login:view.login} : user), installUrl: await installUrl(c.env) });
 });
 
 // Settings that follow the player across browsers (intro seen, guide progress, achievements).
@@ -1043,12 +1043,12 @@ app.all("/connect/*", (c) => c.notFound());
 
 // Everything else is the web app.
 app.all("*", async (c) => {
-  // Justin's staging entry point: open the approved pixel deck in hands-off watch mode.
+  // The staging product starts inside the pixel deck, including sign-in and repo selection.
   // Explicit factory/onboarding URLs keep their own route; the preview gate has already run.
   const url = new URL(c.req.url);
   if (["GET", "HEAD"].includes(c.req.method) && ["shiptorio.dev", "www.shiptorio.dev"].includes(url.hostname)
     && url.pathname === "/" && !url.search) {
-    return c.redirect("/deck?source=sim&scenario=deck-watch&watch=1", 302);
+    return c.redirect("/deck?source=live", 302);
   }
   const response = await c.env.ASSETS.fetch(c.req.raw);
   // Only trusted static art contains inline executable scripts. Never add nonces

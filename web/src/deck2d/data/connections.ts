@@ -18,7 +18,15 @@ export function createConnections(o: Options) {
   async function json<T>(url: string, init?: RequestInit): Promise<T> {
     const response = await request(url, { cache: 'no-store', ...init });
     if (!response.ok) {
-      if (response.status === 401) login = true;
+      if (response.status === 401) {
+        login = true;
+        let configured = true;
+        try {
+          const info = await request('/api/me', { cache: 'no-store' });
+          if (info.ok) configured = (await info.json()).githubConfigured !== false;
+        } catch { /* Keep the original authentication error when readiness is unavailable. */ }
+        if (!configured) { login = false; throw new Error('GitHub setup is not finished on this server. The factory owner must connect its GitHub App before anyone can sign in.'); }
+      }
       throw new Error(response.status === 401 ? 'Sign in with GitHub to connect your repository.' : response.status === 403 ? 'Access is unavailable. Check that the GitHub App is installed on this repo and that you have permission.' : 'Could not reach the factory. Try again.');
     }
     return response.json() as Promise<T>;

@@ -85,3 +85,8 @@ test('confirmed disconnect revokes the pairing then refreshes status', async () 
   expect(f.calls[1]).toEqual({url:'/api/repos/owner/repo/runner/disconnect',method:'POST'});
   expect(f.ui.card()?.title).toBe('Connect your Codex engine');
 });
+test('missing server GitHub credentials stay on the deck instead of sending the player to a broken login', async () => {
+  const f = setup([new Response('',{status:401}),{githubConfigured:false}]); f.ui.open('repo'); await settle();
+  expect(f.ui.card()?.line).toContain('setup is not finished'); expect(f.ui.card()?.yes).toBe('Try again');
+  expect(f.navigations).toHaveLength(0);
+});

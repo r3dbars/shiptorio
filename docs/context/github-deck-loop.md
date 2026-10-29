@@ -48,3 +48,5 @@ Player acceptance checklist:
 - Open Options, cancel disconnect, then confirm disconnect: cancellation changes nothing; confirmation revokes the pairing.
 
 Validation distinguishes API/controller fixtures from real account acceptance. Authenticated GitHub and local Codex checks require the player's sign-in and selected repository; the guest demo alone cannot prove them.
+
+The default staging entry now opens `/deck?source=live` and performs setup within the pixel deck instead of entering the simulator. Its disconnected backdrop is idle and contains no fake work. The guest account response reports whether GitHub sign-in is configured, so a missing staging App stays an explanatory card rather than sending the player to a broken login page. Explicit demo URLs remain available for visual iteration.
