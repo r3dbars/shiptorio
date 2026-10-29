@@ -14,6 +14,7 @@ import { createFirstVisitDemo } from "./stations/first-visit";
 import { createConveyorDemo } from "./engine/conveyor-demo";
 import { createPayoff } from "./payoff";
 import { createFirstRun } from "./data/firstrun";
+import { createTour } from "./story/tour";
 import type { AttentionView } from "./stations/attention";
 
 /** Keyboard and screen-reader access for the existing card; it never invents an action. */
@@ -175,7 +176,6 @@ const seed = Number(params.get("seed")) || 0;
     onStart: id => (source as DeckSource & { focusItem?: (id: string) => void }).focusItem?.(id),
   });
   let source: DeckSource;
-  let guestStory: { phase(): string } | null = null;
   const rehearsal = want === "shippy-demo" ? createShippyRehearsal() : null;
   const machines = want === "machine-demo" ? createMachineRehearsal() : null;
   const conveyor = want === "conveyor-demo" ? createConveyorDemo() : null;
@@ -205,9 +205,9 @@ const seed = Number(params.get("seed")) || 0;
   }
   else if (want !== "demo" && story?.createStory) {
     // A guest at the live front door gets the short version: one swipe, it clears, then Shippy and sign-in.
-    const run = (story.createStory as (o: { seed: number; speed: number; swipes?: number }) => DeckSource & { phase(): string })({ seed, speed, swipes: want === "live" ? 1 : undefined });
-    if (want === "live") guestStory = run;
-    source = storyBeforeSignIn(run, connections);
+    // A guest at the live front door meets Shippy: a small deck, the story told in the card at their pace, each
+    // station built and named, then one fix shipped. /deck.html keeps the jam-and-swipe story for the video.
+    source = storyBeforeSignIn(want === "live" ? createTour() : (story.createStory as (o: { seed: number; speed: number }) => DeckSource)({ seed, speed }), connections);
   }
   else source = createDemo();
 
@@ -233,14 +233,14 @@ const seed = Number(params.get("seed")) || 0;
   for (const f of ["grow", "build", "launch", "juice", "props"]) { const m = await load(f, "createLayer"); if (m) layers.push((m.createLayer as CreateLayer)(art, bus)); }
   const inspector = createMachineInteraction(machines ? id => { if (id === machines.machine) machines.setMode("working"); } : undefined);
   if (want === "live" && signedIn && !params.has("repo")) connections.open("repo");
-  // The live first run: a guest feels one swipe on the sample, Shippy says hi, then sign in. After that, picking a
-  // repo and connecting Codex each build the next stations, one at a time, with one plain line each.
+  // The live first run after sign-in (the guest already met Shippy in the tour): picking a repo and connecting Codex
+  // each build the next stations, one at a time, with one plain line each.
   // New accounts only (no repo yet, or the onboarding hand-off); ?firstrun=1 replays it.
   const repo = signedIn ? params.get("repo") ?? "" : "";
   if (params.get("firstrun") === "1") try { for (const k of ["", repo]) localStorage.removeItem(`shiptorio:firstrun:${k}`); } catch { /* private mode */ }
   const firstRun = want === "live" && (!repo || params.get("onboard") === "codex" || params.has("firstrun")) ? createFirstRun({
     key: repo, store: (() => { try { return localStorage; } catch { return undefined; } })(),
-    stage: () => !signedIn ? (guestStory?.phase() === "end" ? "intro" : null) : !repo ? "hello" : connections.engineReady() ? "engine" : "repo",
+    stage: () => !signedIn ? null : !repo ? "hello" : connections.engineReady() ? "engine" : "repo",
     established: () => !!(source.view() as import('./data/view').LiveDeckView).work,
   }) : null;
   const engine = createEngine(cv, art, bus, shippy, layers, { onPowerSelect: () => { if (setupReachable) connections.open("power"); }, onMachineSelect: id => {
