@@ -39,7 +39,7 @@ export const TOUR: Beat[] = [
   { title: "Review", line: "A second look at the change, so nothing odd slips through.", yes: "Build next", pose: "point", at: "review", then: { build: "gate" } },
   { title: "Gate", line: "Nothing merges until you say so. This is where you decide what ships.", yes: "Next", at: "gate", pose: "point" },
   { title: "That's your software factory line", line: "Every machine is one step from an issue to shipped code. Now it needs power.", yes: "Power it", at: "repo", shot: "line", then: { boiler: true } },
-  { title: "The steam engine", line: "It powers the whole line. Plug in your own Codex here and it writes your code, on your computer, with your subscription.", yes: "Next", at: "repo", shot: "boiler", pose: "point", then: { island: true } },
+  { title: "The steam engine", line: "It powers the whole line. Power it with your own Codex or Muse Code, and it writes your code on your computer.", yes: "Next", at: "repo", shot: "boiler", pose: "point", then: { island: true } },
   { title: "Launch", line: "Merged code ships from here. That's the whole goal: ship something.", yes: "Show me", at: "launch", pose: "point", then: { roll: true } },
   { title: "Ship this fix?", line: "A fix just made it through every machine and is waiting at the Gate. Approve it and I'll show you how shipping works.", yes: "Ship it", at: "gate", hold: true, then: { ship: true } },
   { title: "Shipped!", line: "That's shipping. Your fix is live. Issues come in, shipped code goes out, and you make the calls.", yes: "Next", at: "launch", pose: "happy" },
@@ -48,7 +48,7 @@ export const TOUR: Beat[] = [
 const BUILD_SEC = STAGE_AT.done; // the card comes back as the build lands; its dust settles behind it
 const BOILER_SEC = 1.6; // the steam engine rising out of the floor
 const ISLAND_SEC = Math.min(LAUNCH_BUILD_SECONDS, 3);
-const HOP_SEC = 0.9; // a crate's time from one machine to the next
+const HOP_SEC = 0.5; // a crate's time from one machine to the next
 const ROCKET_SEC = 3.5; // the rocket's moment, on camera, before Shippy says what happened
 const CRATE = "tour-crate";
 const SHIP_BEAT = TOUR.findIndex((b) => b.then && "ship" in b.then);
@@ -73,7 +73,7 @@ export function createTour(): Tour {
   }
 
   function card(): CardView | null {
-    if (S.end) return { id: STORY_CARD.connect, title: "Want to create your own factory?", line: "Sign in with GitHub and I'll build your real one, on your real repo.", stop: "repo", dots: null, yes: "Create my factory", no: "Replay", setup: true, guide: "shippy" }; // a plain card: its press leaves the page
+    if (S.end) return { id: STORY_CARD.connect, title: "Want to create your own factory?", line: "Sign in with GitHub and I'll build your real one, on your real repo.", stop: "repo", dots: null, yes: "Build mine", no: "Replay", setup: true, guide: "shippy" }; // a plain card: its press leaves the page
     if (S.playing) return null;
     const b = TOUR[S.beat];
     // Ship it is a real yes on real-looking work, so it shows like one (held); the rest are Shippy talking in the card.
