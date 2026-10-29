@@ -722,7 +722,7 @@ app.get("/api/repos", async (c) => {
       ...repo,
       fullName: repo.full_name,
       blurb: repo.default_branch ? `Default branch: ${repo.default_branch}` : "Connected GitHub repository",
-    })), nextPage: pageParam && page * size < repos.results.length ? page + 1 : null });
+    })), ...(pageParam ? { nextPage: page * size < repos.results.length ? page + 1 : null } : {}) });
   } catch (error) {
     if (error instanceof RateLimitError) throw error;
     log("warn", "github.repositories_unavailable", { error });
