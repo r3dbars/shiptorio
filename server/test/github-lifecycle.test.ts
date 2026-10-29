@@ -10,6 +10,7 @@ import { normalizeGitHub } from "../src/sources/github";
 import payload from "./fixtures/github/lifecycle.json";
 import { signedInCookie } from "./d1-fixture";
 import { browserEnv } from "./browser-fixture";
+import { ACCESS_RECHECK_MS } from "../src/factory-initialization";
 mock.module("cloudflare:workers", () => ({ DurableObject: class { constructor(public ctx: unknown, public env: unknown) {} } }));
 const { Factory } = await import("../src/factory");
 
@@ -164,6 +165,8 @@ describe("GitHub lifecycle fixture payloads", () => {
     const f = fixture(); await install(f);
     f.env.GITHUB_APP_PRIVATE_KEY = await privateKey();
     const obj = f.objects.get("repo:501")!;
+    // The backstop recheck is due; a first wake alone only seeds a jittered schedule.
+    obj.data.set("githubAccessCheckedAt", Date.now() - ACCESS_RECHECK_MS);
     let requests = 0;
     const original = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL) => {

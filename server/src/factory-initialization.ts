@@ -30,6 +30,8 @@ type AccessResult = { stopped: false; checkedAt?: number } | { stopped: true; re
 
 /** Check durable revocations before any work; periodically catch missed GitHub deliveries.
  * The caller owns the DO pause so this helper never RPCs back into its own factory.
+ * Webhooks are the primary signal. The GitHub recheck is a backstop: a first wake only
+ * seeds a jittered schedule, so a fleet waking together never queues on the shared app JWT.
  */
 export async function reconcileFactoryGitHubAccess(
   env: import("./repository").RepositoryEnv,
@@ -37,6 +39,7 @@ export async function reconcileFactoryGitHubAccess(
   lastCheckedAt?: number,
   now = Date.now(),
   lookup?: () => Promise<{ id: number; suspended_at?: string | null }>,
+  random = Math.random,
 ): Promise<AccessResult> {
   const row = await env.DB.prepare(`SELECT r.archived_at, r.archive_reason, i.status, i.token_version FROM repos r
     LEFT JOIN installations i ON i.id = r.installation_id WHERE lower(r.full_name) = ? AND r.installation_id = ?`)
@@ -46,10 +49,12 @@ export async function reconcileFactoryGitHubAccess(
   if (row.archived_at != null) return { stopped: true, reason: row.archive_reason ?? ACCESS_LOST_REASON, archivedAt: row.archived_at };
   if (row.status === "suspended") return { stopped: true, reason: "GitHub installation suspended" };
   if (row.status === "deleted") return lost("installation deleted");
-  if (lastCheckedAt !== undefined && now - lastCheckedAt < ACCESS_RECHECK_MS) return { stopped: false };
+  if (lastCheckedAt === undefined) return { stopped: false, checkedAt: now - Math.floor(random() * ACCESS_RECHECK_MS) };
+  if (now - lastCheckedAt < ACCESS_RECHECK_MS) return { stopped: false };
   if (!lookup && (!env.GITHUB_APP_ID || !env.GITHUB_APP_PRIVATE_KEY)) return { stopped: false };
   const { appJwt, gh, GitHubError, registerGithubCredential } = await import("./github");
   const { RetryExhausted } = await import("./reliability");
+  const { RateLimitError } = await import("./rate-limit");
   try {
     const current = await (lookup ? lookup() : (async () => {
       const jwt = await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
@@ -67,6 +72,8 @@ export async function reconcileFactoryGitHubAccess(
     const cause = error instanceof RetryExhausted ? error.cause : error;
     // 404 is positive absence. Rate limits, credential faults and outages are not revocations.
     if (cause instanceof GitHubError && cause.status === 404) return lost(ACCESS_LOST_REASON);
+    // A busy app-JWT queue is not evidence either way; keep ticking and retry on a later wake.
+    if (cause instanceof RateLimitError) return { stopped: false };
     throw error;
   }
   async function lost(reason: string): Promise<AccessResult> {
