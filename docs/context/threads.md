@@ -29,6 +29,8 @@ Session cookies and preview-form proofs now reuse the existing bounded, isolate-
 The hosted test-newbie run observed a real factory-socket launched transition and PR #7 merged inside the isolated fixture, but failed on the newly enabled overview's 403 and a stale button wait after Launch. Allow only the signed tester's read-only overview through the existing private fixture; production, mutations and repo overrides stay denied. The bot now ends an outstanding action when its authoritative Launch transition arrives; earlier action failures still fail. Focused boundary/action tests pass; full check, dev CI and a fresh hosted playthrough remain required. This is fixture proof, not a real GitHub/Codex ship.
 ## GitHub connection reliability (Codex, 2026-10-28)
 
+- 2026-10-29, Codex #65: concurrent identical authorized GitHub reads share one request; writes, restored credentials and explicit fresh reads stay separate. Existing ETag revalidation and provider cooldowns remain enforced; PR #641.
+
 - 2026-10-29, Codex #44: missed GitHub access changes stop factories before work, delayed lifecycle events cannot revive them, and authenticated diagnostics counts access-paused factories. No live cleanup of the 44 staging records; PR #615.
 
 Backend GitHub connection reliability: cancellation, missing setup, invalid provider JSON and network/provider failures now have safe retry pages; the token exchange is bounded. No new session is issued after failed repository discovery. Guest merge and normal sign-in retain their checks. See `github-connect.md`; new 2D frontend paths remain untouched. Focused failure tests reproduce the previous unhandled errors; full check and exact-head dev CI govern release.
