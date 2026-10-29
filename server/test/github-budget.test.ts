@@ -178,9 +178,14 @@ it("a hung step times out instead of wedging its scope queue", async () => {
     hung = true;
     return { bind: () => ({ first: () => new Promise(() => {}) }) } as unknown as D1PreparedStatement;
   });
+  // Only the hung call's deadline fires at once; the follow-up keeps its real 45s.
   const realSetTimeout = globalThis.setTimeout;
-  const timers = spyOn(globalThis, "setTimeout").mockImplementation(((fn: () => void, ms?: number) =>
-    realSetTimeout(fn, ms === GITHUB_STEP_DEADLINE_MS ? 0 : ms)) as typeof setTimeout);
+  let shortcut = false;
+  const timers = spyOn(globalThis, "setTimeout").mockImplementation(((fn: () => void, ms?: number) => {
+    const first = ms === GITHUB_STEP_DEADLINE_MS && !shortcut;
+    if (first) shortcut = true;
+    return realSetTimeout(fn, first ? 0 : ms);
+  }) as typeof setTimeout);
   globalThis.fetch = (async () => Response.json({ ok: true })) as unknown as typeof fetch;
   try {
     await expect(gh("/repos/a/b", token)).rejects.toBeInstanceOf(RateLimitError);
