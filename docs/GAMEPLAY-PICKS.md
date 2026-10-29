@@ -1,5 +1,9 @@
 # Gameplay picks (Justin, 2026-10-27)
 
+> **Historical, 3D map era (marked 2026-10-29).** This page describes the old map, shaft or React UI, not the 2D deck
+> that is the product now. It stays here because code comments point at it. Where it disagrees with
+> [VISION.md](VISION.md), VISION wins.
+
 > Status: **approved design decisions and future build plan**. This record does not establish implementation or release.
 
 Justin's answers from the A/B picks page (https://claude.ai/artifact/HTDQR39URzPniTeugbZGkR, answers in its `picks` db).

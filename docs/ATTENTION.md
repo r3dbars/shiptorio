@@ -1,5 +1,9 @@
 # Attention: when Shiptorio is allowed to bug you
 
+> **Historical, 3D map era (marked 2026-10-29).** This page describes the old map, shaft or React UI, not the 2D deck
+> that is the product now. It stays here because code comments point at it. Where it disagrees with
+> [VISION.md](VISION.md), VISION wins.
+
 > Status: **on by default** since 2026-10-27 (Justin: "No flag just put it in main"). `?attention=0` brings back the old
 > Next Move card for one release; the global `attention` flag at /admin/flags stays as a kill switch. Thread "Design a calm attention system for players".
 > Mockup: https://claude.ai/artifact/Qb9bkmAVvmPYtZdWt2LrQb (Black Iron, real map art).

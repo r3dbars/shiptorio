@@ -12,7 +12,7 @@ Shiptorio sits between your repo, your AI agents and an AI planner. Here's exact
 
 - **Your code is written on your machine**, by your own agent, on your own subscription. Shiptorio's servers never run a coding agent.
 - **Agents only open PRs.** Never a push to `main`, only `shiptorio/runner-*` branches.
-- **A merge needs you**, unless you granted that lane a [launch permit](/docs/permits).
+- **A merge needs you**: you hold **Ship it** at the Gate. (An older launch-permit option exists only if you turn it on; see [Trust](/docs/trust).)
 - **Your subscription sign-ins never leave your machine.**
 - **Spark reads issue text, files and diffs** to plan and review. That goes to Meta's API.
 
@@ -30,7 +30,7 @@ GitHub is the only login. No passwords.
 | Where | What |
 | --- | --- |
 | Database (Cloudflare D1) | Your GitHub user (id, login, name, avatar), session hashes, which repos you can reach, App installs, your "not this kind" card rules and settings, webhook delivery ids (kept 7 days) |
-| Factory state (one per repo) | The game: ore (issue titles and bodies, Sentry and PostHog summaries), machines, PRs, scars, the log, runner jobs |
+| Factory state (one per repo) | The game: work items (issue titles and bodies, Sentry and PostHog summaries if connected), stations, PRs, failure notes, the log, runner jobs |
 | Database, encrypted | Sentry and PostHog keys, one set per factory, encrypted (below) |
 
 Sentry and PostHog keys are encrypted with AES-256-GCM using a fresh key for every write, and that key is wrapped by a server master key. Each key is bound to its one factory, is never shown again, and can be revoked. Use the narrowest key you can anyway (PostHog: Query Read and Project Read only).
@@ -68,7 +68,7 @@ GitHub and Sentry webhooks are checked against their HMAC signatures with a cons
 
 ## Merging
 
-Shiptorio's App does the actual squash-merge when you hit **Launch**, or on its own for a lane with a permit. Right before merging, it checks the PR hasn't changed since the checks ran and that CI is still green.
+Shiptorio's App does the actual squash-merge when you hold **Ship it**, or on its own for a lane with a permit you turned on. Right before merging, it checks the PR hasn't changed since the checks ran and that CI is still green.
 
 Protect `main` with GitHub's branch rules anyway. A repo-scoped token can't be limited to one branch, so branch protection is the backstop.
 

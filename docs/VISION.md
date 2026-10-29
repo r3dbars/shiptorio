@@ -1,171 +1,106 @@
 # Shiptorio vision (north star)
 
 > **Read this first.** Every agent (Claude threads, Codex, anyone) checks this page before deciding what to
-> build next. It's Justin's high-level goals, boiled down. Details live in `docs/PRODUCT.md` (product
-> behavior) and `docs/LOOP.md` (the loop and the verification gauntlet).
+> build next. It's Justin's high-level goals, boiled down.
 >
-> **Living doc:** whenever Justin states a new high-level goal in the project, fold it in here (one line,
-> dated) and push. If this page and another doc disagree on *direction*, this page wins.
+> **Living doc:** whenever Justin states a new high-level goal, fold it in here (one dated line in the Goal log,
+> plus the sections it changes) and push. If this page and another doc disagree on *direction*, this page wins.
+> The pre-deck version (3D map, vertical shaft, island, build mode) is archived at
+> [context/archive/vision-before-deck.md](context/archive/vision-before-deck.md).
 >
 > Last updated: 2026-10-29.
 
 ## The goal
 
-**Gamify your repo's ship loop, so playing the game ships real things.** Connect your repo, play, and your
-product gets better for real: more shipped, more customers, more money. Every move in the game ends as a real
-PR, a real release, a real reply. Shipping is the point.
+**Gamify your repo's ship loop, so playing the game ships real things.** Every rocket that launches is a real
+merged pull request. Shipping is the point.
 
-**Why it matters: the human is the bottleneck.** AI now writes the code. What slows shipping is a person
-deciding what AI should build, what it checks, and what it has to prove. Shiptorio makes those decisions
-visible and fast. The faster you can decide, the more you ship, and the better the user experience and the
-product get. But fast approvals are only step one. The bigger goal: Shiptorio pushes you to **build more and
-more automation and verify all of it**. Every check you add and every clean ship earns trust, and the factory
-runs more of itself over time. Verify, then automate. That's the goal of Shiptorio, and it's the first thing a
-new player learns (the welcome intro).
+**Why it matters: there's always a bottleneck, and it's usually waiting on one of your calls.** AI writes the code
+now. What slows shipping is a person deciding what AI should build and what it has to prove. Shiptorio puts that
+one decision in front of you, makes it a swipe, and then teaches the factory to make that kind of call on its own.
+**Verify, then automate.** It never ends: clear one jam and the next one shows up. That's the game.
 
-It never ends. There is always a bottleneck, always something to optimize, always a next move. That's the game.
+## The story (locked 2026-10-28)
+
+Belief before setup. A newcomer gets the story before they connect anything:
+
+1. Your software is a factory.
+2. There's always a bottleneck, and it's waiting on your call. (Never "you are the bottleneck".)
+3. Swipe, and it moves.
+4. Approve the same kind of thing twice more and it's automatic, so you're free for the next jam. (The climax.)
+
+**North star test:** open it, see your one bottleneck within 5 seconds, swipe once, it clears.
+
+## What shiptorio.dev is
+
+- **The 2D pixel deck is the product** (`web/src/deck2d/`, `web/deck.html`). One floating deck, one line, one card.
+  Sign-in, repo pick and connecting your coding agent all happen inside it. No other frontend.
+  Art rules: [context/pixel-deck.md](context/pixel-deck.md).
+- **The line, one name per station, everywhere:** Repo → Planner → Builder → Checks → Review → Gate → Launch.
+  Source of truth `STOP_LABEL` in `web/src/deck2d/contract.ts`, guarded by `web/test/station-names.test.ts`.
+  Checks runs the CI check and the proof check. How each maps to GitHub: [context/github-deck-loop.md](context/github-deck-loop.md).
+- **Shippy is the only character.** Shippy the robot walks the line, parks on the jam and pulls the lever. No humans.
+- **Meta Muse Spark is Shippy's brain.** It reads the factory, picks the bottleneck, says in one plain line why, plans
+  the work and reviews it. It never writes code. Coding runs on the player's own machine with their own Codex or
+  Claude Code subscription (the local runner). Player copy says Shippy, never "Spark", except one short tutorial beat that says
+  Shippy is powered by Meta Muse Spark.
+- **One trust meter.** The dots on a card: approve the same kind of card as is three times and that kind becomes
+  automatic (`server/src/learn.ts`). Later or a change resets it. The Gate (merging) never learns on its own.
+  Older trust systems in the code (launch permits, autonomy levels) don't show on the deck.
+- **Colors mean one thing each:** yellow = waiting on you, red = actually stuck, green = automatic, cyan = running.
+
+## The front door (Justin, 2026-10-29)
+
+Anyone can open shiptorio.dev and play the tutorial right away: Shippy shows what this is and walks them through
+a few swipes until the factory runs a step on its own. No password, no sign-in, no waitlist in the way. The
+tutorial is scripted in the page, so it spends no Spark calls. **The password comes at "create your own factory,"**
+right before GitHub sign-in; past it, pick a repo and connect your agent. Real repos stay locked to people with the
+password. Live on shiptorio.dev; shiptorio.com keeps its landing page and gate until a promotion. How it works:
+[context/landing.md](context/landing.md).
 
 ## Principles
 
-1. **Play → real-world results.** If a feature doesn't cascade into something real (a merged PR, a fixed
-   error, a happier customer), it's decoration. Decoration is fine only after the loop works.
-2. **Spark (Meta) is the brain and game master, never a worker.** It reads the inputs, finds the bottleneck,
-   plans, routes, judges, and pulls the player in with the next move. It never writes code or PRs.
-3. **Your sign-ins are the machines.** The player's Claude and ChatGPT subscriptions are the power plants and
-   assemblers (via the local runner). Later, local models are another resource (geothermal). More sign-ins,
-   bigger factory.
-4. **Autonomy is earned by playing.** Day one, Spark asks before it acts. One trust meter: say yes to the same
-   kind of card three times and the factory does that kind on its own (`server/src/learn.ts`). Only safe, undoable
-   steps can be learned (starting and approving plans). Ship it always waits for a human. Launch permits and the
-   advisor → lights-out levels are parked behind flags that stay off, even on dev.
-5. **Verify everything (checks and balances, inspired by Lauren Tan / poteto).** Checks (CI + proof) → Review →
-   Gate (your merge). Fails loop back to Spark. Every station is visible and clickable, piles show the bottleneck,
-   and the game rewards adding more checks.
-6. **Point at the human bottleneck.** In an agent loop the person is the slow part, so Shiptorio always
-   shows what's waiting on you and makes it fast to clear: a swipeable check-in deck of 8 to 12 cards
-   (phone, web, later voice). The gauntlet makes fast yeses safe, and earned trust means fewer cards.
-7. **Simple, easy, addictive in a good way.** Two minutes from sign-in to your first bottleneck. Justin loves
-   games; the game pull is the product. Fun is what makes people keep shipping.
-8. **Plain words in the UI; Shippy is the one guide.** Players don't care what the planner model is called, so
-   cards use plain words and recommended options just get a "Suggested" tag. Shippy is the only character. One short
-   tutorial beat says he's powered by Meta Muse Spark (Justin 2026-10-29); otherwise no "Spark" in player copy.
-   Internally (code, docs, contracts) Spark keeps its name.
-9. **Progressive disclosure: one concept at a time, mobile first.** Shiptorio is a lot (ore, machines, power, the gauntlet, bottlenecks, autonomy), and all of it at once overwhelms. Onboarding walks a new player through it step by step, with a coach card as the guide: your factory is one codebase, then ore, a machine, power, the line, one inspection, the rocket, the bottleneck, the check-in deck. Each piece of HUD stays hidden until the coach introduces it, and each lesson is taught by doing, not by reading. New features follow the same rule: they show up when the player is ready for them. Big readable text, few boxes.
-
-10. **The map reads like the work, bottom to top.** Raw work is mined deep underground (inbox, GitHub, Sentry,
-   PostHog), rides lifts up through planning, building and the checks, and launches from the top. One continuous
-   line where you can watch every item travel, in the Black Iron look (`docs/black-iron.html`), matched closely.
-   If a player can't tell what a part does by looking at it, it isn't done.
-
-11. **Simple out of the box; complexity unlocks over months of play, never up front (Justin, 2026-10-27).** Day one
-    does one job very clearly: sign in, pick a repo, plug in your AI, and your first issue becomes a shipped PR,
-    in the fewest steps and words possible. Two numbers on screen (waiting on you, shipped), one queue of cards,
-    trust as the only progress bar. Research, mines, tools, permits and higher autonomy each show up the first time
-    your own factory needs them, spread over weeks and months. Ladder: the "Unlock ladder" in the new-player
-    walkthrough (https://claude.ai/artifact/NRKF9TmVW3tDMH2jUJEBV1).
+1. **Play → real-world results.** If it doesn't end as something real (a merged PR, a fixed error), it's decoration.
+2. **Spark is the brain, never a worker.** Triage, planning, routing and review stay with Spark. Codex and Claude
+   Code are the hands.
+3. **Autonomy is earned.** Day one, every step asks. The trust meter is the only progress bar.
+4. **Verify everything.** Checks (CI + proof) → Review → Gate (your hold on Ship it). Fails loop back.
+5. **One thing at a time.** One card, one bottleneck, one thing moving. Calm: only the jam pulses.
+6. **Simple out of the box.** Two minutes from opening it to your first swipe. Plain, short words. Deleting beats
+   adding.
+7. **Mobile first.** Every screen works on a phone held in one hand.
 
 ## Non-goals (for now)
 
-- Spark as a coder or hosted build farm. Building runs on the player's own subscriptions.
-- Silent autonomy. Nothing big happens without the player until they've earned it.
-- Auto-sending to customers. Spark drafts, the player sends.
-- Breadth before the core loop works. Marketing, acquisition, retention come later.
-- Stripe / real money, for now (on hold, Justin 2026-10-26).
-
-## Where it goes
-
-Start with code: issues, errors, PRs, the repo loop. Then grow into the rest of the business loop:
-marketing, customer acquisition, customer retention. Same game, more districts.
-
-## The game surface: the 2D pixel deck (Justin, 2026-10-29)
-
-"I want this to be the permanent one going forward." The 2D pixel-art deck in `web/src/deck2d/` is THE game
-surface, on by default everywhere (`?px=0` still shows the old painted look; the 3D shaft is parked). Claude
-threads and Codex iterate on this same deck, not on copies or variants. The rules for working on it are in
-[`docs/context/pixel-deck.md`](context/pixel-deck.md).
-
-**2026-10-29: The 2D deck is the actual product, including sign-in, repo selection and coding-agent connection. Bridge the existing backend and account flows into this UI; simplify duplicate entry points rather than building another frontend. Demos remain explicit previews, not the default product.**
-
-**2026-10-29: Meta is Shippy's brain for the whole factory: identify bottlenecks, recommend the next useful decision, and help the player keep work moving toward automation. Planning one PR is a supporting ability, not the product's organizing idea. Validate this loop with Muse Spark first; evaluate a stronger model later without moving factory decisions into the coding worker.**
+- Spark as a coder or a hosted build farm.
+- Silent autonomy, auto-merge without earned trust, auto-sending to customers.
+- Breadth before the core loop works: marketing, Stripe, multi-repo empire, build mode, new mines.
 
 ## Finish line (Justin, 2026-10-29)
 
-Polish, simplify and clean up the loop we have; no new features. Product done by **end of Monday Nov 2** (Fri full
-day, Sat ~4h, Sun ~4h, Mon finish). Tue Nov 3 and Wed Nov 4 are filming the demo video only; the hackathon cutoff is
-Wed Nov 4 8 PM CT. Day-by-day plan and freeze points: [docs/context/demo-plan.md](context/demo-plan.md).
-
-## Current focus: a great player experience (Justin, 2026-10-27 10:50)
-
-"Focus less on the judges and just focus more on making this web app a great experience." The game itself is the
-priority now. The Nov 4 hackathon date still stands, but it no longer decides what we build. Every thread and Codex
-follows this order:
-
-1. **Make the core loop feel great to play.** Gameplay mechanics on phone and desktop, what you do with the UI vs
-   with objects in the world (machines, carts, belts, floors), and the repair-and-unlock progression. Design:
-   `docs/GAMEPLAY.md`, playbook https://claude.ai/artifact/QDvFEZePgx5bzBv7TBHZz8, A/B picks
-   https://claude.ai/artifact/HTDQR39URzPniTeugbZGkR (Justin's picks get recorded in GAMEPLAY.md).
-2. **Prove the loop for real.** Real clean ships on r3dbars/Testing and one real autonomy level-up. The experience
-   only counts if it ships real PRs.
-3. **Nail the vertical map.** Match the Black Iron mockup (https://claude.ai/artifact/QR3JBEyauy8VAEGptsPGi9),
-   side-by-sides before merging.
-4. **Polish and reliability over new surfaces.** Fewer, better things on screen (principle 11).
-5. **Judge mode stays as it is** (live at /judge). No new hackathon-only work; Justin makes the demo video himself.
-6. **Still parked:** build mode, pricing, multi-repo empire, new mines (they show up later as unlocks in the
-   gameplay ladder).
-
-**Codex points at reliability:** deploy guardrail, E2E tests, runner reliability, limits/quota visibility, security.
-
-## Gameplay picks (Justin, 2026-10-27)
-
-The full approved rounds 1–4 and rollout policy are in [GAMEPLAY-PICKS.md](GAMEPLAY-PICKS.md).
-[GAMEPLAY.md](GAMEPLAY.md) preserves the early design context; the following is the round-1 summary:
-
-- **Setup is play:** you start in an abandoned foundry; picking the repo, connecting your AI and picking the first
-  issue are three repairs you watch happen. Locked parts are visible but broken (only the next one or two), you fix
-  them by tapping them, and a repair costs one real action, never points. Trust shows as lamps up the lift tower.
-- **Moving and looking:** the camera snaps to floors, opens on whatever needs you, tags show only on tap / hover,
-  tapping a machine opens a small callout on it.
-- **Deciding:** one card, always at the bottom. Later on the left, Continue on the right, every card swipes. Launch is
-  a big red hold button on the right with sound and a real press. Autonomy level-ups come as a card.
-- **Feel:** first rocket gets the full camera cut, later ones a corner flash; caught bugs show as a scar on the work;
-  a soft foundry hum is on by default.
-- **Refining:** gameplay is tuned through short A/B rounds on real game art that narrow in each time
-  (https://claude.ai/artifact/HTDQR39URzPniTeugbZGkR). Justin's later 12:37/14:28 direction supersedes the earlier
-  `play`-flag rollout: approved picks are intended for everyone without a new play flag. Existing kill switches
-  and temporary `?attention=0` compatibility remain where implemented. These design records are not release receipts.
-
-## The loop today
-
-- **Playable loop:** real GitHub issue → Spark → fix PR (player's agent) → CI inspect / rework → human merge → rocket.
-- **Signal sources (mines):** GitHub, Sentry, PostHog. Stripe is on hold.
-- **The line, one name per station everywhere:** Repo → Planner → Builder → Checks → Review → Gate → Launch.
-  Station labels, cards, captions, story, setup copy, runner messages, PR comments and docs all use these exact
-  words (source of truth: `STOP_LABEL` in `web/src/deck2d/contract.ts`). No synonyms (not inspector, verify bay,
-  AI review, merge gate, assembler, inbox or launch pad). Checks runs the CI check and the proof check (`docs/LOOP.md`).
-- **Who it's for:** solo founders and tiny teams with real users. Hosted on shiptorio.com (password-gated for now). shiptorio.dev opens straight into the tutorial; the password comes at "create your own factory".
-- **Hackathon:** Meta, submit by noon CT Wed Nov 4. It's a date, not the goal.
+Polish, simplify and clean up the loop we have. **No new features.** Product done by **end of Monday Nov 2**
+(Fri full day, Sat ~4h, Sun ~4h, Mon finish). Tue Nov 3 and Wed Nov 4 are filming only; the Meta hackathon cutoff
+is Wed Nov 4 8 PM CT. Day-by-day plan, freeze points and who owns what: [context/demo-plan.md](context/demo-plan.md).
+Shot list: [context/demo-script.md](context/demo-script.md).
 
 ## How to decide what's next
 
-Before starting something, check it against this list. Mostly-yes means go.
+Mostly-yes means go.
 
-- [ ] Does it make the game **better to play** (the "Current focus" list above)?
-- [ ] Does it move the **current focus** loop closer to working end to end?
-- [ ] Does it make **play cascade into a real result** (PR, fix, reply, customer)?
-- [ ] Does it keep **Spark as the brain**, not the worker?
-- [ ] Does it respect **earned autonomy** (asks first unless the player unlocked it)?
-- [ ] Does it add or surface a **check**, or at least not bypass one?
-- [ ] Does it **grow the loop** (more checks, more sources, more autonomy) or clear what's waiting on the human?
-- [ ] Will it feel **simple and fun** in the first two minutes?
-- [ ] Does it **show up when the player is ready**, not all at once?
-- [ ] Is it the **current bottleneck**, not a later district (marketing, Stripe, etc.)?
-- [ ] Can it ship as a **small PR today**? If not, slice it smaller.
+- [ ] Does it make the deck simpler, clearer, friendlier or more polished?
+- [ ] Does it help the north star test (bottleneck in 5 seconds, one swipe, it clears)?
+- [ ] Does it end in something real (a PR, a merge, a rocket)?
+- [ ] Does it keep Spark as the brain, not the worker?
+- [ ] Does it respect earned trust (asks first until the player taught it)?
+- [ ] Is it deleting or cleaning up rather than adding?
+- [ ] Can it ship as a small PR today?
 
-If something needs Justin, ask with one line he can reply to (e.g. "say: merge 30").
+Only ping Justin for things only he can do (a login, a key, a hold on Ship it), with one line he can act on.
 
 ## Goal log
 
-New high-level goals from Justin go here, dated, then get folded into the sections above.
+New high-level goals from Justin go here, dated, then get folded into the sections above. Entries before
+2026-10-28 describe the 3D map era; where they conflict with the sections above, the sections win.
 
 - 2026-10-26: Vision written from Justin's project chat, `docs/PRODUCT.md`, `docs/LOOP.md`.
 - 2026-10-26: First sources are GitHub, Sentry, PostHog. Stripe on hold.
@@ -187,10 +122,7 @@ New high-level goals from Justin go here, dated, then get folded into the sectio
   for everyone (game, judge mode, tour, landing loop); the island stays behind `?world=iron` for one release.
 - 2026-10-27: Build mode (advanced, optional): players build and redesign the factory themselves, Factorio /
   RollerCoaster Tycoon style, on the Black Iron art. Every piece is a real pipeline part, so the layout is the
-  pipeline config, and the gauntlet can be added to but never bypassed. Spec: `docs/BUILD-MODE.md`.
-- 2026-10-29: One trust meter. The player sees one way the factory earns trust: learned cards (three yeses, then
-  it's automatic). Launch permits and autonomy levels are parked (off on every worker, data kept), so Gate never
-  auto-merges and Ship it stays human.
+  pipeline config, and the gauntlet can be added to but never bypassed. Spec (archived): `docs/context/archive/build-mode.md`.
 - 2026-10-27: Simple out of the box, complexity over months (principle 11). Justin approved the walkthrough cuts:
   no XP or levels (trust is the only progress bar), two counters (waiting on you, shipped), Next Move and the
   check-in deck become one queue, research / mines / tools hidden until needed, no first-run Check in / Build fork.
@@ -209,7 +141,13 @@ New high-level goals from Justin go here, dated, then get folded into the sectio
   launch pad) rise in 5 to 8 animated seconds each, burst online with electricity and stamp themselves done while a
   real first issue rides through. Behind `?buildout=1` until Justin has played it. Contract:
   `web/src/buildout/CONTRACT.md`; plan https://claude.ai/artifact/T6puBBYVnZiFaBiqephirN.
+- 2026-10-28: The story is locked (belief before setup, four beats). The 2D pixel deck wins the art bake-off; the
+  3D deck and the shaft are parked. Web app only. Shippy is the only character.
+- 2026-10-29: The 2D deck is permanent and is the whole product, including sign-in, repo pick and agent connection.
+  Meta Muse Spark is Shippy's brain for the whole factory.
+- 2026-10-29: No new features. Polish, simplify, clean up. Product done by end of Mon Nov 2; Tue and Wed are filming.
 - 2026-10-29 20:56: **Tutorial first, password at "create your own factory".** Anyone visiting shiptorio.dev lands in
   Shippy's tutorial with no password, waitlist or landing page in front. The password pops up only when they choose to
   create their own factory, right before GitHub sign-in. Real accounts stay locked; the tutorial is scripted (no Spark
   spend). shiptorio.com follows only via a promotion. Details: `docs/context/landing.md`.
+- 2026-10-29: Docs, README and code should all describe what shiptorio.dev is now and where it's headed.

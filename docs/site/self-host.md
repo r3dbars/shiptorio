@@ -66,11 +66,11 @@ Its permissions and event subscriptions must match the [GitHub App guide](/docs/
 
 ## Start your factory
 
-Open the printed **Sign in** URL, sign in with your allowlisted GitHub account, pick an installed repo, and [connect your runner](/docs/runner). Use the preview password when prompted. Spark plans; your local agent builds; the [gauntlet](/docs/gauntlet) checks the result.
+Open the printed **Sign in** URL, sign in with your allowlisted GitHub account, pick an installed repo, and [connect your runner](/docs/runner). Use the preview password when prompted. Spark plans; your local agent builds; [Checks and Review](/docs/the-line) check the result.
 
 Only the GitHub login you supplied is initially allowed in, and it is also the administrator. To invite others, edit `ALLOWED_LOGINS` in the generated config as a comma-separated list and deploy with the explicit config command below. Changes made directly to that config are overwritten the next time you run the wizard; keep the admin login restricted. The hosted service's waitlist gate is not enabled.
 
-Sentry and PostHog are optional: connect them from your own app using [Mines](/docs/sources). The generated credential encryption key lets those integrations store their keys encrypted. No production telemetry credentials or mine settings are copied into your deployment.
+Sentry and PostHog are optional extra sources of work and aren't part of the deck yet. The generated credential encryption key lets those integrations store their keys encrypted. No production telemetry credentials or mine settings are copied into your deployment.
 
 ## Update, resume and recover
 

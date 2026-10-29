@@ -8,7 +8,7 @@ order: 2
 
 ## Is this a real game or a dashboard?
 
-A real game. Factorio-style map, rockets, research, the works. The difference is that every move ends as a real PR, a real merge or a real fix. If a feature doesn't cascade into something real, it's decoration.
+A game. A pixel-art factory deck, a robot named Shippy, rockets. The difference is that every move ends as a real PR, a real merge or a real fix. If something on screen doesn't end in something real, it's decoration.
 
 ## Does Shiptorio write my code?
 
@@ -16,11 +16,11 @@ No. Spark plans. Your own agents (Claude Code or Codex) write the code, on your 
 
 ## Which agents work?
 
-Claude Code and Codex today. Each one you sign in to becomes a power plant on the map. More to come, including local models.
+Codex and Claude Code today, signed in on your own machine through the [runner](/docs/runner).
 
 ## Who pays for what?
 
-Spark's thinking runs on Shiptorio's Meta API key. The building runs on your own Claude or ChatGPT subscription through the runner. GitHub, Sentry and PostHog are your existing accounts.
+Spark's thinking runs on Shiptorio's Meta API key. The building runs on your own Claude or ChatGPT subscription through the runner. GitHub is your existing account.
 
 ## Why is my factory paused at a quota?
 
@@ -36,27 +36,23 @@ waits until the next day. A new plan still needs your approval.
 
 ## Can it merge without me?
 
-Only in a lane you gave a [launch permit](/docs/permits), and only for PRs that passed every station with zero rework. One slip and the permit is gone.
+Merging needs your hold on **Ship it**. The server has an older launch-permit mechanism that only turns on if you say yes; see [Trust](/docs/trust).
 
 ## Can it push to main?
 
 No. Agents only push `shiptorio/runner-*` branches and open PRs. Protect `main` with GitHub branch rules too.
 
-## Why did a PR fail the verify bay when CI was green?
+## Why did a PR fail Checks when CI was green?
 
-The verify bay wants proof the fix works, not just that it builds. A code change needs a test, and on runner PRs that test has to fail on the old code and pass on the new. See [Verify bay](/docs/gauntlet#verify-bay).
-
-## Why is my card locked?
-
-A ship card is locked when a gauntlet stamp hasn't passed yet. Swiping right runs the missing check instead of merging. That's what makes fast swiping safe. See [Swipe right only on proof](/docs/check-in#swipe-right-only-on-proof).
+Checks wants proof the fix works, not just that it builds. A code change needs a test, and on runner PRs that test has to fail on the old code and pass on the new. See [The line](/docs/the-line#checks).
 
 ## Why does nothing build?
 
-Probably no power. Spark can read and plan, but something has to build: connect a runner with Claude Code or Codex signed in. The Needs you card will say "Your computer writes the code. Plug it in to start building."
+Probably no agent connected. Spark can read and plan, but something has to build: connect a runner with Codex or Claude Code signed in. See [Connect your machine](/docs/runner).
 
 ## Why can't I sign in?
 
-Shiptorio is in private preview. The app is password-gated and only allow-listed GitHub accounts can sign in. These docs are open to everyone.
+Shiptorio is in private preview. Creating your own factory needs the preview password, and only allow-listed GitHub accounts can connect a repo. These docs are open to everyone.
 
 ## My repo isn't in the list.
 
@@ -64,21 +60,19 @@ Install the Shiptorio GitHub App on it and refresh. If someone else installed it
 
 ## Does it work on my phone?
 
-Yes. The map, cards and check-in deck are built mobile first. The check-in deck is made for a two-minute swipe on your phone.
-
-At floor zoom, a one-finger drag settles on the nearest floor. Pinching and the full-shaft overview keep your chosen framing; cancelled gestures do not select or snap. With reduced motion enabled, the floor change is immediate.
+Yes. The deck is built for a phone held in one hand: one card at the bottom, swipe right or left.
 
 ## Can I try it without connecting anything?
 
-Yes. The sandbox runs a whole factory on sample data: [?source=sim](/?source=sim). See [Getting started](/docs/getting-started).
+Yes. The tutorial plays on sample work and touches nothing real. See [Getting started](/docs/getting-started).
 
 ## Is any of this open to the public yet?
 
-The docs are. The app opens up after the hackathon. Built for the Meta AI Developer Hackathon, Oct 26 to Nov 4, 2026.
+The docs and the tutorial on shiptorio.dev are. Real repos stay behind the preview password for now. Built for the Meta AI Developer Hackathon, Oct 26 to Nov 4, 2026.
 
 ## Where do I report a bug?
 
-Open an issue on the repo. If you're playing a live factory on Shiptorio's own repo, your bug becomes ore, and the factory might fix it for you.
+Open an issue on the repo. If you're playing a live factory on Shiptorio's own repo, your bug lands in the Repo pile, and the factory might fix it for you.
 
 If the planner is busy or unavailable, planning rests behind one card showing the local resume time. Attempts have a two-minute deadline and retry automatically after the cooldown or daily reset. Raising a call, token or spend limit also wakes parked plans; ambiguous paid calls keep their reservations. Existing checks and merge decisions remain available.
 

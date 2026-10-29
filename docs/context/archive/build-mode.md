@@ -1,3 +1,5 @@
+> Archived 2026-10-29: from the 3D map era (day one plan, island map, build mode). Not how Shiptorio works today; see [docs/VISION.md](../../VISION.md).
+
 # Build mode (spec)
 
 > Justin, 2026-10-27: "a system where people can build themselves, kind of like Roller Coaster Tycoon or

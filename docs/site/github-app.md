@@ -6,7 +6,7 @@ order: 3
 ---
 # Install the GitHub App
 
-Shiptorio talks to GitHub through its own GitHub App. The App is how you sign in, how issues become ore, how Shiptorio sees CI results, and how a PR gets merged when you launch a rocket.
+Shiptorio talks to GitHub through its own GitHub App. The App is how you sign in, how your issues reach the Repo pile, how Shiptorio sees CI results, and how a PR gets merged when you hold Ship it.
 
 ## Install it on a repo
 
@@ -33,14 +33,13 @@ It listens to these webhooks: `issues`, `issue_comment`, `pull_request`, `pull_r
 
 Every webhook is checked against its `X-Hub-Signature-256` signature, and repeat deliveries are dropped.
 
-> **Heads up** Agents never push to `main`. Runner branches are always `shiptorio/runner-<id>`, and a merge only happens when you hit Launch, or when a lane holds a [launch permit](/docs/permits) you granted. Protect `main` with GitHub branch rules too. A repo-scoped token can't be limited to one branch, so branch protection is your backstop.
+> **Heads up** Agents never push to `main`. Runner branches are always `shiptorio/runner-<id>`, and a merge only happens when you hold **Ship it** at the Gate, or when a lane holds a launch permit you granted (see [Trust](/docs/trust)). Protect `main` with GitHub branch rules too. A repo-scoped token can't be limited to one branch, so branch protection is your backstop.
 
 ## What happens right after install
 
-- Shiptorio loads up to **50 open issues** (pull requests are skipped). Everyone who reacted to an issue counts as a reporter, which makes that ore heavier.
-- The floor log says "GitHub mine connected: N open issues loaded. Spark will triage the ore."
-- From then on, new and edited issues arrive by webhook. Closing an issue removes its ore.
-- Pushes and PRs keep the map current, and CI results drive the [gauntlet](/docs/gauntlet).
+- Shiptorio loads up to **50 open issues** (pull requests are skipped). Everyone who reacted to an issue counts as a reporter, which makes that issue weigh more.
+- From then on, new and edited issues arrive by webhook. Closing an issue takes it off the pile.
+- Pushes and PRs keep the deck current, and CI results drive [Checks](/docs/the-line#checks).
 
 ## Who can see a factory
 

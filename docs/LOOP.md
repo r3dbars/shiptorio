@@ -1,5 +1,9 @@
 # The Shiptorio loop: signals in, proof out
 
+> **Historical, 3D map era (marked 2026-10-29).** This page describes the old map, shaft or React UI, not the 2D deck
+> that is the product now. It stays here because code comments point at it. Where it disagrees with
+> [VISION.md](VISION.md), VISION wins.
+
 > Status: **locked**, 2026-10-26 (Justin approved the whole one-pager and the Nov 4 stations). Owner: Justin. Visual one-pager: https://claude.ai/artifact/3thVDxNxToYkyKTTqoFnbr
 > (copy in `docs/loop.html`). This is the simple model of the whole game. `docs/PRODUCT.md` has the full spec;
 > where they overlap, PRODUCT.md wins on details and this doc wins on the shape of the loop and the gauntlet.
