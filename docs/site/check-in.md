@@ -97,3 +97,7 @@ The optional `pipeline` snapshot/patch field summarizes planner, builder, checks
 
 
 Later may carry an optional `intentId` UUID. It is correlation, never permission. The server saves a bounded player/card/scope receipt together with the parked decision; losing the acknowledgement and reconnecting cannot count that same intent as another Later. A genuinely new player tap uses a new UUID. Clients without this field remain compatible.
+
+## Shippy on the deck card
+
+On the 2D deck, a Meta-guided recommendation can bring Shippy onto the card's top edge. He takes a short walk, then settles into a quiet reading pose. Connection and setup cards stay plain. Reduced-motion mode keeps him still, and closing the card stops the animation. Shippy appears only when the factory has matching Meta decision evidence for that recommendation.

@@ -87,6 +87,19 @@ export function cardStop(s: FactoryState, move: Move): StopId {
 
 export const isLaunchCard = (m: Move) => continueOption(m).actions.some((a) => a.tool === "request_merge");
 export const isSetupCard = (m: Move) => continueOption(m).actions.some((a) => a.tool === "connect_source" && (a.args.kind === "claude" || a.args.kind === "codex"));
+/** Only show the agent on recommendations with matching Meta evidence, never from copy alone. */
+export function metaGuided(s: FactoryState, move: Move): boolean {
+  if (continueOption(move).actions.some(a => a.tool === "connect_source")) return false;
+  if (s.holdingBack?.by === "spark" && move.id === `unlock:${s.holdingBack.id}`) return true;
+  const tools = continueOption(move).actions.map(a => a.tool);
+  const decision = tools.includes("approve_runner_job") ? "plan" : tools.includes("request_rework") ? "review" : null;
+  if (!decision || !move.itemId) return false;
+  // Latest decision wins: a newer fallback must not inherit an earlier successful model call.
+  const thought = s.brain?.thoughts.filter(t => t.itemId === move.itemId && t.decision === decision)
+    .sort((a, b) => b.at - a.at)[0];
+  return thought?.by === "spark";
+}
+
 const RANK = { steer: 0, approve: 1, suggest: 2 } as const;
 
 /** The one card: setup first (nothing moves without an agent), then stuck, then parked, then ideas, in deck order. */
@@ -195,6 +208,7 @@ export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckV
       no: flow ? "Later" : undefined,
       hold: isLaunchCard(move),
       setup: isSetupCard(move),
+      guide: metaGuided(s, move) ? "shippy" : undefined,
       attention: attentionOf(move),
       waitingCards: deck.length,
     };

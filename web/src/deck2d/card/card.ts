@@ -13,6 +13,7 @@ import type { CardView, MountCard } from "../contract";
 import { pixelOn } from "../../flags";
 import { cardScale, paintButton, paintDot, paintPlate, pixelLayer } from "./pixel";
 import "./card.css";
+import { mountShippyGuide } from "./shippy-guide";
 
 const SWIPE_SHARE = 0.28; // let go past this share of the card's width to answer
 const MIN_SWIPE_PX = 60;
@@ -65,6 +66,7 @@ interface Face {
   approve: HTMLButtonElement;
   no: HTMLElement;
   yes: HTMLElement;
+  guide?: { destroy(): void };
   px?: { redrawLater(): void }; // pixel mode: repaint the Later button when it lights up or goes dark
 }
 
@@ -98,6 +100,8 @@ function face(): Face {
 
 function fill(f: Face, card: View) {
   f.root.dataset.card = card.id;
+  if (card.guide === "shippy" && !f.guide) f.guide = mountShippyGuide(f.root);
+  if (card.guide !== "shippy" && f.guide) { f.guide.destroy(); f.guide = undefined; }
   f.no.textContent = card.no || "Later";
   f.yes.textContent = card.yes || "Approve";
   f.root.classList.toggle("hold", !!card.hold);
@@ -207,6 +211,7 @@ export const mountCard: MountCard = (host, handlers) => {
       setDots(f, { have: card.dots.have + 1, need: card.dots.need }, card.dots.have);
       f.root.classList.add("popping");
     }
+    f.guide?.destroy();
     leave(f.root, a);
     try { navigator.vibrate?.(a === "approve" ? 12 : 6); } catch { /* no haptics */ }
     (a === "approve" ? handlers.onApprove : handlers.onLater)(card.id);
@@ -287,6 +292,7 @@ export const mountCard: MountCard = (host, handlers) => {
       if (live) {
         // the source swapped or dropped the card underneath us (answered elsewhere): it steps down, unanswered
         stopHold();
+        live.guide?.destroy();
         leave(live.root, "down");
         live = null;
         drag = null;
@@ -312,6 +318,7 @@ export const mountCard: MountCard = (host, handlers) => {
       window.removeEventListener("resize", setScale);
       stopHold();
       clearCaughtUp();
+      live?.guide?.destroy();
       wrap.remove();
       live = null;
       shown = null;

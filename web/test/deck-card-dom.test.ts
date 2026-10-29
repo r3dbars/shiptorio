@@ -138,3 +138,20 @@ test("?px=1 draws the pixel card (canvas plate, buttons, dots); ?px=0 keeps the 
     else delete (globalThis as Record<string, unknown>).location;
   }
 });
+
+test("only Meta-guided cards mount Shippy; replacing or answering cleans him up", async () => {
+  const t = await mount();
+  t.h.show(card("setup"));
+  expect(t.host.querySelector(".ic-shippy-guide")).toBeNull();
+  t.h.show({ ...card("meta"), guide: "shippy" });
+  const sprite = t.live()!.querySelector(".ic-shippy-guide");
+  expect(sprite?.getAttribute("aria-hidden")).toBe("true");
+  t.h.show({ ...card("meta"), guide: "shippy", line: "Updated recommendation" });
+  expect(t.live()!.querySelector(".ic-shippy-guide")).toBe(sprite);
+  t.h.show(card("ordinary"));
+  expect(t.host.querySelector(".ic-shippy-guide")).toBeNull();
+  t.h.show({ ...card("meta-again"), guide: "shippy" });
+  (t.live()!.querySelector(".approve") as HTMLButtonElement).click();
+  expect(t.host.querySelector(".ic-shippy-guide")).toBeNull();
+  t.h.destroy();
+});

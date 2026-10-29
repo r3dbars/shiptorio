@@ -294,3 +294,17 @@ test("the deck page's no-argument source reads the selected live repository", ()
   });
   src.close();
 });
+
+
+test("Shippy guide requires matching Meta evidence, and ignores unrelated or fallback decisions", () => {
+  const m = card("unlock:stuck", "request_rework", { itemId: "a" });
+  const state = base({ deck: [m], holdingBack: { id: "stuck", area: "build", title: "Stuck", why: "Needs a fix", signalIds: ["a"], confidence: 1, by: "spark", decidedAt: 1, severity: 1 } });
+  expect(deckView(state).card?.guide).toBe("shippy");
+  expect(deckView({ ...state, holdingBack: { ...state.holdingBack!, by: "rule" } }).card?.guide).toBeUndefined();
+  expect(deckView({ ...state, deck: [card("setup", "connect_source", { options: [{ id: "go", label: "Connect", recommended: true, actions: [{ tool: "connect_source", args: { kind: "codex" }, reason: "" }] }] })] }).card?.guide).toBeUndefined();
+  const thought = { id: "t", at: 1, decision: "plan" as const, by: "spark" as const, model: "muse-spark", ms: 1, itemId: "a", title: "Plan", outcome: "Build", reason: "Fix it" };
+  const planned = base({ deck: [card("plan", "approve_runner_job", { itemId: "a" })], brain: { model: "muse-spark", online: true, decisions: 1, fallbacks: 0, thoughts: [thought] } });
+  expect(deckView(planned).card?.guide).toBe("shippy");
+  expect(deckView({ ...planned, brain: { ...planned.brain!, thoughts: [{ ...thought, itemId: "other" }] } }).card?.guide).toBeUndefined();
+  expect(deckView({ ...planned, brain: { ...planned.brain!, thoughts: [thought, { ...thought, id: "new", at: 2, by: "fallback" }] } }).card?.guide).toBeUndefined();
+});
