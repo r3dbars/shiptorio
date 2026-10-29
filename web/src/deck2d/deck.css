@@ -12,6 +12,13 @@
 [hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; background: #2a1410; overflow: hidden; }
 body { -webkit-tap-highlight-color: transparent; overscroll-behavior: none; user-select: none; -webkit-user-select: none; font-family: "Silkscreen", ui-monospace, monospace; color: var(--ink); }
+/* Until the first frame draws (and behind it on a slow phone): the same dimmed sky the deck opens on, over a palette
+   gradient, so a stranger never looks at an empty screen while the scripts load (deck.html preloads the picture). */
+body.deck-page {
+  background: url("/deck/art/sky-dim.webp") 50% 0 / cover no-repeat,
+    linear-gradient(#432f29, #713e30 35%, #a04430 60%, #652203);
+  image-rendering: pixelated;
+}
 #world { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
 #world.drag { cursor: grabbing; }
 

@@ -52,9 +52,9 @@ export function depth(x: number, w: number) {
 const BIG = 17, FACET = 8;
 interface Seed { x: number; y: number; r: number; t: number }
 function seeds(cell: number, salt: number) {
-  const m = new Map<string, Seed>();
+  const m = new Map<number, Seed>(); // numeric keys: this runs ~18 times per rock pixel on the first frame
   return (i: number, j: number) => {
-    const k = `${i}:${j}`;
+    const k = (i + 32768) * 65536 + (j + 32768);
     let s = m.get(k);
     if (!s) {
       s = { x: (i + 0.15 + hash(i, j, salt + 1) * 0.7) * cell, y: (j + 0.15 + hash(i, j, salt + 2) * 0.7) * cell * 0.75, r: cell * (0.6 + hash(i, j, salt + 4) * 0.3), t: hash(i, j, salt + 3) };
@@ -67,7 +67,7 @@ function nearest(at: (i: number, j: number) => Seed, cell: number, x: number, j:
   const gx = Math.floor(x / cell), gy = Math.floor(j / (cell * 0.75));
   let best = Infinity, second = Infinity, s = at(gx, gy);
   for (let a = gx - 1; a <= gx + 1; a++) for (let b = gy - 1; b <= gy + 1; b++) {
-    const c = at(a, b), d = Math.hypot(x + 0.5 - c.x, (j + 0.5 - c.y) * 1.2);
+    const c = at(a, b), dx = x + 0.5 - c.x, dy = (j + 0.5 - c.y) * 1.2, d = Math.sqrt(dx * dx + dy * dy);
     if (d < best) { second = best; best = d; s = c; } else if (d < second) second = d;
   }
   return { s, best, seam: second - best };
