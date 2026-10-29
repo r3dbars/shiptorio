@@ -135,6 +135,26 @@ const proposesPlan = (move: Move) => move.options.some(o => o.actions.some(a => 
 const MINE_KIND: Record<Signal["source"], SourceKind | undefined> = { github_issue: "github", sentry: "sentry", posthog: "posthog", inbox: undefined, lint: undefined };
 // Where each mine's ore deposit sits on the live map, left of the splitter.
 const DEPOSIT_Y: Record<MineKind, number> = { sentry: -3, posthog: 3 };
+type Line = Pick<FactoryState, "machines" | "belts">;
+/** One source's status replaces its old entry; the others keep their order. */
+const withSource = (sources: SourceStatus[] | undefined, kind: SourceKind, status: SourceStatus) => [...(sources ?? []).filter(s => s.kind !== kind), status];
+const unplugged = (sources: SourceStatus[] | undefined, kind: SourceKind) => (sources ?? []).map(s => s.kind === kind ? { ...s, state: "not_connected" as const, detail: "Disconnected" } : s);
+/** Counts one more event today on a source, starting over on a new UTC day. */
+function countedEvent(status: SourceStatus, now: number): SourceStatus {
+  const sameDay = status.lastEventAt && new Date(status.lastEventAt).toISOString().slice(0, 10) === new Date(now).toISOString().slice(0, 10);
+  return { ...status, state: "connected", lastEventAt: now, eventsToday: (sameDay ? status.eventsToday : 0) + 1 };
+}
+/** A mine's ore deposit and its belt to the splitter, only the parts not already on the map. */
+function depositLine(line: Line, id: string, y: number) {
+  const splitter = line.machines.find((m) => m.type === "splitter");
+  const machines = line.machines.some((m) => m.id === id) ? [] : [{ id, type: "ore_deposit" as const, x: -6, y, tier: 1, state: "idle" as const }];
+  const belts = splitter && !line.belts.some((b) => b.from === id) ? [{ id: `belt-${id}`, from: id, to: splitter.id }] : [];
+  return { machines, belts };
+}
+const depositRemoval = (line: Line, id: string) => [
+  ...(line.machines.some((m) => m.id === id) ? [{ kind: "machine" as const, id }] : []),
+  ...line.belts.filter((b) => b.from === id).map((b) => ({ kind: "belt" as const, id: b.id })),
+];
 const REVIEW_COMMENT_TRIES = 5;
 interface PendingComment { pr: number; body: string; itemId?: string; tries: number }
 const workRevision = (item: Item) => issueRevision(item.title, JSON.stringify({ body: item.body ?? "", failure: item.failure ?? "", scars: item.scars ?? [] }));
@@ -1722,7 +1742,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       await this.accountPut("githubNeedsInitialization", true);
       this.state = { repo: this.meta.repo, baseBranch: "main", districts: [], ...starterLine(), items: [], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 };
     }
-    if (await this.load()) await this.patch({ sources: [...(this.state!.sources ?? []).filter(s => s.kind !== "github"), source] });
+    if (await this.load()) await this.patch({ sources: withSource(this.state!.sources, "github", source) });
     await this.accountPut("githubPermissions", source);
   }
 
@@ -1763,9 +1783,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const item = existing || !signal.districtHint ? folded : { ...folded, district: matchDistrict(signal.districtHint, s.districts.map((d) => d.name)) };
     const kind = MINE_KIND[signal.source] ?? "github";
     const status = s.sources?.find((source) => source.kind === kind) ?? (kind === "github" ? githubStatus(this.env) : await this.mineStatus(kind as MineKind));
-    const now = Date.now();
-    const sameDay = status.lastEventAt && new Date(status.lastEventAt).toISOString().slice(0, 10) === new Date(now).toISOString().slice(0, 10);
-    await this.patch({ items: [item], sources: [...(s.sources ?? []).filter((source) => source.kind !== kind), { ...status, state: "connected", lastEventAt: now, eventsToday: (sameDay ? status.eventsToday : 0) + 1 }] });
+    await this.patch({ items: [item], sources: withSource(s.sources, kind, countedEvent(status, Date.now())) });
     const verb = signal.source === "sentry" ? (existing ? "More biters" : "Biters") : signal.source === "posthog" ? (existing ? "Traffic ore updated" : "Traffic ore") : existing ? "Ore updated" : "Ore";
     this.log(signal.source === "sentry" ? "warn" : "info", `${verb}: ${item.title}${!existing && item.district !== "/" ? ` on /${item.district}` : ""}`, item.id);
     await this.scheduleTick();
@@ -1787,21 +1805,16 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   async connectMine(kind: MineKind): Promise<SourceStatus | null> {
     if (await this.githubStopped()) throw new Error("GitHub factory is archived or paused");
     if (!(await this.load())) return null;
-    const status = await this.mineStatus(kind);
-    const others = (this.state!.sources ?? []).filter((entry) => entry.kind !== kind);
+    const status = await this.mineStatus(kind), sources = this.state!.sources;
     if (status.state !== "connected") {
-      await this.patch({ sources: [...others, status] });
+      await this.patch({ sources: withSource(sources, kind, status) });
       this.log("info", `${kind === "sentry" ? "Sentry" : "PostHog"} needs one step: ${status.setup.steps.join(" ")}`);
       return status;
     }
     await this.accountPut(`${kind}Linked`, true);
     await this.ctx.storage.delete(`${kind}Disconnected`);
     await linkRepo(this.env, kind, this.state!.repo, this.credentialScope()!);
-    const deposit = `ore-${kind}`;
-    const splitter = this.state!.machines.find((m) => m.type === "splitter");
-    const machines = this.state!.machines.some((m) => m.id === deposit) ? [] : [{ id: deposit, type: "ore_deposit" as const, x: -6, y: DEPOSIT_Y[kind], tier: 1, state: "idle" as const }];
-    const belts = splitter && !this.state!.belts.some((b) => b.from === deposit) ? [{ id: `belt-${deposit}`, from: deposit, to: splitter.id }] : [];
-    await this.patch({ machines, belts, sources: [...others, status] });
+    await this.patch({ ...depositLine(this.state!, `ore-${kind}`, DEPOSIT_Y[kind]), sources: withSource(sources, kind, status) });
     this.log("success", kind === "sentry" ? "Sentry mine open. New errors will show up as biters on the folder they hit." : "PostHog mine open. Reading traffic per route now.");
     if (kind === "posthog") {
       await this.accountPut("posthogPoll", { nextAt: 0, failures: 0 });
@@ -1829,14 +1842,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (kind === "posthog") await this.ctx.storage.delete("posthogPoll");
     if (!(await this.load())) return;
     await linkRepo(this.env, kind, null, this.credentialScope()!);
-    const deposit = `ore-${kind}`;
-    await this.patch({
-      sources: (this.state!.sources ?? []).map((source) => source.kind === kind ? { ...source, state: "not_connected", detail: "Disconnected" } : source),
-      removed: [
-        ...(this.state!.machines.some((m) => m.id === deposit) ? [{ kind: "machine" as const, id: deposit }] : []),
-        ...this.state!.belts.filter((b) => b.from === deposit).map((b) => ({ kind: "belt" as const, id: b.id })),
-      ],
-    });
+    await this.patch({ sources: unplugged(this.state!.sources, kind), removed: depositRemoval(this.state!, `ore-${kind}`) });
   }
 
   private async handleSentry(resource: string, payload: SentryPayload): Promise<void> {
@@ -1877,13 +1883,13 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       await this.growthPoll(rows, creds.keyEvent || "$pageview", now);
       const top = traffic.slice(0, 3).map((t) => `${t.route} ${t.usersPerDay}/day`).join(", ");
       const status = this.state!.sources?.find((source) => source.kind === "posthog") ?? (await this.mineStatus("posthog"));
-      await this.patch({ sources: [...(this.state!.sources ?? []).filter((source) => source.kind !== "posthog"), { ...status, state: "connected", detail: top ? `Busiest routes: ${top}.` : status.detail, lastEventAt: status.lastEventAt ?? now }] });
+      await this.patch({ sources: withSource(this.state!.sources, "posthog", { ...status, state: "connected", detail: top ? `Busiest routes: ${top}.` : status.detail, lastEventAt: status.lastEventAt ?? now }) });
     } catch (err) {
       const failures = poll.failures + 1;
       const retry = (err as { retryAfter?: number }).retryAfter;
       await this.accountPut("posthogPoll", { nextAt: now + pollDelay(POLL_MS, failures, (retry ?? 0) * 1000), failures });
       const status = await this.mineStatus("posthog");
-      await this.patch({ sources: [...(this.state!.sources ?? []).filter((source) => source.kind !== "posthog"), { ...status, state: "error", detail: `PostHog didn't answer (${err instanceof Error ? this.redactor.text(err.message).slice(0, 80) : "error"}). Retrying.` }] });
+      await this.patch({ sources: withSource(this.state!.sources, "posthog", { ...status, state: "error", detail: `PostHog didn't answer (${err instanceof Error ? this.redactor.text(err.message).slice(0, 80) : "error"}). Retrying.` }) });
     }
   }
 
@@ -1907,19 +1913,16 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   /** Plug the support well into the map: the deposit, its belt, and the source status. */
   async connectSupport(): Promise<SourceStatus | null> {
     if (!(await this.load())) return null;
-    const status = await this.supportStatusNow();
-    const others = (this.state!.sources ?? []).filter((entry) => entry.kind !== "email");
+    const status = await this.supportStatusNow(), sources = this.state!.sources;
     if (status.state !== "connected") {
-      await this.patch({ sources: [...others, status] });
+      await this.patch({ sources: withSource(sources, "email", status) });
       this.log("info", `Support mine needs one step: ${status.setup.steps[0]}`);
       return status;
     }
     await this.accountPut("supportLinked", true);
-    const splitter = this.state!.machines.find((m) => m.type === "splitter");
-    const machines = this.state!.machines.some((m) => m.id === "ore-inbox") ? [] : [{ id: "ore-inbox", type: "ore_deposit" as const, x: -6, y: 6, tier: 1, state: "idle" as const }];
-    const belts = splitter && !this.state!.belts.some((b) => b.from === "ore-inbox") ? [{ id: "belt-ore-inbox", from: "ore-inbox", to: splitter.id }] : [];
+    const { machines, belts } = depositLine(this.state!, "ore-inbox", 6);
     const previous = this.state!.sources?.find((entry) => entry.kind === "email");
-    await this.patch({ machines, belts, sources: [...others, { ...status, lastEventAt: previous?.lastEventAt, eventsToday: previous?.eventsToday ?? 0 }] });
+    await this.patch({ machines, belts, sources: withSource(sources, "email", { ...status, lastEventAt: previous?.lastEventAt, eventsToday: previous?.eventsToday ?? 0 }) });
     if (machines.length) this.log("success", "Support mine open. Customer messages will show up as mail at the support well, with a reply drafted for you to send.");
     return status;
   }
@@ -1927,13 +1930,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   async disconnectSupport(): Promise<void> {
     await this.ctx.storage.delete("supportLinked");
     if (!(await this.load())) return;
-    await this.patch({
-      sources: (this.state!.sources ?? []).map((source) => source.kind === "email" ? { ...source, state: "not_connected", detail: "Disconnected" } : source),
-      removed: [
-        ...(this.state!.machines.some((m) => m.id === "ore-inbox") ? [{ kind: "machine" as const, id: "ore-inbox" }] : []),
-        ...this.state!.belts.filter((b) => b.from === "ore-inbox").map((b) => ({ kind: "belt" as const, id: b.id })),
-      ],
-    });
+    await this.patch({ sources: unplugged(this.state!.sources, "email"), removed: depositRemoval(this.state!, "ore-inbox") });
   }
 
   private async handleSupport(message: SupportMessage): Promise<void> {
@@ -1944,10 +1941,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const folded = await foldMessage(this.state!.support ?? [], message, seen);
     if (!folded.ticket) return;
     await this.accountPut("supportSeen", [...seen, `${message.channel}:${message.messageId}`].slice(-500));
-    const now = Date.now();
     const status = this.state!.sources?.find((source) => source.kind === "email") ?? (await this.supportStatusNow());
-    const sameDay = status.lastEventAt && new Date(status.lastEventAt).toISOString().slice(0, 10) === new Date(now).toISOString().slice(0, 10);
-    await this.patch({ support: folded.tickets, sources: [...(this.state!.sources ?? []).filter((source) => source.kind !== "email"), { ...status, state: "connected", lastEventAt: now, eventsToday: (sameDay ? status.eventsToday : 0) + 1 }] });
+    await this.patch({ support: folded.tickets, sources: withSource(this.state!.sources, "email", countedEvent(status, Date.now())) });
     this.log("info", `${folded.isNew ? "Mail" : "More mail"} at the support well: ${folded.ticket.subject}`, folded.ticket.id);
     await this.scheduleTick();
   }
@@ -3514,7 +3509,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         if (msg.kind === "github") {
           await this.ctx.storage.delete("githubDisabled");
           const source = githubStatus(this.env);
-          await this.patch({ sources: [...(s.sources ?? []).filter((entry) => entry.kind !== "github"), source] });
+          await this.patch({ sources: withSource(s.sources, "github", source) });
           this.log("info", source.setup.steps.join(" "));
         } else if (msg.kind === "sentry" || msg.kind === "posthog") {
           await this.connectMine(msg.kind);
@@ -3522,7 +3517,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           await this.connectSupport();
         } else {
           const source = { kind: msg.kind, state: "needs_action" as const, detail: "Connector setup is not implemented yet.", eventsToday: 0, setup: { steps: ["GitHub is the first source checkpoint. This connector follows the verified shipping loop."] } };
-          await this.patch({ sources: [...(s.sources ?? []).filter((entry) => entry.kind !== msg.kind), source] });
+          await this.patch({ sources: withSource(s.sources, msg.kind, source) });
           this.log("info", source.detail);
         }
         break;
@@ -3531,7 +3526,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         if (msg.kind === "github") await this.disconnectGitHub();
         else if (msg.kind === "sentry" || msg.kind === "posthog") await this.disconnectMine(msg.kind);
         else if (msg.kind === "email") await this.disconnectSupport();
-        else await this.patch({ sources: (s.sources ?? []).map((source) => source.kind === msg.kind ? { ...source, state: "not_connected", detail: "Disconnected" } : source) });
+        else await this.patch({ sources: unplugged(s.sources, msg.kind) });
         break;
       }
       case "route_item": {
