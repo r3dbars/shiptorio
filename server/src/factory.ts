@@ -2859,11 +2859,11 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const mergeSha = await mergePullRequest(token, this.meta.repo, item.prNumber, head, item.title);
       const reason = by === "overrule" ? "You overruled the gauntlet and merged." : by === "autonomy" ? `Launch permit: ${item.lane}. Every station passed on this commit.` : "You merged at the merge gate.";
       const stages = (item.inspection?.stages ?? []).map((st) => (st.gate === "human" ? { ...st, state: "passed" as const, reason } : st));
-      // The merged webhook can arrive during the merge request. Commit launch first, then
-      // add the approval to that current item instead of overwriting it with the old pad snapshot.
+      // A merge webhook may already have launched this item. Add approval to the
+      // current state, never the old pad snapshot, before publishing our launch.
+      const current = this.state!.items.find(candidate => candidate.id === item.id && candidate.prNumber === item.prNumber);
+      if (current) await this.patch({ items: [{ ...current, inspection: item.inspection && { ...item.inspection, stages, humanApproved: by !== "autonomy" } }] }, true);
       await this.onPullClosed(item.prNumber, true, mergeSha);
-      const launched = this.state!.items.find(current => current.id === item.id && current.prNumber === item.prNumber && current.state === "launched");
-      if (launched) await this.patch({ items: [{ ...launched, inspection: item.inspection && { ...item.inspection, stages, humanApproved: by !== "autonomy" } }] });
       this.broadcast({ type: "log", level: "success", text: by === "autonomy" ? `Launching #${item.prNumber} on its own.` : `Launching #${item.prNumber}.`, at: Date.now(), actor: by === "autonomy" ? "spark" : "player", tool: "request_merge", approvedBy: by === "autonomy" ? "autonomy" : "player", reason, itemId: item.id });
       if (this.state!.move?.itemId === item.id) await this.publishGauntletMove(null);
       if (this.state!.bottleneck?.stationId === "gate-1") await this.refreshDecisions();

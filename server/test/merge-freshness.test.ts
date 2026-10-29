@@ -242,3 +242,18 @@ it("a GitHub hold after the card offer blocks the final merge without erasing st
     expect(f.saved().items[0].inspection?.state).toBe("passed");
   });
 });
+
+
+it("the player approval is saved before the launch is published", async () => {
+  await fixture(async f => {
+    const close = f.factory.onPullClosed.bind(f.factory);
+    f.factory.onPullClosed = async (...args: Parameters<typeof close>) => {
+      expect(f.saved().items[0].inspection?.humanApproved).toBe(true);
+      expect(f.saved().items[0].inspection?.stages.find(s => s.gate === "human")?.state).toBe("passed");
+      return close(...args);
+    };
+    await f.launch();
+    expect(f.saved().items[0].state).toBe("launched");
+    expect(f.merges()).toBe(1);
+  });
+});
