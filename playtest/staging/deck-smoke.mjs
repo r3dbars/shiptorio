@@ -39,13 +39,26 @@ export async function deckSmoke({ origin = 'https://shiptorio.dev', password, ou
         requireGuest(await who.json());
         await page.goto(`${origin}/deck?source=live`, { waitUntil: 'domcontentloaded', timeout: 30000 });
         await page.locator('[data-deck-ready="1"]').waitFor({ timeout: 30000 });
+        const readyMs = Date.now() - start;
+        assert.equal(await page.locator('.connection-tools').count(), 0, 'No setup chips before sign-in');
+        assert.equal(await page.getByRole('button', { name: 'Sign in', exact: true }).count(), 0, 'Play comes before sign-in');
+        await page.screenshot({ path: join(out, `guest-first-frame-${viewport.width}.png`) });
+        const storyCards = [];
+        for (let n = 1; n <= 3; n++) {
+          const decision = page.locator(`.ic-card:not(.ic-ghost)[data-card="story-call-${n}"]`);
+          await decision.waitFor({ timeout: 30000 });
+          assert.equal(await page.locator('.connection-tools').count(), 0);
+          await decision.locator('.approve').click();
+          await decision.waitFor({ state: 'detached' });
+          storyCards.push(`story-call-${n}`);
+        }
         await page.getByRole('button', { name: 'Sign in', exact: true }).waitFor({ state: 'visible', timeout: 15000 });
         assert(new URL(page.url()).pathname === '/deck', 'Guest left the 2D deck');
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
         assert(overflow <= 1, `Guest deck overflowed the viewport by ${overflow}px`);
         await page.screenshot({ path: join(out, `guest-${viewport.width}.png`) });
         assert.equal(errors.length, 0, errors.join('\n'));
-        reports.push({ ...viewport, readyMs: Date.now() - start, guest: true, url: page.url(), errors });
+        reports.push({ ...viewport, readyMs, storyMs: Date.now() - start - readyMs, storyCards, guest: true, url: page.url(), errors });
       } catch (error) {
         await page.screenshot({ path: join(out, `guest-${viewport.width}-failed.png`), timeout: 5000 }).catch(() => {});
         await writeFile(join(out, 'report.json'), JSON.stringify({ passed: false, width: viewport.width, error: error.message, errors, reports }, null, 2));

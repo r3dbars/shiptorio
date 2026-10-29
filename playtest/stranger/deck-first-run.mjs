@@ -78,7 +78,20 @@ try { for (const [index,view] of views.entries()) {
     const steps=[],started=Date.now();
     const card=()=>page.locator('.ic-card:not(.ic-ghost)');
     async function step(name,work){const at=Date.now();try{await work();steps.push({name,ms:Date.now()-at});await page.screenshot({path:join(dir,`${String(steps.length).padStart(2,'0')}-${name}.png`),animations:'disabled'});if(!baseline) for(const button of await card().getByRole('button').all()){const b=await button.boundingBox(),c=await card().boundingBox();assert.ok(b.x>=c.x && b.x+b.width<=c.x+c.width+1,`${name}: button stays inside its card`);}}catch(e){await page.screenshot({path:join(dir,`FAIL-${name}.png`)});throw e;}}
-    await step('enter-deck',async()=>{await page.goto(origin+'/deck.html?source=live');await page.getByLabel('Password').fill(password);await page.getByRole('button',{name:'Enter the factory'}).click();await page.locator('[data-deck-ready]').waitFor();await card().getByRole('button',{name:'Sign in',exact:true}).waitFor();});
+    await step('enter-deck',async()=>{
+      await page.goto(origin+'/deck.html?source=live');await page.getByLabel('Password').fill(password);await page.getByRole('button',{name:'Enter the factory'}).click();await page.locator('[data-deck-ready]').waitFor();
+      if(baseline) await card().getByRole('button',{name:'Sign in',exact:true}).waitFor();
+      else { assert.equal(await page.locator('.connection-tools').count(),0,'setup chips stay hidden before sign-in');assert.equal(await card().getByRole('button',{name:'Sign in',exact:true}).count(),0,'play the story before setup'); }
+    });
+    if(!baseline){
+      for(let n=1;n<=3;n++)await step(`story-decision-${n}`,async()=>{
+        const decision=page.locator(`.ic-card:not(.ic-ghost)[data-card="story-call-${n}"]`);
+        await decision.waitFor({timeout:30000});assert.equal(await page.locator('.connection-tools').count(),0);
+        assert.equal(await card().getByRole('button',{name:'Sign in',exact:true}).count(),0);
+        await decision.locator('.approve').click();await decision.waitFor({state:'detached'});
+      });
+      await step('story-sign-in',async()=>{await card().getByRole('button',{name:'Sign in',exact:true}).waitFor();assert.equal(await page.locator('.connection-tools').count(),0);});
+    }
     await step('github-sign-in',async()=>{await card().getByRole('button',{name:'Sign in',exact:true}).click();await card().getByRole('button',{name:'Use this repo',exact:true}).waitFor();signedIn=true;});
     await step('choose-repository',async()=>{await card().getByRole('button',{name:'Use this repo',exact:true}).click();await page.waitForURL(u=>u.searchParams.get('repo')===stub.state.repo);if(baseline) await page.getByRole('button',{name:'Codex engine',exact:true}).click();await card().getByRole('button',{name:'Set up Codex',exact:true}).waitFor();});
     let joinTicket;
@@ -100,7 +113,7 @@ try { for (const [index,view] of views.entries()) {
     assert.ok(!requests.some(p=>p.endsWith('/start')),'browsing must not start a job');
     assert.equal(stub.state.pulls.length,0,'no PR before starting an issue');
     const overflow=await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth);assert.ok(overflow<=1,`horizontal overflow ${overflow}`);
-    const bounds=await card().getByRole('button',{name:baseline?'Start issue':'Plan',exact:true}).boundingBox();assert.ok(bounds.x>=0&&bounds.x+bounds.width<=view.width,'Start issue is fully onscreen');
+    const bounds=await card().getByRole('button',{name:baseline?'Start issue':'Plan',exact:true}).boundingBox();assert.ok(bounds.x>=0&&bounds.x+bounds.width<=view.width,'Plan is fully onscreen');
     reports.push({view: view.name,totalMs:Date.now()-started,steps,slowest:[...steps].sort((a,b)=>b.ms-a.ms).slice(0,3),errors});
     console.log(`PASS deck first run ${view.name}: ${Date.now()-started}ms`);
   } finally {await context?.close();await mf?.dispose();}
