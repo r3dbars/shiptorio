@@ -75,13 +75,14 @@ export const gate: StationDef = {
     if (s === "idle") {
       for (const y0 of [21, 27, 33]) for (let y = y0; y < y0 + 5; y++) for (let x = 27; x < 31; x++) tone(g, x, y, LIT.idle, 0.55 + (x - 27) * 0.1 - (y - y0) * 0.04);
     } else if (s === "auto") { // split open
-      for (let y = 20; y < 39; y++) { tone(g, 26, y, lit, 0.7); tone(g, 27, y, lit, 1); tone(g, 30, y, lit, 0.7); tone(g, 31, y, lit, 1); g.set(28, y, "iron-0"); g.set(29, y, "iron-0"); }
+      for (const y0 of [21, 27, 33]) for (let y = y0; y < y0 + 5; y++) for (let x = 27; x < 31; x++) tone(g, x, y, lit, 0.75 + (x - 27) * 0.08 - (y === y0 + 4 ? 0.2 : 0));
     } else {
       for (let y = 21; y < 38; y++) for (let x = 27; x < 31; x++) tone(g, x, y, lit, 0.55 + (x - 27) * 0.1);
       if (s === "working") for (let y = 21 + f * 4; y < 25 + f * 4; y++) for (let x = 27; x < 31; x++) tone(g, x, y, lit, 0.85 + (x - 27) * 0.05);
       else for (let y = 21; y < 38; y++) tone(g, 29, y, lit, 1);
     }
-    if (glow) g.glowDisc(29, 29.5, 8, glow, 0.25, [26, 20, 6, 19]);
+    if (glow) g.glowDisc(29, 29.5, s === "auto" ? 10 : 8, glow, 0.25, [26, 20, 6, 19]);
+    if (s === "auto") g.glow(24, 18, 10, 23, "ok-2", 0.25); // the bar lights its own brass frame too
 
     // --- feet
     for (const fx of [19, 33]) { strap(g, fx, 44, 6, 2, BRASS, 3); cylH(g, fx, 46, 6, 2, BRASS, { amb: 0.15 }); }
