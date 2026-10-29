@@ -111,10 +111,15 @@ export function connectReplay(onMessage: Listener, onStatus: StatusListener, opt
   const clear = () => { generation++; for (const id of pending) timers.clear(id); pending.clear(); };
   // The page also owns connection controls outside DeckSource. Block activation there too.
   // Wheel zoom and file drop remain available; a replay never opens a live action flow.
-  const blockActivation = (event: Event) => { event.preventDefault(); event.stopImmediatePropagation(); };
+  // The phone's "See all" zoom only moves the camera, so it stays usable for a clean take.
+  const blockActivation = (event: Event) => {
+    if ((event.target as Element | null)?.closest?.("#zoom")) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+  };
   const blockKey = (event: KeyboardEvent) => { if (["Enter", " "].includes(event.key)) blockActivation(event); };
   const guarded = options.ui !== false && typeof document !== "undefined";
   if (guarded) {
+    document.body.classList.add("deck-replay"); // hides the Repo inbox / Codex engine chips; replay can't open them
     document.addEventListener("click", blockActivation, true);
     document.addEventListener("pointerdown", blockActivation, true);
     document.addEventListener("pointerup", blockActivation, true);
@@ -163,6 +168,7 @@ export function connectReplay(onMessage: Listener, onStatus: StatusListener, opt
     send() { /* Replay can never dispatch, approve, defer, or merge anything. */ },
     close() { closed = true; clear(); tag?.remove();
       if (guarded) {
+        document.body.classList.remove("deck-replay");
         document.removeEventListener("click", blockActivation, true);
         document.removeEventListener("pointerdown", blockActivation, true);
         document.removeEventListener("pointerup", blockActivation, true);

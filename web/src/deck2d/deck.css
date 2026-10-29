@@ -67,6 +67,7 @@ body { -webkit-tap-highlight-color: transparent; overscroll-behavior: none; user
 /* Entry points stay available when the camera is away from Repo and the boilers. */
 .connection-tools { top: auto; bottom: 8px; left: 8px; right: auto; z-index: 12; }
 body:has(.ic-card) .connection-tools { bottom: auto; top: 54px; }
+body.deck-replay .connection-tools { display: none; }
 
 .ic-card[data-card^="connection-"] { max-height: calc(100dvh - 130px); overflow-y: auto; overflow-wrap: anywhere; }
 
