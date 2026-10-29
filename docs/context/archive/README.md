@@ -15,3 +15,7 @@ archived on its first line. For the current picture, start at [../README.md](../
 | [issue-170-acceptance.md](issue-170-acceptance.md), [testing-live-acceptance.md](testing-live-acceptance.md), [live-source-launch-proof.md](live-source-launch-proof.md), [spark-spend-live-proof.md](spark-spend-live-proof.md) | Oct 26-27 acceptance proofs |
 | [request-helper-cpu.md](request-helper-cpu.md), [webhook-route-security.md](webhook-route-security.md) | Finished task reviews |
 | [feedback-factory/](feedback-factory/) | First layout canvas |
+| [vision-before-deck.md](vision-before-deck.md) | VISION.md before the deck-era rewrite (Oct 29) |
+| [phase-plan.md](phase-plan.md), [architecture.md](architecture.md) | Day-one build plan and 3D map game design |
+| [build-mode.md](build-mode.md) | Parked build mode spec |
+| [briefs/](briefs/) | Day-one lane briefs for Codex and Muse Code |

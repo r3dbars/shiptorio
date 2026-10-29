@@ -1,39 +1,36 @@
 ---
-title: Welcome to Shiptorio
-description: Shiptorio turns your repo into a factory game. Every rocket is a real merged pull request.
+title: Shiptorio docs
+description: What Shiptorio is, how the line works, and how to point it at your own repo.
 section: Start here
 order: 1
 ---
-# Welcome to Shiptorio
+# Shiptorio docs
 
-<p class="lede">Your codebase is a factory. Issues and errors are the ore. Your own AI agents are the machines. Every rocket that launches is a real merged pull request.</p>
+Shiptorio shows your software as a factory. GitHub issues ride a conveyor through seven stations, AI agents do the work, and every rocket that launches is a real merged pull request.
 
-![A Shiptorio factory: the island, the line of machines, and the launch pad](/docs/img/hero.png)
+There's always a bottleneck, and it's usually waiting on one of your calls. Shippy the robot parks on it and a card shows up at the bottom of the screen. Swipe it and the line moves. Approve the same kind of thing three times and the factory does that kind on its own, so you're free for the next jam.
 
-## The idea in one breath
+## The line
 
-AI writes code fast now. The slow part is you: deciding what it should build, what it has to check, and what it has to prove. Shiptorio makes those calls visible and quick.
+**Repo → Planner → Builder → Checks → Review → Gate → Launch**
 
-But faster approvals are only step one. The game keeps pushing you to **add more checks and verify everything**. Every check you add and every clean ship earns trust, and the factory runs more of itself over time. **Verify, then automate.** That's the whole point.
+1. **Repo.** Your open GitHub issues wait here. You pick one to start.
+2. **Planner.** Shippy's brain, Meta Muse Spark, reads the issue and the code and writes a small plan: which files, what changes.
+3. **Builder.** Your own coding agent (Codex or Claude Code, on your own machine) builds it and opens a PR.
+4. **Checks.** CI runs, plus a proof check that the fix really fixes the issue.
+5. **Review.** Spark reviews the diff.
+6. **Gate.** You hold **Ship it** to merge.
+7. **Launch.** GitHub merges it and the rocket goes up.
 
-## How the loop works
-
-1. **Ore comes in.** GitHub issues, Sentry errors and PostHog drops land on the map as ore. See [Mines](/docs/sources).
-2. **Spark plans it.** Meta Muse Spark reads the ore, sorts it, picks the files and writes a plan. It never writes code. See [How Spark decides](/docs/spark).
-3. **Your agents build it.** Claude Code or Codex, running on your own machine and your own subscription, makes the change and opens a PR. See [Connect your machine](/docs/runner).
-4. **The gauntlet checks it.** CI, the verify bay and AI review all have to pass. Fails ride the rework belt back. See [The gauntlet](/docs/gauntlet).
-5. **You launch it.** Your merge launches the rocket. Orbit watch keeps an eye on it for 24 hours. See [Orbit watch](/docs/orbit-watch).
-6. **Trust grows.** Ship clean enough times in one lane and it earns a launch permit, so those PRs ship without you. See [Launch permits](/docs/permits).
-
-There's always a bottleneck, always a next move. That's the game.
+More on each station: [The line](/docs/the-line).
 
 ## Where to start
 
-- New here? Start with [Getting started](/docs/getting-started). You can play the sandbox in your browser with no sign-in.
-- Ready to hook up a real repo? [Install the GitHub App](/docs/github-app), then [connect your machine](/docs/runner).
-- Curious how the brain works? Read [How Spark decides](/docs/spark), or the judge page [How Meta Muse Spark runs Shiptorio](/art/spark.html).
-- Want to run your own instance? [Self-host with your own keys](/docs/self-host).
-- Wondering what happens to your code? [Security and privacy](/docs/security).
-- Testing a change? [Test players and the player bot](/docs/testing).
+- New here? [Getting started](/docs/getting-started) walks through the tutorial and then your own factory.
+- Ready for a real repo? [Install the GitHub App](/docs/github-app), then [connect your machine](/docs/runner).
+- How the factory learns to run itself: [Trust](/docs/trust).
+- How the brain works: [Shippy's brain](/docs/spark).
+- Run your own copy: [Self-host with your own keys](/docs/self-host).
+- What happens to your code: [Security and privacy](/docs/security).
 
-> **Heads up** Shiptorio is in private preview while we build it during the Meta AI Developer Hackathon (Oct 26 to Nov 4, 2026). The app at shiptorio.com is password-gated and only allow-listed GitHub accounts can sign in. These docs are public. The sandbox works for everyone who can reach the app.
+> **Heads up** Shiptorio is in private preview while we build it during the Meta AI Developer Hackathon (Oct 26 to Nov 4, 2026). These docs are public. On [shiptorio.dev](https://shiptorio.dev) the tutorial is open to everyone. The preview password only comes up when you create your own factory, and only allow-listed GitHub accounts can connect a real repo. shiptorio.com still shows its landing page and waitlist.

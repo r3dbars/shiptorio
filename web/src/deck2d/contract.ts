@@ -123,7 +123,7 @@ export type DeckEvent =
   | { type: "deck-grow"; size: "small" | "medium" | "large"; phase: "beams" | "plates" | "rails" | "glow" | "rocks" | "done" } // grow/
   | { type: "build-stage"; stop: StopId; stage: "plot" | "scaffold" | "frame" | "panels" | "top" | "burst" | "check" } // build/
   | { type: "launch-stage"; stage: "island-rising" | "island-up" | "bridge" | "bridge-done" | "tower" | "rocket-lowering" | "rocket-seated" } // launch/
-  | { type: "tap"; target: TapTarget } // interact/ (docs/PIXEL-PLAN.md section 6)
+  | { type: "tap"; target: TapTarget } // interact/ (docs/context/pixel-deck.md)
   | { type: "shippy-arrive"; target: TapTarget }
   | { type: "interact"; target: TapTarget; action: string };
 

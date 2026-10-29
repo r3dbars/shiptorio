@@ -1,3 +1,5 @@
+> Archived 2026-10-29: from the 3D map era (day one plan, island map, build mode). Not how Shiptorio works today; see [docs/VISION.md](../../VISION.md).
+
 # Shiptorio architecture and game design
 
 > **Stack update (Oct 26):** we host on Cloudflare, not Fly.io and Neon. The server is one Worker (Hono) with a
