@@ -5,10 +5,8 @@
 // voice, asks before building (autonomy starts at Advisor), puts the bottleneck on the
 // Next Move card, and keeps the HUD metrics. Spark never writes code; the assemblers do.
 
-import { STARTER_ISSUE, type StepId } from "../buildout/journey";
-import { ghostSpots } from "../map/ghosts";
-import { actionLabel } from "../ui/stationCopy";
-import { mineUnlocked } from "../ui/whatsNext";
+import { ghostSpots } from "../deck2d/rules/ghosts";
+import { actionLabel, mineUnlocked, STARTER_ISSUE, type StepId } from "../deck2d/rules/sim";
 import {
   SCIENCE_FOR,
   findFunnelDrop,

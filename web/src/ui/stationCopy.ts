@@ -14,8 +14,4 @@ export function researchedCopy(stationId: string): PanelCopy {
 
 export const POWER_TYPES: Machine["type"][] = ["steam", "solar", "battery", "geothermal"];
 
-// The label for an action id on any panel, so the floor log can say what was asked for.
-export function actionLabel(action: string): string | undefined {
-  const all = [REWORK_COPY, POWER_COPY, ...Object.values(MACHINE_COPY)].flatMap((c) => c?.actions ?? []);
-  return all.find((a) => a.id === action)?.label;
-}
+export { actionLabel } from "../deck2d/rules/sim";

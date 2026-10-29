@@ -11,7 +11,7 @@ import { NEXT_MOVE, STAGE_LABEL, STATE_WORD, TASKS, THINKS, WORDS } from "../cop
 import { HoldLaunch, isLaunch, plugsInAgent } from "./Attention";
 import { LearnDots } from "./LearnDots";
 import { because } from "./because";
-import { openUnlockLink } from "./unlockLink";
+import { openUnlockLink } from "../deck2d/rules/unlockLink";
 import { sound } from "../sound/engine";
 import { isSetup, taskOrder } from "./slowSpot";
 import { moving } from "./moving";

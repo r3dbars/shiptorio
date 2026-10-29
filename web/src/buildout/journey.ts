@@ -8,8 +8,9 @@ import type { FactoryState, Item } from "@shiptorio/shared";
 
 import type { Layout } from "../map/shaft/layout";
 
-export const STEP_IDS = ["tunnel", "boiler", "builder", "issue", "planner", "build", "checks", "launch"] as const;
-export type StepId = (typeof STEP_IDS)[number];
+import { STARTER_ISSUE, STEP_IDS, type StepId } from "../deck2d/rules/sim";
+
+export { STARTER_ISSUE, STEP_IDS, type StepId };
 /** after the last build: the "Look around" card, then free camera and the two counters */
 export const LOOK = "look" as const;
 export type JourneyId = StepId | typeof LOOK;
@@ -56,10 +57,6 @@ export function phaseAt(ms: number): BuildPhase {
 }
 
 /** The demo shop's scripted first issue; the starter issue filed on a real repo (only on the player's tap) is the same. */
-export const STARTER_ISSUE = {
-  title: 'Add a "Run it locally" section to the README',
-  label: "shiptorio-starter",
-} as const;
 
 const PLANNED: ReadonlySet<Item["state"]> = new Set(["working", "inspecting", "rejected", "passed", "on_pad", "launched"]);
 const CHECKED: ReadonlySet<Item["state"]> = new Set(["rejected", "passed", "on_pad", "launched"]);
