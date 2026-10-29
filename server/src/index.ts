@@ -541,13 +541,9 @@ app.on(["GET", "POST"], "/connect/support", async (c) => {
 const device = (env: Env, code: string) => env.FACTORY.get(env.FACTORY.idFromName(`device:${code.toLowerCase()}`));
 async function deviceRepoAccess(env: Env, user: import("./authorization").AccessUser, repo: string): Promise<number | null> {
   if (!REPO_RE.test(repo) || repo.split("/").some(p => p === "." || p === "..")) return null;
-  const installation = await repoAccess(env, user, repo);
-  if (!installation) return null;
-  try {
-    const token = await installationToken(env, installation);
-    const permission = await gh<{ permission: string; user: { id: number } }>(`/repos/${repo}/collaborators/${encodeURIComponent(user.login)}/permission`, token);
-    return permission.user?.id === user.id && ["write", "maintain", "admin"].includes(permission.permission) ? installation : null;
-  } catch { return null; }
+  // The shared authority check already verifies this exact user's current GitHub role.
+  // Do not repeat the call or turn a transient provider failure into a permission denial.
+  return repoAccess(env, user, repo, "write", true);
 }
 app.post("/api/runner-device/start", async c => {
   const bucket = await secretHash(c.req.header("cf-connecting-ip") ?? "local");
