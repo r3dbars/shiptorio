@@ -119,7 +119,7 @@ export function connectReplay(onMessage: Listener, onStatus: StatusListener, opt
   const blockKey = (event: KeyboardEvent) => { if (["Enter", " "].includes(event.key)) blockActivation(event); };
   const guarded = options.ui !== false && typeof document !== "undefined";
   if (guarded) {
-    document.body.classList.add("deck-replay"); // hides the Repo inbox / Codex engine chips; replay can't open them
+    document.body.classList.add("deck-replay");
     document.addEventListener("click", blockActivation, true);
     document.addEventListener("pointerdown", blockActivation, true);
     document.addEventListener("pointerup", blockActivation, true);
@@ -137,6 +137,8 @@ export function connectReplay(onMessage: Listener, onStatus: StatusListener, opt
     const trace = parseTrace(raw);
     clear(); onStatus("live");
     if (tag) tag.textContent = `${trace.provenance === "fixture" ? "Replay · fixture sample" : "Replay · recorded live"} · ${[1, 2, 4].includes(speed) ? speed : 1}×`;
+    // Say what's playing, then get out of the take: on camera the deck's own card is the only thing that asks.
+    if (tag) { tag.hidden = false; const hide: unknown = timers.set(() => { pending.delete(hide); tag.hidden = true; }, 3000); pending.add(hide); }
     for (const frame of traceSchedule(trace, speed)) {
       if (frame.at === 0) { onMessage(frame.message); continue; }
       let id: unknown;
@@ -144,7 +146,7 @@ export function connectReplay(onMessage: Listener, onStatus: StatusListener, opt
       pending.add(id);
     }
   };
-  const failed = () => { if (!closed) { onStatus("offline"); if (tag) tag.textContent = "Replay · could not read trace. Drop a valid trace JSON to try again."; } };
+  const failed = () => { if (!closed) { onStatus("offline"); if (tag) tag.hidden = false; if (tag) tag.textContent = "Replay · could not read trace. Drop a valid trace JSON to try again."; } };
   const loadText = (text: string) => { if (text.length > MAX_TRACE_BYTES) throw new Error("Trace is too large."); play(JSON.parse(text)); };
   const drag = (event: DragEvent) => { event.preventDefault(); };
   const drop = (event: DragEvent) => {

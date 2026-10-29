@@ -5,8 +5,8 @@ import type { CardView, DeckEvent, DeckView } from "./contract";
 //
 //   live / replay  every ship gets a beat. After a held Ship it, the next card also waits for that ship (up to 20s),
 //                  so it doesn't pop up while the merge is still landing.
-//   story / demo   crates ship all the time there, so only the first ship after each yes gets a beat, and only
-//                  while the story is in its swipe phase (the level-up climax keeps its own captions).
+//   story / demo   crates ship all the time there, so only the first ship after each yes gets a beat (and counts),
+//                  and only while the story is in its swipe phase (the level-up climax keeps its own captions).
 
 export const PAYOFF = {
   afterLaunch: 2.0, // ignition, then the rocket clears the pad, then the words
@@ -59,8 +59,9 @@ export function createPayoff(o: PayoffOptions) {
       const delta = last == null ? 0 : shipped - last;
       last = shipped;
       if (delta > 0) {
-        count(delta);
         const quiet = o.phase ? o.phase() !== "swipe" : false;
+        // Story: count only the ship the player's own yes sent, so the number never reads inflated.
+        if (o.every) count(delta); else if (armed && !quiet) count(1);
         if (armed && !quiet && mode === "idle") { mode = "lift"; t = 0; }
         if (!o.every) armed = false;
         waitT = 0;

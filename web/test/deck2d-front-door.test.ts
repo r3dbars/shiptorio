@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { deckSignedIn, showConnectionTools, storyBeforeSignIn } from '../src/deck2d/main';
+import { deckSignedIn, oneAsk, setupFromStations, storyBeforeSignIn } from '../src/deck2d/main';
 import { createStory } from '../src/deck2d/story';
 import { createConnections } from '../src/deck2d/data/connections';
 
@@ -21,13 +21,13 @@ test('a stalled session check falls back to the story instead of blocking the fi
   expect(signedIn).toBe(false);
 });
 
-test('connection chips require live mode, a signed-in player and a valid repo', () => {
-  expect(showConnectionTools('?source=live&repo=player/factory', true)).toBe(true);
+test('tapping Repo or the boilers opens setup only in live mode with, a signed-in player and a valid repo', () => {
+  expect(setupFromStations('?source=live&repo=player/factory', true)).toBe(true);
   for (const search of ['', '?source=sim&watch=1&repo=player/factory', '?source=demo', '?source=live', '?source=live&repo=../factory']) {
-    expect(showConnectionTools(search, true)).toBe(false);
+    expect(setupFromStations(search, true)).toBe(false);
   }
-  expect(showConnectionTools('?source=live&repo=player/factory', false)).toBe(false);
-  expect(showConnectionTools('?source=live&repo=player/factory&onboard=codex', false)).toBe(false);
+  expect(setupFromStations('?source=live&repo=player/factory', false)).toBe(false);
+  expect(setupFromStations('?source=live&repo=player/factory&onboard=codex', false)).toBe(false);
 });
 
 test('a stranger plays every story decision before the existing sign-in card opens once', async () => {
@@ -66,4 +66,14 @@ test('a stranger plays every story decision before the existing sign-in card ope
   expect(story.view().card?.id).toBe(replay.id);
   story.approve(replay.id);
   expect(story.view().card).toBeNull();
+});
+
+test('one question at a time: while a card asks, only its station glows', () => {
+  const card = { id: 'c', title: 'Approve?', line: '', dots: null, stop: 'review' as const };
+  const view = { stops: [], jam: null, card, shippy: { pose: 'inspect' as const, at: 'review' as const }, shipped: 0, caption: null, attention: ['repo', 'review', 'gate'] };
+  expect(oneAsk(view).attention).toEqual(['review']);
+  expect(oneAsk({ ...view, attention: ['repo'] }).attention).toEqual(['review']); // the card's own station, never another
+  expect(oneAsk({ ...view, card: null }).attention).toEqual(['repo', 'review', 'gate']); // no card: the view is untouched
+  const single = { ...view, attention: ['review'] };
+  expect(oneAsk(single)).toBe(single);
 });
