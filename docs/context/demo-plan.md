@@ -98,7 +98,7 @@ Visual deck polish stays with Justin's local Codex (`codex/deck-visuals`) and Cl
 | 51 | The deck feels good on a phone | web/src/deck2d/deck.css, card/card.css, web/deck.html (meta only) |
 | 52 | Faster first load | web/public/{deck,welcome,brand}/**, web/public/sw.js, scripts/art/* |
 | 53 | When something breaks, say one plain sentence | stations/{inspector,status,attention}.ts, server/src/{errors,reliability}.ts |
-| 54 | Bug bash the loop | new bug-bash tests; small fixes in engine/{flow,camera}.ts, juice/build/grow/launch, server/src/runner-job.ts |
+| 54 | Bug bash the loop | new bug-bash tests; small fixes in engine/{flow,camera}.ts, juice/build/grow/launch (not the sound wiring in juice/{sounds,index}.ts), server/src/runner-job.ts |
 | 55 | One way in | server/src/{redirect,landing,account-pages}.ts, web/index.html, web/src/main.tsx (routing) |
 | 56 | Docs that match today | AGENTS.md, docs/context/* except the plan/deck/branch docs; history to docs/context/archive/ |
 | 57 | Shippy is calm and always easy to find | web/src/deck2d/shippy/* |
@@ -115,8 +115,9 @@ Visual deck polish stays with Justin's local Codex (`codex/deck-visuals`) and Cl
 | 67 | The runner keeps going | runner/src/{pairing,recovery,health,workspace,codex-assembler,subscriptions}.ts |
 | 68 | Security pass before the demo | server/src/{security,webhook-body,redact,injection-policy,rate-limit,auth,authorization}.ts |
 | 69 | Dead code sweep (server) | server/src/{ore,geothermal,orbit,growth,unlocks,levels,permits,taps,taps-admin,support,waitlist,map,iron-page,ironPage,engine,diagnose,starterIssue,test-delegation}.ts, signals/*, sources/* |
-| 70 | Dead code sweep (old web UI) | web/src/{ui,buildout,sim,sound,judge,map}/**, App.tsx, store.ts, old CSS |
+| 70 | Dead code sweep (old web UI) | web/src/{ui,buildout,sim,judge,map}/**, App.tsx, store.ts, old CSS. **Not web/src/sound/** (Claude thread owns it now) |
 
 Claude threads (2026-10-29 18:26): "Polish the station and belt art" owns station drawing + belt art; "Write the 2-minute demo video script" owns docs/context/demo-script.md.
+18:50: "Bring the old sound and music to the 2D deck" owns web/src/sound/** and the sound wiring in web/src/deck2d/juice/{sounds,index}.ts.
 
 Status 18:30: merged #46 (#617), #45 (#616). Open: #43 (#618), #44 (#615), #48 (#621 draft), #57 (#622 draft). Others in progress.
