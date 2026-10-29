@@ -5,6 +5,7 @@ import {
 import { pixelOn } from "../../flags";
 import { createPixelCanvas } from "./pixel";
 import * as pd from "./pxdraw";
+import { FLIGHT } from "../launch/flight";
 import { BOILER_H, BOILER_W, boilerFrame } from "../../bakeoff/boiler2d";
 
 // stations/ (its own thread) draws each machine in pixel code; until it lands, pixel mode shows the snapped webp.
@@ -68,6 +69,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   const drop: Record<StopId, number> = Object.fromEntries(STOPS.map((s) => [s, 0])) as never;
   const puffs: Puff[] = [];
   const rocket = { y: 0, v: 0, mode: "ready" as "ready" | "count" | "up" | "away" | "down", t: 0 };
+  let pendingLaunches = 0;
   let prev: DeckView | null = null, lever = 0;
 
   let deckW = DECK_END, islandUp = true, islandIn = true; // how much platform is built (deck.size / deck.island)
@@ -98,6 +100,9 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   function target(v: DeckView) {
     const all = fitAll();
     if (cam.all) return all;
+    if (px && rocket.mode !== "ready") {
+      return { x: STOP_X.launch - 70, y: 100, s: Math.max(all.s, W / 1100) };
+    }
     // Desktop fits everything, except it leans in on a station while it's being built (construction reads small otherwise).
     const site = !portrait() && !v.card ? v.stops.find((x) => x.id !== "launch" && (x.building !== undefined || (x.built && layers.some((l) => l.owns?.(x))))) : undefined;
     if (!portrait() && !site) {
@@ -107,7 +112,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
       if (!px) return all;
       const k = Math.max(1, Math.round(all.s * ART_PX * DPR)), vw = W / (k / (ART_PX * DPR));
       if (vw >= right() - BOUNDS.x0) return all;
-      const toIsland = (islandIn && !islandUp) || rocket.mode === "count" || rocket.mode === "up";
+      const toIsland = (islandIn && !islandUp) || rocket.mode !== "ready";
       return { ...all, x: toIsland ? right() - vw / 2 : BOUNDS.x0 - 40 + vw / 2 };
     }
     const s = Math.max(all.s, W / (site ? 1300 : 1050)), half = W / 2 / s;
@@ -181,7 +186,10 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     }
     if (p && v.jam && v.jam !== p.jam) bus.emit({ type: "jam", stop: v.jam });
     if (p && v.shippy.pose !== p.shippy.pose) bus.emit({ type: "shippy", pose: v.shippy.pose });
-    if (p && islandUp && v.shipped > p.shipped && (rocket.mode === "ready" || rocket.mode === "down")) { rocket.mode = "count"; rocket.t = 0; }
+    if (px && owned.has("rocket")) {
+      if (p && v.shipped > p.shipped) pendingLaunches += v.shipped - p.shipped;
+      if (islandUp && pendingLaunches > 0 && rocket.mode === "ready") { pendingLaunches--; rocket.mode = "count"; rocket.t = 0; }
+    } else if (p && islandUp && v.shipped > p.shipped && (rocket.mode === "ready" || rocket.mode === "down")) { rocket.mode = "count"; rocket.t = 0; }
 
     // crates: every item has a spot (its stop, minus its place in the queue); crates only ever slide forward
     const seen = new Set<string>();
@@ -207,6 +215,12 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   function rocketStep(dt: number) {
     rocket.t += dt;
     if (rocket.mode === "count" && rocket.t > 0.6) { rocket.mode = "up"; rocket.t = 0; rocket.v = 0; bus.emit({ type: "launch" }); }
+    else if (px && owned.has("rocket")) {
+      // Keep camera/event ownership in sync with the pixel layer's full return flight.
+      if (rocket.mode === "up" && rocket.t >= FLIGHT.ignition + FLIGHT.ascent) { rocket.mode = "away"; rocket.t = 0; }
+      else if (rocket.mode === "away" && rocket.t >= FLIGHT.coast) { rocket.mode = "down"; rocket.t = 0; }
+      else if (rocket.mode === "down" && rocket.t >= FLIGHT.landing + FLIGHT.settle) { rocket.mode = "ready"; rocket.t = 0; }
+    }
     else if (rocket.mode === "up") {
       rocket.v += 820 * dt; rocket.y -= rocket.v * dt;
       if (rocket.y > -400) for (let i = 0; i < 2; i++) puffs.push({ x: STOP_X.launch + (Math.random() - 0.5) * 60, y: LAUNCH_Y - 4, vx: (Math.random() - 0.5) * 140, vy: -10 - Math.random() * 20, t: 0, life: 1.3, r: 14 + Math.random() * 14 });

@@ -1,6 +1,7 @@
 import { ART_PX, DECK_DX, LAUNCH, PALETTE, type ArtLoader, type DeckBus, type DeckLayer, type DeckView, type LayerSlot } from "../contract";
 import type { Preview } from "./preview";
 import { LAUNCH_BUILD_SECONDS, clamp01, crossed, easeInOut, easeOut, phaseAt, span, through } from "./timeline";
+import { flightPose, FLIGHT_SECONDS } from "./flight";
 
 // launch/ on the pixel deck (?px=1, contract "the pixel canvas"). Same timeline and events as index.ts, drawn at
 // whole art px in the 48 colors:
@@ -117,6 +118,11 @@ function drawRocketArt(): HTMLCanvasElement {
     const r = y < 35 ? 2.5 : 3.5, x0 = Math.round(RC - r), x1 = Math.round(RC + r) - 1;
     for (let x = x0; x <= x1; x++) put(x, y, y === 34 ? BAND[band(x, r)] : y === 36 && x > x0 && x < x1 ? P.soot[0] : NOZZLE[band(x, r)]);
   }
+  // Inspection panels, cooling ribs, fasteners and the cold-gas nozzle ports.
+  for (const y of [14, 26, 28]) { put(RC - 3, y, P.haze[0]); put(RC - 2, y, P.haze[3]); }
+  for (const y of [24, 26, 28]) put(RC + 4, y, P.brass[2]);
+  for (const x of [RC - 6, RC + 5]) { put(x, 13, P.steel[0]); put(x, 14, P.steel[3]); }
+  for (const y of [31, 33, 35]) { put(RC - 2, y, P.steel[3]); put(RC + 2, y, P.iron[0]); }
   // 1 px soot outline around the whole silhouette
   const solid = (x: number, y: number) => x >= 0 && y >= 0 && x < RW && y < RH && fill.has(y * RW + x);
   for (let y = 0; y < RH; y++) for (let x = 0; x < RW; x++) {
@@ -157,13 +163,47 @@ export function createPixelLaunch(_art: ArtLoader, bus: DeckBus, preview: Previe
 
   let p = -1, t = 0, cx!: CanvasRenderingContext2D;
   // the launch the engine starts (it still emits { type: "launch" }; this layer draws it)
-  const fly = { mode: "seated" as "seated" | "up" | "away" | "down", t: 0, y: 0 };
-  const puffs: { x: number; y: number; t: number }[] = [];
-  bus.on((e) => { if (e.type === "launch" && p >= 1) { fly.mode = "up"; fly.t = 0; } });
+  const reduced = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+  const fly = { active: false, t: 0, queued: 0, touched: false };
+  let nextVent = 3.5;
+  const puffs: { x: number; y: number; t: number; vx: number; vy: number; life: number; size: number }[] = [];
+  const jets: { x: number; y: number; side: number; age: number }[] = [];
+  bus.on((e) => {
+    if (e.type !== "launch" || p < 1) return;
+    if (fly.active) { fly.queued = Math.min(8, fly.queued + 1); return; }
+    fly.active = true; fly.t = 0; fly.touched = false;
+  });
 
   const step = (time: number) => Math.floor(time * FPS) / FPS; // stepped clock
   const rect = (x: number, y: number, w: number, h: number, c: string) => { cx.fillStyle = c; cx.fillRect(x * ART_PX, y * ART_PX, w * ART_PX, h * ART_PX); };
   const blit = (im: CanvasImageSource & { width: number; height: number }, x: number, y: number) => cx.drawImage(im, x * ART_PX, y * ART_PX, im.width * ART_PX, im.height * ART_PX);
+  let islandLights: { x: number; y: number; cyan: boolean; phase: number }[] | null = null;
+  function islandLife(im: HTMLImageElement, x: number, y: number) {
+    if (!islandLights) {
+      const mask = document.createElement("canvas"); mask.width = im.width; mask.height = im.height;
+      const g = mask.getContext("2d")!; g.drawImage(im, 0, 0);
+      const rgba = g.getImageData(0, 0, im.width, im.height).data;
+      islandLights = [];
+      for (let j = 0; j < im.height; j++) for (let i = 0; i < im.width; i++) {
+        const n = (j * im.width + i) * 4, [r, green, b, a] = rgba.slice(n, n + 4);
+        const cyan = j > 30 && green > r * 1.3 && b > r * 1.3 && green > 70;
+        const ember = j < 50 && Math.abs(i - im.width / 2) > 22 && r > 175 && green > 55 && b < green * 0.8;
+        if (a && (cyan || ember)) islandLights.push({ x: i, y: j, cyan, phase: (i * 3 + j * 7) % 8 });
+      }
+    }
+    for (const light of islandLights) {
+      const wave = reduced ? 1 : Math.floor((Math.sin(t * (light.cyan ? 1.2 : 2) + light.phase) + 1) * 1.49);
+      rect(x + light.x, y + light.y, 1, 1, light.cyan ? P.energy[wave + 1] : P.sun[wave + 3]);
+    }
+    if (reduced) return;
+    for (let i = 0; i < 7; i++) {
+      const side = i % 2 ? 1 : -1, drift = Math.round(Math.sin(t * 0.45 + i * 1.7) * 2);
+      const bx = Math.round(RING.x + side * (38 + (i * 7) % 18) + Math.sin(t * 0.3 + i) * 2);
+      const by = Math.round(RING.y + 21 + i * 6 + drift);
+      rect(bx, by, 3, 2, P.iron[0]); rect(bx + 1, by - 1, 2, 1, P.iron[3]);
+      if (i % 3 === 0) rect(bx + 1, by, 1, 1, P.energy[1]);
+    }
+  }
 
   // ---------- update ----------
   function update(dt: number, view: DeckView) {
@@ -183,21 +223,38 @@ export function createPixelLaunch(_art: ArtLoader, bus: DeckBus, preview: Previe
       bus.emit({ type: "launch-stage", stage: c.stage });
       if (c.stage === "rocket-seated" || c.stage === "island-up") puff(c.stage === "island-up" ? RING.x : RING.x, c.stage === "island-up" ? ISLAND.y + 60 : SEAT, 4);
     }
-    // the launch climb: whole px, speeding up; away, then a new rocket is lowered back in
-    fly.t += dt;
-    if (fly.mode === "up") {
-      fly.y = -Math.floor(0.5 * 260 * fly.t * fly.t); // art px/s^2
-      if (fly.t < 0.8 && step(fly.t) !== step(fly.t - dt)) puffs.push({ x: RING.x - 3 + ((fly.t * 37) % 7 | 0), y: SEAT, t: 0 });
-      if (fly.y < -260) { fly.mode = "away"; fly.t = 0; }
-    } else if (fly.mode === "away" && fly.t > 0.7) { fly.mode = "down"; fly.t = 0; }
-    else if (fly.mode === "down") {
-      fly.y = -Math.round(120 * (1 - easeOut(Math.min(1, fly.t / 1.2))));
-      if (fly.t >= 1.2) { fly.mode = "seated"; fly.y = 0; puff(RING.x, SEAT, 3); }
+    if (fly.active) {
+      fly.t += dt;
+      const f = flightPose(fly.t);
+      if ((f.stage === "ignition" || (f.stage === "ascent" && f.u < 0.35) || (f.stage === "landing" && f.u > 0.7)) && step(t) !== step(t - dt)) {
+        for (const side of [-1, 1]) cloud(RING.x + side * 4, SEAT + 2, side * (12 + (f.stage === "ignition" ? f.u : 1) * 17), -3, 2.3, 4);
+      }
+      if (f.stage === "landing" && f.u < 0.75 && Math.floor(t * 3) !== Math.floor((t - dt) * 3)) {
+        const side = f.lean > 0 ? 1 : -1;
+        if (!reduced) jets.push({ x: RING.x + f.x + side * 7, y: SEAT - ROCKET_FOOT + f.y + 14, side, age: 0 });
+      }
+      if (f.stage === "settle" && !fly.touched) { fly.touched = true; puff(RING.x, SEAT + 1, 10); }
+      if (fly.t >= FLIGHT_SECONDS) {
+        fly.active = fly.queued > 0; fly.queued = Math.max(0, fly.queued - 1); fly.t = 0; fly.touched = false;
+      }
     }
-    for (const q of puffs) q.t += dt;
-    for (let i = puffs.length - 1; i >= 0; i--) if (puffs[i].t > 0.8) puffs.splice(i, 1);
+    // Infrequent tower pressure release, separate from the launch exhaust.
+    if (!reduced && p >= 1 && t >= nextVent) {
+      nextVent = t + 3.5 + Math.random() * 4;
+      const side = Math.random() < 0.5 ? 1 : -1;
+      for (let i = 0; i < 3; i++) cloud(RING.x + side * 24, RING.y - 45, side * (5 + i), -4, 1.5, 2);
+    }
+    for (const q of puffs) { q.t += dt; q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= Math.exp(-dt * 0.5); }
+    for (let i = puffs.length - 1; i >= 0; i--) if (puffs[i].t > puffs[i].life) puffs.splice(i, 1);
+    for (const jet of jets) jet.age += dt;
+    for (let i = jets.length - 1; i >= 0; i--) if (jets[i].age >= 0.14) jets.splice(i, 1);
   }
-  function puff(x: number, y: number, n: number) { for (let i = 0; i < n; i++) puffs.push({ x: x - 8 + i * 5, y, t: 0 }); }
+  function cloud(x: number, y: number, vx: number, vy: number, life: number, size: number) {
+    if (puffs.length < (reduced ? 16 : 100)) puffs.push({ x, y, vx, vy, t: 0, life, size });
+  }
+  function puff(x: number, y: number, n: number) {
+    for (let i = 0; i < n; i++) cloud(x - 8 + i * 2, y, (i - n / 2) * 5, -4, 2, 3);
+  }
 
   // ---------- drawing ----------
   function drawIsland() {
@@ -211,6 +268,7 @@ export function createPixelLaunch(_art: ArtLoader, bus: DeckBus, preview: Previe
     const x = ISLAND.x - (im.width - 100 >> 1), y = ISLAND.y + off;
     cx.save(); cx.beginPath(); cx.rect(0, -1e5, 1e6, (CLOUD + 1e5 / ART_PX) * ART_PX); cx.clip();
     blit(im, x, y);
+    if (lit) islandLife(im, x, y);
     cx.restore();
   }
   function drawBridge() {
@@ -290,21 +348,43 @@ export function createPixelLaunch(_art: ArtLoader, bus: DeckBus, preview: Previe
       const l = Math.min(1, step(r * LAUNCH_BUILD_SECONDS * 0.26) / (0.86 * LAUNCH_BUILD_SECONDS * 0.26));
       y = top - Math.round(120 * (1 - easeOut(l)));
       line = l < 1;
-    } else {
-      y = top + fly.y;
-      if (fly.mode === "away") return;
+    } else if (fly.active) {
+      const flight = flightPose(fly.t);
+      y = top + flight.y;
+      if (flight.stage === "coast") return;
     }
     if (line) rect(RING.x, y - 200, 1, 200, P.soot[0]);
-    const x = RING.x - RC, seated = y === top;
+    const flight = fly.active ? flightPose(fly.t) : null;
+    const x = RING.x - RC + (flight?.x ?? 0), seated = y === top;
     if (seated) { // contact shadow on the pad, cast down-left
       cx.save(); cx.globalAlpha = 0.5; rect(x + 4, SEAT + 1, 10, 1, P.iron[0]); rect(x + 2, SEAT + 2, 9, 1, P.iron[0]); cx.restore();
     }
-    if (p >= 1 && fly.mode === "up") {
-      const f = FLAME[fly.t < 0.2 ? 0 : 1 + (Math.floor(fly.t * 8) % 3)];
-      glow(Math.max(0, 1 - fly.t / 1.6));
-      blit(f, RING.x - (FW >> 1), y + ROCKET_FOOT + 1);
+    if (flight && ["ignition", "ascent", "landing"].includes(flight.stage)) {
+      const f = FLAME[flight.stage === "ignition" && flight.u < 0.3 ? 0 : 1 + (Math.floor(fly.t * 8) % 3)];
+      glow(flight.stage === "landing" ? flight.u : Math.max(0, 1 + flight.y / 75));
+      blit(f, x + RC - (FW >> 1), y + ROCKET_FOOT + 1);
+      if (flight.stage === "ascent") {
+        // Shock diamonds and a tapering hot exhaust tail, all whole art pixels.
+        const len = 12 + Math.round(flight.u * 15);
+        for (let j = 0; j < len; j++) {
+          const half = Math.max(0, 3 - Math.floor(j / 5));
+          rect(x + RC - half, y + ROCKET_FOOT + 8 + j, half * 2 + 1, 1, j % 5 === 0 ? P.sun[6] : j < 12 ? P.sun[4] : P.copper[2]);
+        }
+      }
     }
-    blit(ROCKET, x, y);
+    const lean = reduced ? 0 : flight?.lean ?? 0;
+    // Stepped row offsets suggest attitude correction without rotating/blurring pixels.
+    for (let row = 0; row < RH; row++) {
+      const dx = Math.round(lean * (1 - row / RH));
+      cx.drawImage(ROCKET, 0, row, RW, 1, (x + dx) * ART_PX, (y + row) * ART_PX, RW * ART_PX, ART_PX);
+    }
+    if (flight && flight.legs > 0) {
+      const spread = Math.round(6 * flight.legs);
+      for (const side of [-1, 1]) for (let j = 0; j <= spread; j++) {
+        rect(x + RC + side * (4 + j), y + 29 + j, 2, 1, P.steel[3]);
+        rect(x + RC + side * (4 + j), y + 30 + j, 2, 1, P.steel[0]);
+      }
+    }
   }
   /** The flame's warm light on the pad: a soft oval laid over it at low alpha, which the palette snap turns into a
    *  few warmer steps of the pad's own colors. Fades as the rocket climbs away. */
@@ -318,9 +398,25 @@ export function createPixelLaunch(_art: ArtLoader, bus: DeckBus, preview: Previe
     cx.restore();
   }
   function drawPuffs() {
+    for (const jet of jets) {
+      // A sharp pressure jet: one or two pixels thick, fast travel, no expanding cloud.
+      const travel = Math.floor(jet.age * 80), length = Math.max(2, 10 - Math.floor(jet.age * 45));
+      const start = Math.round(jet.x) + jet.side * travel, y = Math.round(jet.y);
+      for (let i = 0; i < length; i++) {
+        rect(start + jet.side * i, y, 1, 1, i < length / 2 ? P.white[0] : P.haze[3]);
+        if (i > 2 && i < length - 2) rect(start + jet.side * i, y + 1, 1, 1, P.haze[2]);
+      }
+    }
     for (const q of puffs) {
-      const s = 2 + Math.floor(q.t * 5); // grows a px per step
-      rect(q.x - (s >> 1), q.y - Math.floor(q.t * 6) - s, s, s, q.t < 0.4 ? P.haze[3] : P.haze[2]);
+      const age = q.t / q.life, radius = q.size + Math.floor(q.t * 5);
+      const x = Math.round(q.x), y = Math.round(q.y);
+      // Overlapping shaded lobes roll outward, then fray instead of alpha-fading.
+      for (let dy = -radius; dy <= radius; dy++) for (let dx = -radius; dx <= radius; dx++) {
+        const d = (dx * dx + dy * dy) / (radius * radius);
+        if (d > 1 || (age > 0.65 && d > 1.3 - age && ((x + dx + y + dy) & 1))) continue;
+        if (age > 0.88 && ((dx + dy) & 1)) continue;
+        rect(x + dx, y + dy, 1, 1, dy < -radius / 3 ? P.haze[3] : d < 0.45 ? P.iron[4] : P.haze[2]);
+      }
     }
   }
 

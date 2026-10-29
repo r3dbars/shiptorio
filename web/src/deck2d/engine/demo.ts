@@ -1,4 +1,23 @@
 import { STOPS, type DeckSource, type DeckView, type Item, type ShippyView, type StopId } from "../contract";
+import { FLIGHT_SECONDS } from "../launch/flight";
+
+/** Replays the full visual flight without creating or merging a real PR. */
+export function createLaunchDemo(): DeckSource {
+  let shipped = 0, age = Infinity, revision = 0;
+  return {
+    step: dt => { age += dt; },
+    view: () => ({
+      stops: STOPS.map(id => ({ id, built: true, state: "idle", automated: false, items: [] })),
+      jam: null, shippy: { at: "corner", pose: "idle" }, shipped, caption: null,
+      card: age > FLIGHT_SECONDS + 1 ? {
+        id: `flight-${revision}`, title: "Launch and return", line: "Ignition, liftoff, correction jets, soft touchdown.",
+        dots: null, stop: "launch", yes: "Launch rocket", no: "Keep parked",
+      } : null,
+    }),
+    approve: () => { shipped++; revision++; age = 0; },
+    later: () => { revision++; age = 0; },
+  };
+}
 
 /** Manual visual check on the same deck: ?source=orb-demo. No live actions. */
 export function createOrbDemo(): DeckSource {
