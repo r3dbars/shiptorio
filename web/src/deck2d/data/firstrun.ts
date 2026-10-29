@@ -118,7 +118,7 @@ export function createFirstRun(o: FirstRunOptions) {
         done = stepT >= BUILD_SEC;
       } else if ("grow" in cur) { if (first) { size = cur.grow; caption = null; } done = stepT >= GROW_SECONDS; }
       else if ("island" in cur) {
-        if (first) { island = "building"; caption = cur.island; focus = null; }
+        if (first) { island = "building"; caption = cur.island; focus = "launch"; }
         islandProgress = Math.min(1, stepT / ISLAND_SEC);
         if (islandProgress >= 1) { island = "built"; islandProgress = undefined; built.add("gate").add("launch"); done = true; }
       } else if ("shippy" in cur) { shippy = cur.shippy; done = true; }
