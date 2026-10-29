@@ -7,7 +7,7 @@
 > **Living doc:** whenever Justin states a new high-level goal in the project, fold it in here (one line,
 > dated) and push. If this page and another doc disagree on *direction*, this page wins.
 >
-> Last updated: 2026-10-27.
+> Last updated: 2026-10-29.
 
 ## The goal
 
@@ -84,6 +84,12 @@ threads and Codex iterate on this same deck, not on copies or variants. The rule
 **2026-10-29: The 2D deck is the actual product, including sign-in, repo selection and coding-agent connection. Bridge the existing backend and account flows into this UI; simplify duplicate entry points rather than building another frontend. Demos remain explicit previews, not the default product.**
 
 **2026-10-29: Meta is Shippy's brain for the whole factory: identify bottlenecks, recommend the next useful decision, and help the player keep work moving toward automation. Planning one PR is a supporting ability, not the product's organizing idea. Validate this loop with Muse Spark first; evaluate a stronger model later without moving factory decisions into the coding worker.**
+
+## Finish line (Justin, 2026-10-29)
+
+Polish, simplify and clean up the loop we have; no new features. Product done by **end of Monday Nov 2** (Fri full
+day, Sat ~4h, Sun ~4h, Mon finish). Tue Nov 3 and Wed Nov 4 are filming the demo video only; the hackathon cutoff is
+Wed Nov 4 8 PM CT. Day-by-day plan and freeze points: [docs/context/demo-plan.md](context/demo-plan.md).
 
 ## Current focus: a great player experience (Justin, 2026-10-27 10:50)
 

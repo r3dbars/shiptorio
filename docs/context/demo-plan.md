@@ -10,6 +10,25 @@ bugs, polish, reliability). Justin films the demo video himself on the real deck
 "As simple as possible ... continuously work on the loop that we have. Make it more simple, more clear, more
 friendly for end users, and more polished." No new features, screens or settings. Deleting beats adding.
 
+## Day by day (Justin's schedule, 2026-10-29)
+
+Product is polished and done by **end of Monday Nov 2**. Tuesday and Wednesday are filming only. Every batch stays
+polish, simplify and cleanup. No new features on any day.
+
+| Day | Justin | Agents (Claude + Codex) | Gate at end of day |
+| --- | --- | --- | --- |
+| Thu Oct 29 | Paste batches | Codex #43-#74 land on dev; Claude reviews every PR | dev green |
+| Fri Oct 30 (full day) | Tap Promote #571, Launch Testing #19/#20, hold Ship it on Testing PR #27. Play dev on phone + desktop: one real ship with the rocket, then 3 same-kind Testing issues for the level-up | Fix what Justin and the playtest threads find, same day | **Promotion 1** dev → main (shiptorio.com) |
+| Sat Oct 31 (~4h) | Play the full loop as a newcomer; list what feels off | Fix the list; last visual/art changes | dev green |
+| Sun Nov 1 (~4h) | Dress rehearsal of the demo script (docs/context/demo-script.md) on shiptorio.dev | **Art and copy freeze at end of day.** Record the replay trace from a real run | **Promotion 2** dev → main |
+| Mon Nov 2 (finish) | Final run-through on phone + desktop; stock Testing with fresh issues for filming | Bug fixes only, smallest possible diffs | **Final promotion** dev → main by evening; then main is frozen |
+| Tue Nov 3 + Wed Nov 4 | Film and edit the video; submit before 8 PM CT Wed (aim Tue night) | Nothing merges to main. Emergency fixes only if Justin asks | Submitted |
+
+Rules for the freeze points:
+- After Sunday: no art, layout or copy changes unless Justin asks. Bugs only.
+- After Monday's promotion: main does not move. dev may take fixes, but nothing is promoted without Justin.
+- Every promotion needs the full suite green (`release-validation`). If it's red, fix forward the same day.
+
 ## The demo in one line
 
 Open shiptorio.dev, see your one bottleneck within 5 seconds, swipe once, it clears. Then approve the same kind of
