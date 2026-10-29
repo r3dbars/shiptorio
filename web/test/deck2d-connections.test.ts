@@ -67,7 +67,7 @@ test('refresh replaces the answered card ID even when status is unchanged', asyn
 });
 test('invalid repository input cannot turn setup into a different API request', async () => {
   const f = setup([{ repos: [] }], '../account'); f.ui.open('power'); await settle();
-  expect(f.calls).toEqual([{ url: '/api/repos', method: 'GET' }]);
+  expect(f.calls).toEqual([{ url: '/api/repos?page=1', method: 'GET' }]);
 });
 test('a delayed setup response cannot replace a newly opened inbox', async () => {
   let finish!: (r: Response) => void;
@@ -89,4 +89,14 @@ test('missing server GitHub credentials stay on the deck instead of sending the 
   const f = setup([new Response('',{status:401}),{githubConfigured:false}]); f.ui.open('repo'); await settle();
   expect(f.ui.card()?.line).toContain('setup is not finished'); expect(f.ui.card()?.yes).toBe('Try again');
   expect(f.navigations).toHaveLength(0);
+});
+test('repository browsing requests the next bounded page after the last card', async () => {
+  const f=setup([{repos:[{fullName:'a/first'}],nextPage:2},{repos:[{fullName:'a/next'}],nextPage:null}],'');
+  f.ui.open('repo');await settle();await f.no();
+  expect(f.calls[1].url).toBe('/api/repos?page=2');await f.yes();expect(f.navigations[0]).toContain('a%2Fnext');
+});
+test('rate-limit errors remain visible rather than being cleared by status polling', async () => {
+  const f=setup([new Response('',{status:429,headers:{'retry-after':'60'}})]);
+  f.ui.open('power');await settle();f.ui.tick();await settle();
+  expect(f.calls).toHaveLength(1);expect(f.ui.card()?.line).toContain('60 seconds');
 });

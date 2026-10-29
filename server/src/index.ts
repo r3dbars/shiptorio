@@ -707,14 +707,24 @@ app.get("/api/repos", async (c) => {
     const user = await resolveUser(c.req.raw, c.env);
     if (!user) return c.json({ error: "login required" }, 401);
     const repos = { results: await reposFor(c.env, user) };
-    // Preserve the legacy database fields while serving the browser's repo-card contract.
-    // Issue counts are not available from this query; omit them rather than inventing zero.
-    return c.json({ repos: (await Promise.all(repos.results.map(async repo => await repoAccess(c.env, user, repo.full_name, "read", true) ? repo : null))).filter((repo): repo is NonNullable<typeof repo> => !!repo).map(repo => ({
+    const pageParam = c.req.query("page");
+    const page = Number(pageParam ?? 1), size = 4;
+    if (!Number.isSafeInteger(page) || page < 1) return c.json({ error: "invalid page" }, 400);
+    const candidates = pageParam ? repos.results.slice((page - 1) * size, page * size) : repos.results;
+    const visible = [];
+    // The GitHub client permits only eight queued calls per credential. Revalidate in small
+    // batches, and let the deck page its results instead of flooding that shared queue.
+    for (let i = 0; i < candidates.length; i += size) {
+      const batch = await Promise.all(candidates.slice(i, i + size).map(async repo => await repoAccess(c.env, user, repo.full_name, "read", true) ? repo : null));
+      visible.push(...batch.filter((repo): repo is NonNullable<typeof repo> => !!repo));
+    }
+    return c.json({ repos: visible.map(repo => ({
       ...repo,
       fullName: repo.full_name,
       blurb: repo.default_branch ? `Default branch: ${repo.default_branch}` : "Connected GitHub repository",
-    })) });
+    })), nextPage: pageParam && page * size < repos.results.length ? page + 1 : null });
   } catch (error) {
+    if (error instanceof RateLimitError) throw error;
     log("warn", "github.repositories_unavailable", { error });
     c.header("Retry-After", "5");
     return c.json({ error: "Could not load your repositories. Try again shortly.", code: "repository_discovery_unavailable" }, 503);
