@@ -12,6 +12,15 @@ test('live URL requires a real session, not a guest, missing login or failed che
   expect(await deckSignedIn(async () => { throw new Error('offline'); })).toBe(false);
 });
 
+test('a stalled session check falls back to the story instead of blocking the first frame', async () => {
+  let aborted = false;
+  const signedIn = await deckSignedIn((_url, options) => new Promise((_resolve, reject) => {
+    options!.signal!.addEventListener('abort', () => { aborted = true; reject(options!.signal!.reason); });
+  }));
+  expect(aborted).toBe(true);
+  expect(signedIn).toBe(false);
+});
+
 test('connection chips require live mode, a signed-in player and a valid repo', () => {
   expect(showConnectionTools('?source=live&repo=player/factory', true)).toBe(true);
   for (const search of ['', '?source=sim&watch=1&repo=player/factory', '?source=demo', '?source=live', '?source=live&repo=../factory']) {

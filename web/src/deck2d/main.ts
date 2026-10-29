@@ -70,7 +70,7 @@ export function wireDeckAccessibility(canvas: HTMLCanvasElement, host: HTMLEleme
 /** A requested live URL is not proof that this browser is signed in. */
 export async function deckSignedIn(request: typeof fetch = fetch): Promise<boolean> {
   try {
-    const response = await request("/api/me", { cache: "no-store" });
+    const response = await request("/api/me", { cache: "no-store", signal: AbortSignal.timeout(2000) });
     if (!response.ok) return false;
     const account = await response.json();
     return account.guest !== true && typeof account.login === "string" && account.login.length > 0;
