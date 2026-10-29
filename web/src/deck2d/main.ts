@@ -10,6 +10,7 @@ import { createMachineRehearsal, mountMachineControls } from "./stations/rehears
 import { createMachineInteraction } from "./stations/inspector";
 import { createFirstVisitDemo } from "./stations/first-visit";
 import { createConveyorDemo } from "./engine/conveyor-demo";
+import { createPayoff } from "./payoff";
 
 /** Keyboard and screen-reader access for the existing card; it never invents an action. */
 export function wireDeckAccessibility(canvas: HTMLCanvasElement, host: HTMLElement, caption: HTMLElement) {
@@ -125,7 +126,12 @@ const seed = Number(params.get("seed")) || 0;
   else if (want !== "demo" && story?.createStory) source = (story.createStory as (o: { seed: number; speed: number }) => DeckSource)({ seed, speed });
   else source = createDemo();
 
+  // After a ship: the rocket goes, then one calm "Shipped. That's 3 today." before the next card (payoff.ts).
+  const live = want === "live" || want === "replay";
+  const payoff = createPayoff({ every: live, phase: (source as DeckSource & { phase?: () => string }).phase,
+    store: want === "live" ? { get: k => localStorage.getItem(k), set: (k, v) => localStorage.setItem(k, v) } : null });
   bus.on(event => {
+    payoff.event(event);
     if (event.type === 'crate-arrive') (source as DeckSource & { arrive?: (id: string, stop: StopId) => void }).arrive?.(event.id, event.stop);
   });
 
@@ -206,7 +212,7 @@ const seed = Number(params.get("seed")) || 0;
       updateMachineControls?.();
     }
     connections.tick();
-    const view = connections.view(inspector.view(source.view()));
+    const view = payoff.view(connections.view(inspector.view(source.view())), dt);
     const work = (view as import('./data/view').LiveDeckView).work;
     cv.dataset.workId = work?.id ?? '';
     cv.dataset.workStop = work?.stop ?? '';
