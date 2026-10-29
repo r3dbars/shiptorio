@@ -61,6 +61,8 @@ interface Face {
   title: HTMLElement;
   dots: HTMLElement;
   line: HTMLElement;
+  details: HTMLDetailsElement;
+  detailText: HTMLElement;
   later: HTMLButtonElement;
   approve: HTMLButtonElement;
   no: HTMLElement;
@@ -77,6 +79,9 @@ function face(): Face {
   const dots = el("div", "ic-dots");
   dots.setAttribute("role", "img");
   const line = el("p", "ic-line");
+  const details = el("details", "ic-details");
+  details.append(el("summary", "", "Read full issue"));
+  const detailText = el("p", ""); details.append(detailText);
   const actions = el("div", "ic-actions");
   const later = el("button", "ic-btn later");
   later.type = "button";
@@ -85,8 +90,8 @@ function face(): Face {
   approve.type = "button";
   approve.innerHTML = '<i class="ic-fill" aria-hidden="true"></i><b>Approve</b> <span aria-hidden="true">→</span>';
   actions.append(later, approve);
-  root.append(title, dots, line, actions);
-  const f: Face = { root, title, dots, line, later, approve, no: later.querySelector("b")!, yes: approve.querySelector("b")! };
+  root.append(title, dots, line, details, actions);
+  const f: Face = { root, title, dots, line, details, detailText, later, approve, no: later.querySelector("b")!, yes: approve.querySelector("b")! };
   if (PX) {
     pixelLayer(root, cardScale, paintPlate);
     const l = pixelLayer(later, cardScale, (c, w, h) => paintButton(c, w, h, later.classList.contains("lit")));
@@ -107,6 +112,8 @@ function fill(f: Face, card: View) {
   f.title.textContent = card.title;
   f.line.textContent = card.line;
   f.line.hidden = !card.line;
+  f.details.hidden = !card.details;
+  if (f.detailText.textContent !== (card.details ?? "")) { f.detailText.textContent = card.details ?? ""; f.details.open = false; }
   setDots(f, card.dots);
 }
 
@@ -225,7 +232,7 @@ export const mountCard: MountCard = (host, handlers) => {
     f.approve.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && shown?.hold) { e.preventDefault(); if (!e.repeat) startHold(); } });
     f.approve.addEventListener("keyup", (e) => { if (e.key === "Enter" || e.key === " ") stopHold(); });
     f.root.addEventListener("pointerdown", (e) => {
-      if (!e.isPrimary || e.button !== 0 || (e.target as HTMLElement).closest("button") || live !== f) return;
+      if (!e.isPrimary || e.button !== 0 || (e.target as HTMLElement).closest("button, details, summary, a") || live !== f) return;
       drag = { pointer: e.pointerId, x0: e.clientX, y0: e.clientY, dx: 0, dy: 0, vx: 0, lastX: e.clientX, t: performance.now(), w: f.root.getBoundingClientRect().width || 320 };
       f.root.classList.add("dragging");
       try { f.root.setPointerCapture(e.pointerId); } catch { /* synthetic pointers */ }

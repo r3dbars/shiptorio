@@ -56,6 +56,7 @@ export interface CardView {
   title: string; // "Approve fix for checkout bug?"
   dots: { have: number; need: number } | null; // ●○○ toward automatic
   line: string; // "Approve 2 more like this and it's automatic."
+  details?: string; // optional full issue description, expanded inside the same card
   stop: StopId; // which stop the camera flies to
   yes?: string; // button labels, default "Approve" / "Later" (e.g. "Show me my repo" / "Replay")
   no?: string;

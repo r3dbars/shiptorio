@@ -113,3 +113,25 @@ test('rate-limit errors remain visible rather than being cleared by status polli
   f.ui.open('power');await settle();f.ui.tick();await settle();
   expect(f.calls).toHaveLength(1);expect(f.ui.card()?.line).toContain('60 seconds');
 });
+
+test('issue card separates a short complete excerpt from the full description', async () => {
+  const body='A clear first sentence. '+ 'Additional context about the repository and expected behavior. '.repeat(12);
+  const f=setup([{issues:[{id:1,number:101,title:'Fix cart',body}],nextPage:null}]);
+  f.ui.open('repo');await settle();
+  expect(f.ui.card()?.line).toStartWith('A clear first sentence.');
+  expect(f.ui.card()?.line).not.toContain('Additional context');
+  expect(f.ui.card()?.line).toContain('You approve it before Codex builds.');
+  expect(f.ui.card()?.details).toContain(body.trim());
+  expect(f.calls).toHaveLength(1);
+});
+
+test('the engine action names disconnect and still requires confirmation', async () => {
+  const f=setup([{paired:true,online:true,harnesses:['codex']}]);
+  f.ui.open('power');await settle();
+  expect(f.ui.card()?.no).toBe('Disconnect…');
+  await f.no();
+  expect(f.ui.card()?.title).toBe('Disconnect this engine?');
+  await f.no();
+  expect(f.ui.card()).toBeNull();
+  expect(f.calls).toHaveLength(1);
+});

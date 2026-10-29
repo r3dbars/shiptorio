@@ -1,6 +1,6 @@
 import { createConnections } from "./data/connections";
 import "./deck.css";
-import { SPRITES, createBus, type StopId, type AttachJuice, type CreateLayer, type CreateShippy, type DeckLayer, type DeckSource, type MountCard } from "./contract";
+import { SPRITES, STOPS, STOP_LABEL, createBus, type StopId, type AttachJuice, type CreateLayer, type CreateShippy, type DeckLayer, type DeckSource, type MountCard } from "./contract";
 import { createArt } from "./engine/art";
 import { createDemo, createOrbDemo, createLaunchDemo } from "./engine/demo";
 import { createEngine } from "./engine/engine";
@@ -78,19 +78,30 @@ const seed = Number(params.get("seed")) || 0;
   const layers: DeckLayer[] = [];
   for (const f of ["grow", "build", "launch", "juice", "props"]) { const m = await load(f, "createLayer"); if (m) layers.push((m.createLayer as CreateLayer)(art, bus)); }
   const inspector = createMachineInteraction(machines ? id => { if (id === machines.machine) machines.setMode("working"); } : undefined);
-  const connectionTools = document.createElement("div"); connectionTools.className = "shippy-tools connection-tools";
-  for (const [label, target] of [["Repo inbox", "repo"], ["Codex engine", "power"]] as const) {
-    const button = document.createElement("button"); button.type = "button"; button.textContent = label;
-    button.onclick = () => connections.open(target); connectionTools.append(button);
-  }
-  if (!want?.endsWith("-demo")) document.body.append(connectionTools);
   if (want === "live" && !params.has("repo")) connections.open("repo");
-  const engine = createEngine(cv, art, bus, shippy, layers, { onPowerSelect: () => connections.open("power"), onMachineSelect: id => {
+  const selectMachine = (id: StopId) => {
     if (id === "repo" && !want?.endsWith("-demo")) { connections.open("repo"); return; }
     if (machines) machines.cycling = false;
-    (source as DeckSource & { selectStop?: (stop: typeof id) => void }).selectStop?.(id);
+    (source as DeckSource & { selectStop?: (stop: StopId) => void }).selectStop?.(id);
     inspector.select(id);
-  } });
+  };
+  const engine = createEngine(cv, art, bus, shippy, layers, { onPowerSelect: () => connections.open("power"), onMachineSelect: selectMachine });
+  // The machines are the visible controls. Keep the same destinations available
+  // to keyboard and screen-reader players without a second floating toolbar.
+  const machineAccess = document.createElement("nav"); machineAccess.className = "machine-access";
+  machineAccess.setAttribute("aria-label", "Factory machines");
+  for (const id of STOPS.filter(id => id !== "launch")) {
+    const button = document.createElement("button"); button.type = "button";
+    button.textContent = id === "repo" ? "Repo inbox" : `${STOP_LABEL[id]} machine`;
+    button.onfocus = () => engine.focus(id);
+    button.onclick = () => selectMachine(id);
+    machineAccess.append(button);
+  }
+  const powerAccess = document.createElement("button"); powerAccess.type = "button";
+  powerAccess.textContent = "Steam engines — Codex connection";
+  powerAccess.onfocus = () => engine.focus("repo");
+  powerAccess.onclick = () => connections.open("power");
+  machineAccess.append(powerAccess); document.body.append(machineAccess);
   let updateConveyorControls: (() => void) | undefined;
   if (conveyor) {
     const controls = document.createElement("div"); controls.className = "shippy-tools";

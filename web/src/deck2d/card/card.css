@@ -165,3 +165,18 @@
   .ironcard.px .ic-in, .ironcard.px .ic-dot.pop { animation: none; }
   .ironcard.px .ic-ghost.approve, .ironcard.px .ic-ghost.later, .ironcard.px .ic-ghost.down { animation: ic-out-fade .2s steps(2) both; animation-delay: 0s; }
 }
+
+/* Keep the pixel title and controls; explanations are ordinary readable text. */
+.ic-card .ic-line, .ironcard.px .ic-card .ic-line, .ic-details {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 16px; font-weight: 400; line-height: 1.45; text-shadow: none; white-space: pre-line; text-wrap: pretty;
+}
+.ic-details { margin: 0 0 16px; text-align: left; color: var(--ic-dim); }
+.ic-details summary { cursor: pointer; font-weight: 600; color: var(--ic-ink); }
+.ic-details summary:focus-visible { outline: 2px solid var(--ic-gold); outline-offset: 3px; }
+.ic-details p { margin: 10px 0 0; overflow-wrap: anywhere; max-height: 30dvh; overflow: auto; user-select: text; }
+.ic-actions { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.ic-btn { min-width: 0; }
+@media (max-width: 420px) {
+  .ironcard.px .ic-btn { font-size: 16px; gap: 4px; padding: 0 4px; }
+}

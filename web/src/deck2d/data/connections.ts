@@ -7,6 +7,16 @@ type Issue = { id: number; number: number; title: string; body: string };
 type Pane = 'repos' | 'issues' | 'power' | 'setup' | 'disconnect';
 type Options = { repo?: string; origin: string; path: string; fetch?: typeof fetch; navigate: (url: string) => void; copy: (text: string) => Promise<void>; onStart?: (id: string) => void; now?: () => number };
 
+/** A short excerpt never ends halfway through a word; full text stays in Details. */
+export function issueExcerpt(body: string): string {
+  const text = body.replace(/\s+/g, ' ').trim();
+  if (!text) return 'No description provided.';
+  const first = text.match(/^.*?[.!?](?:\s|$)/)?.[0]?.trim() ?? text;
+  if (first.length <= 120) return first;
+  const end = first.lastIndexOf(' ', 117);
+  return first.slice(0, end > 70 ? end : 117).trimEnd() + '…';
+}
+
 /** Browsing is read-only. Starting one issue requests a plan; a separate card approves the build. */
 export function createConnections(o: Options) {
   const request = o.fetch ?? fetch, now = o.now ?? Date.now;
@@ -59,7 +69,7 @@ export function createConnections(o: Options) {
   }
   function card(): CardView | null {
     if (!pane) return null;
-    let title = '', line = '', yes = 'Refresh', no = 'Close';
+    let title = '', line = '', details: string | undefined, yes = 'Refresh', no = 'Close';
     if (busy) { title = 'Checking your factory…'; line = 'Shippy: Getting the latest connection status.'; yes = 'Checking…'; }
     else if (error) { title = 'Connection needs attention'; line = `Shippy: ${error}`; yes = login ? 'Sign in' : 'Try again'; }
     else if (pane === 'repos') {
@@ -68,7 +78,8 @@ export function createConnections(o: Options) {
       yes = r ? 'Use this repo' : nextPage ? 'More repos' : 'Connect GitHub'; no = r && (repos.length > 1 || nextPage || page > 1) ? 'Next repo' : 'Close';
     } else if (pane === 'issues') {
       const issue = issues[index]; title = issue ? `#${issue.number}: ${issue.title}` : 'No open issues on this page';
-      line = issue ? `Shippy: ${repo} · Issue ${index + 1} of ${issues.length}. ${issue.body.slice(0, 180) || 'No description provided.'} Choose Start issue to ask Shippy for a plan. You approve the plan before Codex builds.` : `Shippy: ${repo}. Refresh to check for new issues.`;
+      line = issue ? `${issueExcerpt(issue.body)}\n\nStart asks Shippy for a plan. You approve it before Codex builds.` : `Shippy: ${repo}. Refresh to check for new issues.`;
+      details = issue ? `${repo} · Issue ${index + 1} of ${issues.length}\n\n${issue.body.trim() || 'No description provided.'}` : undefined;
       yes = issue ? 'Start issue' : nextPage ? 'More issues' : 'Refresh'; no = issue ? 'Next issue' : 'Close';
     } else if (pane === 'setup') {
       title = copied ? 'Setup command copied' : 'Connect your Codex subscription';
@@ -80,9 +91,9 @@ export function createConnections(o: Options) {
       const ready = status?.online && status.harnesses.includes('codex');
       title = !status?.paired ? 'Connect your Codex engine' : !status.online ? 'Codex engine is offline' : !ready ? 'Sign in to Codex' : status.working ? 'Engine is busy' : 'Codex engine is ready';
       line = !status?.paired ? 'Shippy: Connect the local runner to use your Codex subscription. Connecting never starts a coding job.' : !status.online ? 'Shippy: Start shiptorio-runner watch on your computer. The factory is paired, but the worker is not reachable.' : !ready ? 'Shippy: Run shiptorio-runner login codex on your computer, then return here. Codex is not currently available.' : status.working ? `Shippy: Working on ${status.working.title}. This engine has no free slot until the job finishes.` : 'Shippy: Codex is connected with a free work slot. Meta plans the work; Codex builds after approval.';
-      yes = !status?.paired ? 'Set up Codex' : 'Refresh'; no = status?.paired ? 'Options' : 'Close';
+      yes = !status?.paired ? 'Set up Codex' : 'Refresh'; no = status?.paired ? 'Disconnect…' : 'Close';
     }
-    return { id: `connection-${revision}-${displayRevision}-${pane}`, stop: pane === 'power' || pane === 'setup' || pane === 'disconnect' ? 'builder' : 'repo', title, line, yes, no, dots: null };
+    return { id: `connection-${revision}-${displayRevision}-${pane}`, stop: pane === 'power' || pane === 'setup' || pane === 'disconnect' ? 'builder' : 'repo', title, line, details, yes, no, dots: null };
   }
   async function answer(id: string, approve: boolean) {
     if (!pane || card()?.id !== id) return false;
