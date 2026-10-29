@@ -24,6 +24,8 @@ Session cookies and preview-form proofs now reuse the existing bounded, isolate-
 
 ## Hosted tester playthrough fixes (Codex, 2026-10-28)
 
+- 2026-10-29 (#48): player actions use one captured card and reject stale replacements; unknown Later is never selected, and held Launch/explicit deferrals are recorded.
+
 - 2026-10-29 (#48): guest smoke shares one 30s budget between document commitment and the real rendered-deck marker, and reports outstanding resource paths on failure; story proof stays required.
 
 - 2026-10-29 (#48): private provider credentials use non-colliding fixture-only sentinels; the actual private Worker/DO runner is checked through launch. Bot decisions record scoped card actions and wait instead of clicking busy cards.
