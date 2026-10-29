@@ -682,6 +682,17 @@ reset before the first game mount. Strict HTTP/console capture, reset locking,
 local/guest behavior and gameplay assertions remain. Setup contract tests cover
 ordering and denied gate/login/reset; no live staging reset was performed here.
 
+### Codex safe doctor failure categories — 2026-10-29
+
+Installed runner update preserved existing grants/auth and disabled plugins/apps in
+the observed Codex child, but the disposable edit probe failed. Doctor exposed
+only an unhelpful stderr notice while discarding the failed JSONL stdout reason.
+Doctor now emits fixed, fully redacted failure categories only; it never publishes
+provider text, agent messages or transcripts. Filesystem edit proof still fails if
+a successful process did not make the required change. Normal job execution,
+sandbox authority, approvals and retry behavior are unchanged. Initial failed
+probe retained as safe metadata; no successful edit or failure cause claimed yet.
+
 ### Codex runner service pairing import — 2026-10-28
 
 Before: a valid standalone Testing pairing was absent from the running launchd

@@ -3,6 +3,7 @@ import { runnerOrigin } from "./origin";
 import { freeSubscriptions, prepareAgentHome, subscriptionArgs, subscriptionSignedIn, subscriptionCredentialVersion } from "./subscriptions";
 import { assembleCodex } from "./codex-assembler";
 import { probeAssemblerEdit } from "./edit-probe";
+import { codexDoctorFailure } from "./codex-diagnostic";
 import { mkdir, lstat, realpath, rm, mkdtemp } from "node:fs/promises";
 import { resolve } from "node:path";
 import { agentEnvironment, assemblerPrompt, assertCheckCommand, harnessArgs, validateChanges } from "./policy";
@@ -95,13 +96,18 @@ if (process.argv[2] === "doctor") {
   const checks = await diagnose({ harnesses: available, pairs: await connections(), auth: signedInHarness,
     editHarness: realEdit ? "codex" : undefined,
     edit: async () => {
+      let probeResult: import("./sandbox").SandboxResult | undefined;
       try {
         await probeAssemblerEdit(async context => {
           const result = await assembleCodex({ root: context.root, work: context.work, home: authHome, executable: harnessPath("codex")!, timeout: 120000,
             job: { plan: context.plan, allowedPaths: context.allowedPaths }, files: context.files, verification: context.verification });
-          if (result.code || result.timedOut) throw new Error(`Codex edit probe failed (${result.code}): ${redactText(result.err.slice(-2000))}`);
+          probeResult = result;
+          if (result.code || result.timedOut) throw new Error("Codex provider did not complete the edit probe");
         });
-      } catch (error) { console.error(redactText(error instanceof Error ? error.message : "Real edit probe failed")); throw error; }
+      } catch (error) {
+        const diagnostic = codexDoctorFailure(probeResult, error);
+        console.error(diagnostic); throw new Error(diagnostic);
+      }
     },
     pairing: pair => api(pair, "renew", {}),
     sandbox: async h => {
