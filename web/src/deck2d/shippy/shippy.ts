@@ -1,6 +1,7 @@
 // Shippy, the automation robot (contract: ShippyModule in ../contract.ts). He never talks.
 //
-// Home is the top-left corner: a folded iron box that breathes, peeks out when a call is waiting, hops when you
+// Pixel Shippy rests on the charging dock and walks on the front floor. Once a pose settles, he stays still.
+// The optional painted mode keeps its original corner entrance. Shippy peeks when a call is waiting, reacts when you
 // approve, rattles and smokes when something jams. When the view sends him to a stop he unfolds in the corner,
 // jumps out, drops onto the deck with a clunk, walks to the stop and does the pose (pulls the lever, hops, alarms).
 // Sent back to the corner he jumps off the deck and lands in the corner folding shut.
@@ -172,7 +173,7 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
         break;
     }
     world.pose = view.pose;
-    if (corner.mode === "home" && view.at === "corner" && view.pose === "alarmed" && Math.floor(clock / 0.15) !== Math.floor((clock - dt) / 0.15))
+    if (corner.mode === "home" && view.at === "corner" && view.pose === "alarmed" && crossed(corner.poseT, dt, 0.13))
       puff(cornerPuffs, 0.58, 0.1, 1, 0.25, "120,110,105", 1.2);
 
     age(worldPuffs, dt);
@@ -191,10 +192,10 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
   function standEffects(dt: number) {
     const p = world.pose, t = world.poseT;
     const toolDirection = o.pixel && o.standDx >= 0 ? -1 : 1;
-    if (p === "lever" && crossed(t % 1.4, dt, 0.55)) puff(worldPuffs, world.x + o.size * 1.35, o.floorAt(world.x) - o.size * 0.35, 5, o.size * 0.25, "255,190,90");
+    if (p === "lever" && crossed(t, dt, 0.55)) puff(worldPuffs, world.x + toolDirection * o.size * 1.35, o.floorAt(world.x) - o.size * 0.35, 5, o.size * 0.25, "255,190,90");
     if (p === "happy" && t < 1 && crossed(t % 0.5, dt, 0.49)) feet(3);
     if (p === "weld" && crossed(t % 0.09, dt, 0.08)) puff(worldPuffs, world.x + toolDirection * o.size * 0.95, o.floorAt(world.x) - o.size * 0.05, 3, o.size * 0.18, "255,200,90", 0.6);
-    if (p === "alarmed" && crossed(t % 0.14, dt, 0.13)) puff(worldPuffs, world.x + o.size * 0.15, o.floorAt(world.x) - o.size * 1.35, 1, o.size * 0.3, "120,110,105", 1.2);
+    if (p === "alarmed" && crossed(t, dt, 0.13)) puff(worldPuffs, world.x + o.size * 0.15, o.floorAt(world.x) - o.size * 1.35, 1, o.size * 0.3, "120,110,105", 1.2);
   }
   function crossed(t: number, dt: number, at: number) { return t >= at && t - dt < at; }
   function age(list: Puff[], dt: number) {
@@ -207,8 +208,9 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
   function act(pose: ShippyActPose, t: number, u: number, base: Draw): Draw {
     switch (pose) {
       case "lever": {
-        // reach, yank with a jolt, hold, let go; repeats while the view keeps him on the lever
-        const k = (t % 1.4) / 1.4;
+        // Reach, pull once, then settle; waiting for the next event is still.
+        if (t >= 1.4) return { ...base, frame: "shippy-3", px: "idle0" };
+        const k = t / 1.4;
         const yank = k > 0.35 && k < 0.5 ? Math.sin(((k - 0.35) / 0.15) * Math.PI) : 0;
         // pixel art: he faces the engine's lever (to his left) and the arm dips a px on the yank
         return { ...base, frame: k > 0.9 ? "shippy-4" : "shippy-lever", px: yank > 0.3 ? "lever1" : "lever0", pxFlip: true, flip: false, x: base.x + yank * u * 0.05, sx: 1 + yank * 0.05, sy: 1 - yank * 0.08, glow: 0.6 + yank * 0.4 };
@@ -223,36 +225,34 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
       case "alarmed":
         return {
           ...base, frame: "shippy-alarm",
-          x: base.x + (still ? 0 : Math.sin(t * 80) * u * 0.03), rot: still ? 0 : Math.sin(t * 61) * 0.025,
-          glow: 0.6 + 0.4 * Math.sin(t * 16), color: RED,
+          glow: 0.6, color: RED,
         };
       case "weld": {
         // torch flickers between the two frames, a shower of sparks at the tip
-        const f = Math.floor(t / 0.09) % 2;
+        const f = still ? 0 : Math.floor(t / 0.09) % 2;
         return { ...base, frame: f ? "shippy-weld-1" : "shippy-weld-0", px: f ? "weld1" : "weld0", flip: o.pixel ? base.flip : false, x: base.x + (f ? u * 0.01 : 0), glow: 0.7 + 0.3 * f, color: AMBER };
       }
       case "carry": {
-        const f = Math.floor(t / 0.6) % 2;
-        return { ...base, frame: f ? "shippy-carry-1" : "shippy-carry-0", px: "carry0", sy: base.sy - (f ? 0.02 : 0) };
+        return { ...base, frame: "shippy-carry-0", px: "carry0" };
       }
       case "inspect":
-        // lean in with the eye wide, a slow look over the thing in front of him
-        return { ...base, frame: "shippy-4", px: Math.floor(t / 0.6) % 2 ? "inspect1" : "inspect0", y: base.y + u * 0.02 };
+        // Hold an attentive pose without an endless eye animation.
+        return { ...base, frame: "shippy-4", px: "inspect0" };
       case "poke": {
-        const f = Math.floor(t / 0.25) % 2;
+        const f = !still && t < 0.5 ? Math.floor(t / 0.25) % 2 : 0;
         return { ...base, frame: "shippy-4", px: f ? "poke1" : "poke0", x: base.x + (f ? u * 0.04 : 0) };
       }
       case "skid":
         return { ...base, frame: "shippy-5", px: "skid", x: base.x - u * 0.04 };
       case "idle":
-        // a blink every few seconds, nothing else
-        return { ...base, frame: "shippy-3", px: t % 4 > 3.85 ? "idle1" : "idle0" };
+        // Idle is a stable pose; animation belongs to a real work transition.
+        return { ...base, frame: "shippy-3", px: "idle0" };
       case "peek": {
         // pop the lid once with one little hop, then just the amber glow: "a call is waiting on you"
         const pop = t < 0.25 ? wobble(t / 0.25, 1) * 0.12 : 0;
         const k = (t - 0.1) / 0.35;
         const hop = !still && k > 0 && k < 1 ? Math.sin(k * Math.PI) * u * 0.12 : 0;
-        return { ...base, frame: "shippy-peek", y: base.y - hop, sx: 1 + pop, sy: 1 - pop + (hop ? 0.04 : 0), glow: 0.55 + 0.35 * Math.sin(t * 6), color: AMBER };
+        return { ...base, frame: "shippy-peek", y: base.y - hop, sx: 1 + pop, sy: 1 - pop + (hop ? 0.04 : 0), glow: 0.55, color: AMBER };
       }
       default:
         return base;
@@ -294,11 +294,11 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
         return { ...base, frame: "shippy-0" };
       }
       case "home": {
-        const breathe = still ? 0 : Math.sin(clock * 2.2) * 0.025;
+        const breathe = 0;
         const settle = still ? 0 : wobble(Math.min(landed, 2)) * 0.18;
         const idle: Draw = {
-          ...base, frame: landed < 0.4 || Math.sin(clock * 1.6) > 0.3 ? "shippy-1" : "shippy-0",
-          sx: 1 - breathe + settle, sy: 1 + breathe - settle, glow: 0.35 + 0.25 * Math.sin(clock * 2.2),
+          ...base, frame: landed < 0.4 ? "shippy-1" : "shippy-0",
+          sx: 1 - breathe + settle, sy: 1 + breathe - settle, glow: 0.35,
         };
         return act(corner.pose, corner.poseT, size, idle);
       }
@@ -338,9 +338,9 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
         };
       }
       case "stand": {
-        const breathe = still ? 0 : Math.sin(clock * 2.6) * 0.01;
-        const arrive = still ? 0 : wobble(Math.min(1, t / 0.5), 2) * 0.1;
-        // standing still means still: one frame, only a faint breath (the deck was too busy, Justin 2026-10-28)
+        const breathe = 0;
+        const arrive = still || t >= 0.5 ? 0 : wobble(t / 0.5, 2) * 0.1;
+        // A short arrival settles completely; do not breathe, bounce or shuffle while waiting.
         const idle: Draw = { ...base, frame: "shippy-3", sx: 1 + arrive - breathe, sy: 1 - arrive + breathe };
         return act(world.pose, world.poseT, u, idle);
       }
@@ -394,10 +394,10 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
     if (d.alpha < 0.5) return;
     const name = d.px ?? (standing && d.frame === "shippy-3" ? "stand" : PX_OF[d.frame]);
     const snapU = (n: number) => Math.round(n / unit) * unit;
-    let x = snapU(d.x);
-    const y = snapU(d.y), fy = snapU(floorY);
-    if (name === "alarm" && !still) x += (Math.floor(clock * 10) % 2) * unit; // a 1 px rattle
+    // Sprite feet own the floor anchor. A pose may animate limbs, never lift or shake the whole body.
+    const x = snapU(world.x), fy = snapU(floorY);
     const g = pxFrame(name);
+    const y = fy - (g.maxY + 1) * unit;
     // contact shadow: a soft iron row on the floor, down-left of him, shrinking as he lifts off
     const lift = Math.round((fy - y) / unit);
     const w = Math.max(2, g.maxX - g.minX + 1 - 2 - lift * 2);

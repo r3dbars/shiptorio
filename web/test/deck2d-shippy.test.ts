@@ -92,3 +92,47 @@ test("pixel mode: never jumps or drops through a whole busy story", () => {
   run(s, { at: "corner", pose: "folded" }, 12);
   expect(s.state).toMatchObject({ corner: "gone", world: "stand", x: DOCK_HOME_X });
 });
+
+function pixels(s: ReturnType<typeof createShippy>) {
+  const marks: { box: number[]; color: string; alpha: number }[] = [];
+  const stack: number[] = [];
+  const ctx = { fillStyle: '', globalAlpha: 1,
+    save() { stack.push(this.globalAlpha); },
+    restore() { this.globalAlpha = stack.pop() ?? 1; },
+    fillRect(...box: number[]) { marks.push({box, color:this.fillStyle, alpha:this.globalAlpha}); },
+  };
+  s.drawWorld(ctx as unknown as CanvasRenderingContext2D);
+  return marks;
+}
+
+test('waiting poses settle into identical pixels instead of fidgeting forever', () => {
+  for (const pose of ['idle','inspect','alarmed','peek','carry','lever','happy','poke'] as const) {
+    const s = createShippy(noArt,{pixel:true,reducedMotion:false});
+    const v = {at:'review' as const,pose};
+    run(s,v,12);
+    const before = pixels(s);
+    run(s,v,1.83);
+    expect(pixels(s)).toEqual(before);
+  }
+});
+
+test('pixel feet stay on the floor throughout a walk, including each gait frame', () => {
+  const floor=400;
+  const s=createShippy(noArt,{pixel:true,reducedMotion:false,floorAt:()=>floor});
+  let samples=0;
+  for(let i=0;i<240;i++) {
+    s.update(1/60,{at:'review',pose:'walking'});
+    if(s.state.world!=='walk'||s.state.x<DOCK_HOME_X+200)continue;
+    const actor=pixels(s).filter(m=>m.alpha===1 && Math.abs(m.box[0]-s.state.x)<100);
+    expect(actor.length).toBeGreaterThan(0);
+    expect(Math.max(...actor.map(m=>m.box[1]+m.box[3]))).toBe(floor);
+    samples++;
+  }
+  expect(samples).toBeGreaterThan(30);
+});
+
+test('reduced motion keeps working-pose pixels still too', () => {
+  const s=createShippy(noArt,{pixel:true,reducedMotion:true});
+  const v={at:'review' as const,pose:'weld' as const};
+  run(s,v,12);const before=pixels(s);run(s,v,0.63);expect(pixels(s)).toEqual(before);
+});

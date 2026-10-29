@@ -6,6 +6,8 @@ PR #598 (`codex/dev-deck-default`) makes authorized bare visits to shiptorio.dev
 
 ## Deck visual iteration (Codex, 2026-10-28)
 
+2026-10-29 · Codex #57 (`codex/shippy-calm`): stable floor anchors, one-shot reactions and still waiting poses; preserve purposeful work and charging, with no new moves.
+
 PR #596 (`codex/deck-visuals`) adds a deeper foreground floor, grounded machines and Shippy, green/red conveyor flow, a pulsing blocked-state orb, persistent macOS pinch zoom, and detailed rocket launch/return effects. Justin approved the descent and fast side jets; later requests add a substantial fractured-rock underside and a short, braced engine cradle instead of the long exposed center pipe. Before/after phone and desktop shots are in `docs/evidence/deck-visuals/`. Targets `dev`; no deployment or merge is authorized by this visual PR.
 
 The final pass adds layered cascading cliffs, animated cyan seams and floating fragments, Shippy's walking/building rehearsal, real factory job-driven poses, and a simulator-only automatic build → failed check → repair → rocket loop (`/deck.html?source=sim&scenario=deck-watch&watch=1`). Justin selected this style as the baseline going forward. Live factory approvals remain manual.
