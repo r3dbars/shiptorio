@@ -7,6 +7,8 @@ export function createJourney() {
   let seen = false, fromIntake = false, pending = new Set<string>(), shipped = 0;
   return {
     step(dt: number) { age += dt; },
+    // Keep the launched crate in focus long enough to show ignition and ascent.
+    finished() { return id && STOPS[at] === "launch" && arrived && age >= 10 ? id : null; },
     arrive(item: string, stop: StopId) {
       if (item === id && stop === STOPS[at]) { arrived = true; age = 0; }
     },

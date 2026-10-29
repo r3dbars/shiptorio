@@ -990,3 +990,43 @@ it("paused factories retain queued deliveries without processing them, then resu
   expect(f.data.has("delivery:paused")).toBe(false);
   expect(f.data.get("done:delivery:paused")).toBeGreaterThan(Date.now());
 });
+
+
+it("a delayed pre-merge CI response cannot rewind a confirmed launch", async () => {
+  const keys=await crypto.subtle.generateKey({name:"RSASSA-PKCS1-v1_5",modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:"SHA-256"},true,["sign","verify"]);
+  const pem=`-----BEGIN PRIVATE KEY-----\n${Buffer.from(await crypto.subtle.exportKey("pkcs8",keys.privateKey)).toString("base64")}\n-----END PRIVATE KEY-----`;
+  const head="a".repeat(40);
+  const waiting=item({state:"on_pad",inspection:freshInspection(head),branch:"shiptorio/runner-test"});
+  const f=fixture([waiting],{GITHUB_APP_ID:"1",GITHUB_APP_PRIVATE_KEY:pem});
+  const entered=Promise.withResolvers<void>(), release=Promise.withResolvers<void>();
+  const original=globalThis.fetch;
+  globalThis.fetch=(async(input:unknown)=>{
+    const url=String(input);
+    if(url.endsWith("/access_tokens")) return Response.json({token:"fixture-ci-race"});
+    if(url.endsWith("/pulls/42")) {entered.resolve();await release.promise;return Response.json({state:"open",merged:false,base:{ref:"main",sha:"base"},head:{sha:head}});}
+    if(url.includes("/check-runs?")) return Response.json({total_count:1,check_runs:[{name:"CI",app:{id:15368},head_sha:head,status:"in_progress",conclusion:null}]});
+    if(url.includes("/status?"))return Response.json({total_count:0,statuses:[]});
+    throw Error("Unexpected CI race request");
+  }) as typeof fetch;
+  try {
+    const pending=f.factory.onCheckSuite([42],false,"pending",head);
+    await entered.promise;
+    await f.factory.onPullClosed(42,true,"merged-sha");
+    release.resolve();await pending;
+    expect(f.saved().items[0].state).toBe("launched");
+    expect(f.saved().items[0].orbit?.mergeSha).toBe("merged-sha");
+    expect(f.saved().science.red).toBe(1);
+  } finally {release.resolve();globalThis.fetch=original;}
+});
+
+it("a recorded merge repairs an older stale item without awarding another rocket", async () => {
+  const before=item({state:"on_pad",inspection:freshInspection("head")});
+  const f=fixture([before]);
+  await f.factory.onPullClosed(42,true,"merged-sha");
+  const score=structuredClone(f.saved().science);
+  await (f.factory as unknown as {patch(p:Patch):Promise<void>}).patch({items:[before]});
+  await f.factory.onPullClosed(42,true,"merged-sha");
+  expect(f.saved().items[0].state).toBe("launched");
+  expect(f.saved().items[0].orbit?.mergeSha).toBe("merged-sha");
+  expect(f.saved().science).toEqual(score);
+});
