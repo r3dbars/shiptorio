@@ -92,6 +92,7 @@ describe("live gauntlet in the Factory", () => {
     const original = globalThis.fetch;
     const calls: string[] = [];
     let mergedWith: unknown = null, commentTries = 0;
+    let mergedWebhook: (() => Promise<void>) | undefined;
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       if (/\/comments\?per_page=100&page=/.test(url)) return Response.json([]);
@@ -104,7 +105,7 @@ describe("live gauntlet in the Factory", () => {
       if (url.includes("/pulls/99/files")) return json([{ filename: "web/src/cart.ts", status: "modified", patch: "-a\n+b" }, { filename: "web/src/cart.test.ts", status: "added", patch: "+test" }]);
       if (url.endsWith("/chat/completions")) return json({ choices: [{ message: { content: '{"verdict":"pass","reason":"Fixes the empty cart crash.","findings":[]}' } }] });
       if (url.endsWith("/issues/99/comments")) return ++commentTries <= 2 ? new Response("forbidden", { status: 403 }) : json({ id: 1 });
-      if (url.endsWith("/pulls/99/merge")) { mergedWith = JSON.parse(String(init?.body)); return json({ merged: true }); }
+      if (url.endsWith("/pulls/99/merge")) { mergedWith = JSON.parse(String(init?.body)); await mergedWebhook?.(); return json({ merged: true, sha:"merged-head" }); }
       if (url.endsWith("/pulls/99")) return json({ base: { ref: "main", sha: "base" }, head: { sha: head }, state: "open", draft: false, mergeable: true, mergeable_state: "clean", merged: false });
       throw new Error(`unexpected ${url}`);
     }) as typeof fetch;
@@ -127,6 +128,7 @@ describe("live gauntlet in the Factory", () => {
       const f = new Factory(ctx as never, credentialEnv({ ...browserEnv, CACHE: membershipCache, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "test-meta-key-not-real", DB: { prepare: () => ({ bind: () => ({ first: async () => ({ token_version: 0, status: "active", installation_id: 1, id: 1, login: "test-player", user_id: 1, calls: 1, tokens: 100, next_at: Date.now(), failures: 0, enabled:1, runs_daily:20, count:1 }), all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } }) as never);
 
       const saved = () => data.get("state") as FactoryState;
+      mergedWebhook = () => f.onPullClosed(99, true, "merged-head");
 
       await f.alarm(); // verify → AI before the background comment retry
       expect(saved().items[0].inspection?.stages.find((s) => s.gate === "verify")?.state).toBe("passed");

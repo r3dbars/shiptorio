@@ -2454,7 +2454,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     for (const item of this.state!.items) {
       if (!["inspecting", "on_pad", "passed"].includes(item.state) || !item.prNumber || !(prNumbers.includes(item.prNumber) || (headSha && item.inspection?.headSha === headSha))) continue;
       const result = await inspectPullRequest(token, this.meta.repo, item.prNumber, headSha, this.state!.baseBranch);
-      if (result.stale) continue;
+      if (result.stale || !this.state!.items.some(current => current === item && current.state !== "launched")) continue;
       if (result.state === "pending") {
         if (item.state !== "inspecting" || stageOf(item, "ci")?.state === "passed" || item.inspection?.headSha !== result.headSha) {
           await this.patch({ items: [{ ...item, state: "inspecting", machineId: "ci-1", inspection: freshInspection(result.headSha), updatedAt: Date.now() }] });
@@ -2463,6 +2463,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       }
       if (item.branch?.startsWith("shiptorio/runner-") && (!item.lane || item.inspection?.headSha !== result.headSha)) {
         const lane = await prFiles(token, this.meta.repo, item.prNumber).then((files) => laneOf(files.map((f) => f.filename))).catch(error => { this.log("error", `Lane metadata unavailable: ${String(error)}`, item.id); return null; });
+        if (!this.state!.items.some(current => current === item && current.state !== "launched")) continue;
         item.lane = lane ?? undefined;
       }
       if (result.state === "passed") {
@@ -2496,7 +2497,15 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const creditKey = `launchCredit:${prNumber}`;
     if (merged) {
       // An item's active PR changes on rework. Credit belongs to the merged PR forever.
-      if (await this.ctx.storage.get(creditKey)) { await this.scheduleOrbitDeadline(); return; }
+      const credit = await this.ctx.storage.get<{itemId: string; at: number; mergeSha?: string}>(creditKey);
+      if (credit) {
+        // Repair older stale writes without awarding another rocket or undoing an orbit regression.
+        const current = this.state!.items.find(i => i.id === credit.itemId && i.prNumber === prNumber);
+        if (current && current.state !== "launched" && current.orbit?.state !== "regressed") {
+          await this.patch({items:[startWatch({...current,state:"launched",updatedAt:credit.at},credit.at,credit.mergeSha ?? mergeSha)]});
+        }
+        await this.scheduleOrbitDeadline(); return;
+      }
       const previous = this.state!.items.find(i => i.orbit?.prNumber === prNumber || i.state === "launched" && i.prNumber === prNumber);
       if (previous) {
         // Seed watches shipped before this ledger, without changing their current work.
@@ -2807,6 +2816,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     try {
       const token = await installationToken(this.env, this.meta.installationId);
       const head = (await gh<{ head: { sha: string } }>(`/repos/${this.meta.repo}/pulls/${item.prNumber}`, token)).head.sha;
+      if (!this.state!.items.some(current => current === item)) throw new Error("Current checks changed while launch was being refreshed.");
       if (by !== "overrule") {
         if (!stationsPassed(item.inspection)) throw new Error("Current checks require complete station receipts.");
         if (item.inspection?.headSha !== head) {
@@ -2814,6 +2824,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           throw new Error("The PR changed after its checks ran. It goes back through the gauntlet.");
         }
         const checks = await inspectPullRequest(token, this.meta.repo, item.prNumber, head, this.state!.baseBranch);
+        if (!this.state!.items.some(current => current === item)) throw new Error("Current checks changed while launch was being refreshed.");
         if (checks.stale) throw new Error("The PR changed while its checks were being refreshed.");
         if (checks.state !== "passed") {
           const current = checks.state === "failed" ? setStage(item, "ci", "rework", checks.summary) : { ...item, state: "inspecting" as const, machineId: "ci-1", inspection: freshInspection(head), updatedAt: Date.now() };
@@ -2847,11 +2858,14 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const mergeSha = await mergePullRequest(token, this.meta.repo, item.prNumber, head, item.title);
       const reason = by === "overrule" ? "You overruled the gauntlet and merged." : by === "autonomy" ? `Launch permit: ${item.lane}. Every station passed on this commit.` : "You merged at the merge gate.";
       const stages = (item.inspection?.stages ?? []).map((st) => (st.gate === "human" ? { ...st, state: "passed" as const, reason } : st));
-      await this.patch({ items: [{ ...item, inspection: item.inspection && { ...item.inspection, stages, humanApproved: by !== "autonomy" }, updatedAt: Date.now() }] });
+      // The merged webhook can arrive during the merge request. Commit launch first, then
+      // add the approval to that current item instead of overwriting it with the old pad snapshot.
+      await this.onPullClosed(item.prNumber, true, mergeSha);
+      const launched = this.state!.items.find(current => current.id === item.id && current.prNumber === item.prNumber && current.state === "launched");
+      if (launched) await this.patch({ items: [{ ...launched, inspection: item.inspection && { ...item.inspection, stages, humanApproved: by !== "autonomy" } }] });
       this.broadcast({ type: "log", level: "success", text: by === "autonomy" ? `Launching #${item.prNumber} on its own.` : `Launching #${item.prNumber}.`, at: Date.now(), actor: by === "autonomy" ? "spark" : "player", tool: "request_merge", approvedBy: by === "autonomy" ? "autonomy" : "player", reason, itemId: item.id });
       if (this.state!.move?.itemId === item.id) await this.publishGauntletMove(null);
       if (this.state!.bottleneck?.stationId === "gate-1") await this.refreshDecisions();
-      await this.onPullClosed(item.prNumber, true, mergeSha);
     } catch (err) {
       if (by === "autonomy") {
         await this.ctx.storage.delete(`autoLaunch:${item.id}`);
@@ -3621,6 +3635,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     for (const item of batch) {
       try {
         const pr = await gh<{ state: string; merged: boolean; merge_commit_sha?: string; head: { sha: string } }>(`/repos/${this.meta.repo}/pulls/${item.prNumber}`, token);
+        if (!this.state!.items.some(current => current === item && current.state !== "launched")) continue;
         if (pr.merged) await this.onPullClosed(item.prNumber!, true, pr.merge_commit_sha);
         else if (pr.state === "closed") await this.onPullClosed(item.prNumber!, false);
         else {
