@@ -114,5 +114,7 @@ test("replay blocks page-owned connection buttons and removes that guard on clos
 test("OAuth URL secrets are removed without stripping the item's ordinary state", () => {
   const clean = sanitizeTraceValue("https://example.test/callback?state=oauth-secret&nonce=random-nonce&code_verifier=verifier&code_challenge=challenge&safe=ok");
   expect(clean).toBe("https://example.test/callback?safe=ok");
-  expect(sample().frames[0].message.type === "snapshot" && sample().frames[0].message.state.items[0].state).toBe("ore");
+  const first = sample().frames[0].message;
+  if (first.type !== "snapshot") throw new Error("Missing initial state");
+  expect(first.state.items[0].state).toBe("ore");
 });
