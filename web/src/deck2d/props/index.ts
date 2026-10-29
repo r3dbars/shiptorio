@@ -6,7 +6,7 @@
 import { ART_PX, DECK_DX, HULL, PALETTE, snap, type CreateLayer, type DeckLayer, type DeckView, type LayerSlot } from "../contract";
 import { pixelOn } from "../../flags";
 import { BOILER_H, BOILER_W, boilerFrame } from "../../bakeoff/boiler2d";
-import { PAD, TOP, VENT_MOUTH, hullCanvas, ventXs } from "./hull";
+import { A, PAD, TOP, VENT_MOUTH, hullCanvas, orbFrame, orbX, ventXs } from "./hull";
 
 type Size = "small" | "medium" | "large";
 /** Built width per size, world units: each size ends just past its last station (small: Builder, medium: Review);
@@ -21,6 +21,8 @@ const COL = 16; // art px: the hull grows one plate-ish column at a time
 export const createLayer: CreateLayer = () => {
   if (!pixelOn()) return { update() {}, draw() {} };
   let t = 0, size: Size = "large", growing = 0;
+  let blocked = false;
+  const still = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
   function width(): number {
     const a = WIDTH[size], b = WIDTH[NEXT[size]];
@@ -55,12 +57,16 @@ export const createLayer: CreateLayer = () => {
       t += dt;
       size = v.deck?.size ?? "large";
       growing = v.deck?.growing ?? 0;
+      blocked = v.jam !== null || v.stops.some((stop) => stop.built && stop.state === "jammed");
     },
     draw(ctx: CanvasRenderingContext2D, slot: LayerSlot) {
       if (slot !== "deck") return;
       const w = width(), cv = hullCanvas(w), was = ctx.imageSmoothingEnabled;
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(cv, -PAD * ART_PX, -TOP * ART_PX, cv.width * ART_PX, cv.height * ART_PX);
+      const phase = still ? 3 : Math.floor(t * (blocked ? 4 : 2)) % 8;
+      const core = orbFrame(blocked, phase);
+      ctx.drawImage(core, snap((orbX(w) - 38) * ART_PX), (A.skirt - 2) * ART_PX, core.width * ART_PX, core.height * ART_PX);
       steam(ctx, w);
       const b = boilerFrame(t);
       ctx.drawImage(b, snap(BOILER.x - (BOILER_W * ART_PX) / 2), snap(BOILER.base - BOILER_H * ART_PX), BOILER_W * ART_PX, BOILER_H * ART_PX);

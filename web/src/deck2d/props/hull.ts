@@ -7,8 +7,8 @@ import { dressFloor } from "./clutter";
 
 // The large deck's hull drawn in code on the art grid (contract HULL): warm iron floor plates, a perimeter rail with
 // brass-capped posts and lanterns, a riveted front skirt with brass bands and brackets, a rock underside with cyan
-// cracks and copper pipe loops, the caged core orb and two copper steam vents. All static: the lanterns, cracks and
-// the orb are steady lights (the calm rule). The moving bits (steam, the boiler's fire and smoke) are in index.ts.
+// cracks and copper pipe loops, the caged core orb and two copper steam vents. The hull lights stay steady;
+// index.ts drives the separate core pulse and blocked-state warning along with the steam and boiler smoke.
 //
 // Coordinates here are art px (world / ART_PX). hullCanvas(w) renders a deck w art px wide, cached; the deck grows by
 // re-rendering at the new width (the vents and the right-hand end ride with the edge).
@@ -242,15 +242,24 @@ function rocks(g: Px, w: number) {
 }
 
 // ---------- the core orb ----------
-function orb(g: Px, w: number) {
+function orb(g: Px, w: number, blocked = false, phase = 0) {
   const cx = Math.round(orbX(w)) + 0.5, cy = A.orb.y - 6, R = 20; // it hangs clear below the rocks; the engine frames pixel mode down to y 800 (160 art px)
+  const bright = phase >= 2 && phase <= 5;
+  const energy: Ramp = blocked
+    ? ["jam-0", "jam-0", "jam-1", "jam-1", "jam-2", "jam-2", "white"]
+    : ENERGY;
+  const glow: Color = blocked ? "jam-2" : "energy-1";
+  const core: Ramp = blocked
+    ? (bright ? ["jam-1", "jam-2", "white"] : ["jam-0", "jam-1", "jam-2"])
+    : (bright ? ["energy-1", "energy-2", "energy-3", "white"] : ["energy-0", "energy-1", "energy-2"]);
   // the riser that holds it: copper with brass collars, from the skirt down through the rock
   cylV(g, cx - 3.5, A.skirt - 1, 7, cy - R - A.skirt + 2, CU, { amb: 0.15, gloss: 1.1 });
   for (const y of [A.skirt + 2, A.skirt + 10]) cylV(g, cx - 5.5, y, 11, 2, BRASS, { amb: 0.15, gloss: 1 });
   // the glass and its glowing core
-  ball(g, cx, cy, R - 0.5, ENERGY, { amb: 0.12, gloss: 0.35 });
-  ball(g, cx + 0.5, cy + 0.5, 9, ["energy-1", "energy-2", "energy-2", "energy-3", "energy-3"], { amb: 0.35, gloss: 0.4 });
-  g.set(cx + 9, cy - 12, "white"); g.set(cx + 10, cy - 11, "energy-3"); g.set(cx + 8, cy - 12, "energy-3"); g.set(cx + 10, cy - 10, "energy-3"); // one glint on the glass
+  ball(g, cx, cy, R - 0.5, energy, { amb: 0.12, gloss: 0.35 });
+  const drift = phase < 4 ? -1 : 1;
+  ball(g, cx + 0.5 + drift, cy + 0.5 - drift, bright ? 10 : 8, core, { amb: 0.35, gloss: 0.4 });
+  g.set(cx + 9, cy - 12, "white"); g.set(cx + 10, cy - 11, blocked ? "jam-2" : "energy-3"); g.set(cx + 8, cy - 12, blocked ? "jam-2" : "energy-3"); g.set(cx + 10, cy - 10, blocked ? "jam-2" : "energy-3"); // one glint on the glass
   // the brass cage: meridians (ellipses that narrow toward the edges), an equator band, top and bottom caps
   const cage = (x: number, y: number) => { const s = (x + 0.5 - cx) / R; g.set(x, y, s > 0.3 ? "brass-4" : s > -0.3 ? "brass-3" : "brass-1"); };
   for (const ph of [-1.1, -0.7, -0.3, 0.3, 0.7, 1.1]) for (let a = -Math.PI / 2; a <= Math.PI / 2; a += 0.04) cage(Math.round(cx + Math.sin(ph) * R * Math.cos(a) - 0.5), Math.round(cy + R * Math.sin(a) - 0.5));
@@ -260,9 +269,9 @@ function orb(g: Px, w: number) {
   cylH(g, cx - 8.5, cy + R - 2, 17, 4, BRASS, { amb: 0.12, gloss: 0.8 });
   for (let x = Math.floor(cx - R); x <= cx + R; x++) if (g.has(x, Math.round(cy - 1.5))) cage(x, Math.round(cy - 1.5)); // a 2px equator band
   g.vline(cx - 0.5, cy + R + 2, 2, "brass-2"); g.set(cx - 0.5, cy + R + 4, "brass-4"); // finial
-  // a soft steady cyan glow: on the rock round it, and a dithered ring of light in the air (no fades on the grid)
-  g.glowDisc(cx, cy, R + 10, "energy-1", 0.25, [Math.floor(cx - R), Math.floor(cy - R - 2), 2 * R + 2, 2 * R + 4]);
-  for (let y = Math.floor(cy - R - 4); y <= cy + R + 4; y++) for (let x = Math.floor(cx - R - 4); x <= cx + R + 4; x++) { const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy); if (d > R + 1 && d < R + 3.5 && !g.has(x, y) && ((x + y) & 1) && ((x >> 1) + (y >> 1)) % 2) g.glow(x, y, 1, 1, "energy-1", 0.5, true); }
+  // Palette light layers breathe around the cage; blocked state uses the jam ramp.
+  g.glowDisc(cx, cy, R + (bright ? 12 : 8), glow, bright ? 0.5 : 0.25, [Math.floor(cx - R), Math.floor(cy - R - 2), 2 * R + 2, 2 * R + 4]);
+  for (let y = Math.floor(cy - R - 4); y <= cy + R + 4; y++) for (let x = Math.floor(cx - R - 4); x <= cx + R + 4; x++) { const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy); if (d > R + 1 && d < R + 3.5 && !g.has(x, y) && ((x + y) & 1) && ((x >> 1) + (y >> 1)) % 2) g.glow(x, y, 1, 1, glow, 0.5, true); }
   // a steady cool halo: on the rock above and, faintly, the sky round it
 }
 
@@ -285,6 +294,20 @@ function endCap(g: Px, w: number) {
 }
 
 const cache = new Map<number, HTMLCanvasElement>();
+const orbFrames = new Map<string, HTMLCanvasElement>();
+/** Eight tiny cached frames: only the light/core moves; the hanging cage stays anchored. */
+export function orbFrame(blocked: boolean, phase: number): HTMLCanvasElement {
+  const key = `${blocked}:${phase}`;
+  let cv = orbFrames.get(key);
+  if (!cv) {
+    const raw = new Px(76, 100);
+    orb(shift(raw, 38 - Math.round(A.orb.x), 2 - A.skirt), A.orb.x + 24, blocked, phase);
+    raw.outline();
+    cv = raw.bake();
+    orbFrames.set(key, cv);
+  }
+  return cv;
+}
 /** The whole static hull, w art px wide: a canvas (w + 2*PAD) x H, art (0, 0) at (PAD, TOP). */
 export function hullCanvas(w: number): HTMLCanvasElement {
   w = Math.max(60, Math.round(w));
@@ -292,7 +315,6 @@ export function hullCanvas(w: number): HTMLCanvasElement {
   if (cv) return cv;
   const raw = new Px(w + 2 * PAD, H), g = shift(raw, PAD, TOP);
   rocks(g, w);
-  orb(g, w);
   skirt(g, w);
   hangers(g, w);
   vents(g, w);
