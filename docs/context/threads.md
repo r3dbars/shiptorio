@@ -746,3 +746,8 @@ Verified whole-App regressions: Hono response assignment replaced appended App t
 
 - Reported reset409 naturally advanced from provider-busy to Factory wipe-pending after lease expiry; no cleanup bug was established and no guard was relaxed. Busy resets now report only fixed reason labels, bounded counts and the latest bounded lease retry interval through a validating private wrapper. Unknown/malformed provider failures remain generic; credentials/UUIDs/provider headers are never forwarded.
 - Fixed-clock tests cover pending receipt + outer lease expiry, ordinary in-flight work rejection and sanitized errors. No live fixture call/reset was performed from this lane; root owns the continuing hosted test.
+
+### Codex repository-access D1 roundtrips
+
+- Keep fresh session/admission gates before repository I/O. Read mapping + the three required relationships in one transaction, reducing a warm decision from six SQL statements/four D1 roundtrips to the same six statements/three roundtrips. Each App/DO boundary still runs its own checks; KV/GitHub policy, permissions and the non-batch fallback are unchanged.
+- Real SQLite regressions pin query counts, same-request installation remapping, warm-grant revocations, strict/error precedence, early session/admission denial and adapter fallback. No frontend/Factory/session/access/cache changes or live fixture calls. Deployed speed remains a separate measurement, not an under-three-second claim.
