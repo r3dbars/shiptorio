@@ -596,8 +596,8 @@ app.on(["GET", "POST"], "/runner/pair", async c => {
   if (!CODE_RE.test(code)) return c.html(runnerPage("Connect your machine", "<p>Start the installer on your computer to get a fresh pairing code. <a href='/docs/runner'>Runner instructions</a>.</p>"), 400, headers);
   if (c.req.method === "POST") {
     if (c.req.header("origin") !== new URL(c.req.url).origin) return c.text("invalid origin", 403);
-    const raw = await c.req.text();
-    if (raw.length > 1024) return c.text("too large", 413);
+    const raw = await boundedBody(c.req.raw, 1024);
+    if (raw === null) return c.text("too large", 413);
     const repo = String(new URLSearchParams(raw).get("repo") ?? "").trim().toLowerCase();
     const installation = await deviceRepoAccess(c.env, user, repo);
     if (!installation) {

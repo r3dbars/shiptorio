@@ -104,6 +104,24 @@ describe("browser origin and response policy", () => {
     expect(browserMutationAllowed(request("/webhooks/github/extra", { method: "POST" }))).toBe(false);
     expect(browserMutationAllowed(request("/api/runner/a/b/not-authenticated", { method: "POST" }))).toBe(false);
   });
+  it("bounds the signed-in pairing form while reading even with a dishonest byte count", async () => {
+    const env = baseEnv();
+    const cookie = [await signedInCookie(env, "player", [], 7),
+      (await makeSessionCookie(`${env.SESSION_SECRET}:${env.APP_PASSWORD}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=")].join("; ");
+    for (const length of [undefined, "1"]) {
+      let reads = 0, cancelled = false;
+      const body = new ReadableStream<Uint8Array>({ pull(controller) {
+        if (++reads === 5) controller.close();
+        else controller.enqueue(new Uint8Array(reads === 1 ? 1024 : 1));
+      }, cancel() { cancelled = true; } }, { highWaterMark: 0 });
+      const headers: Record<string, string> = { cookie, origin: "https://shiptorio.com" };
+      if (length) headers["content-length"] = length;
+      const response = await app.fetch(request("/runner/pair?code=AAAA-BBBB-CCCC", { method: "POST", headers, body }), env as never);
+      expect(response.status).toBe(413);
+      expect(reads).toBe(2);
+      expect(cancelled).toBe(true);
+    }
+  });
   it("rejects cross-site logout navigation before revoking the session", async () => {
     const env = baseEnv();
     const cookie = [await signedInCookie(env, "player", [], 7),
