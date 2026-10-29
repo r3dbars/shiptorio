@@ -3,7 +3,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Window } from "happy-dom";
 import type { FactoryState, Item, ServerToWeb } from "@shiptorio/shared";
 import type { CardView, DeckView } from "../src/deck2d/contract";
-import { createLiveSource } from "../src/deck2d/data/source";
+import { createLiveSource, UNCONFIRMED_MS } from "../src/deck2d/data/source";
 import { createPayoff, PAYOFF } from "../src/deck2d/payoff";
 
 const item = (id: string, state: Item["state"], over: Partial<Item> = {}): Item => ({ id, kind: "bug", source: "github_issue", title: id, district: "web", state, attempts: 0, updatedAt: 1, ...over });
@@ -52,6 +52,24 @@ test("two tabs: one ship counts once toward today", () => {
   const seen = [a, b].map(tab => tab.frames(PAYOFF.noRocket + 0.2).caption);
   expect(seen).toEqual(["Shipped. That's your first today.", "Shipped. That's your first today."]);
   expect(JSON.parse(store.get("shiptorio.deck.shippedToday")!).n).toBe(1);
+});
+
+test("a decision the server never confirms brings its card back instead of hiding it until reload", () => {
+  let clock = 1_000_000, receive!: (m: ServerToWeb) => void;
+  const sent: unknown[] = [];
+  const src = createLiveSource({ kind: "live", repo: "r3dbars/testing", scenario: "quiet-morning" }, { now: () => clock, connect: (_cfg, onMessage) => { receive = onMessage; return { send: m => sent.push(m), close() {} }; } });
+  const move = { id: "m1", title: "Start build?", why: "", createdAt: 0, options: [{ id: "go", label: "Go", recommended: true, actions: [{ tool: "approve_runner_job", args: {}, reason: "" }] }] };
+  receive({ type: "snapshot", state: { ...state(0), deck: [move] } });
+  src.approve("m1");
+  src.approve("m1"); // double tap: still one send
+  expect(sent).toHaveLength(1);
+  expect(src.view().card).toBeNull();
+  clock += 30_000;
+  expect(src.view().card).toBeNull(); // still landing: no flash back
+  clock += UNCONFIRMED_MS;
+  expect(src.view().card?.id).toBe("m1"); // the socket dropped it: the player can answer again
+  src.approve("m1");
+  expect(sent).toHaveLength(2);
 });
 
 // The card needs a DOM (same setup as deck-card-dom.test.ts).
