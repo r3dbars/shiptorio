@@ -4,13 +4,26 @@
 // (docs/LEARN.md: Approve fills a dot, Later empties them).
 
 import { continueOption, type FactoryState, type Move, type ServerToWeb, type WebToServer } from "@shiptorio/shared";
-import { connect as connectFactory, readConfig, type Source, type SourceConfig } from "../../source";
-import { applyPatch } from "../../store";
-import { openUnlockLink } from "../../ui/unlockLink";
+import { readConfig, type Source, type SourceConfig } from "../../source/config";
+import { connectLazy as connectFactory } from "../../source/connect";
+import { applyPatch } from "../../source/patch";
+import { openUnlockLink } from "../rules/unlockLink";
 import type { DeckSource, StopId } from "../contract";
 import { cardStop, deckView, isSetupCard, itemStop, type LiveDeckView } from "./view";
 import { createJourney } from "./journey";
-import { connectReplay, type ReplayOptions } from "./replay";
+import type { ReplayOptions } from "./replay";
+
+// Replay pulls in zod for trace parsing, so it loads only for ?source=replay instead of riding in every deck visit.
+function lazyReplay(onMessage: (m: ServerToWeb) => void, onStatus: (s: "connecting" | "live" | "offline") => void, options: ReplayOptions): Source {
+  let inner: Source | null = null, closed = false;
+  const queued: Parameters<Source["send"]>[0][] = [];
+  void import("./replay").then(({ connectReplay }) => {
+    if (closed) return;
+    inner = connectReplay(onMessage, onStatus, options);
+    for (const msg of queued.splice(0)) inner.send(msg);
+  });
+  return { send: msg => inner ? inner.send(msg) : void queued.push(msg), close: () => { closed = true; inner?.close(); } };
+}
 
 type Connect = (cfg: SourceConfig, onMessage: (m: ServerToWeb) => void, onStatus: (s: "connecting" | "live" | "offline") => void) => Source;
 
@@ -41,7 +54,7 @@ export function fold(s: FactoryState | null, msg: ServerToWeb): FactoryState | n
 export function createLiveSource(cfg: SourceConfig = readConfig(), opts: { onPower?: () => void; connect?: Connect; now?: () => number; replay?: ReplayOptions } = {}): LiveDeckSource {
   const replay = opts.replay ?? (typeof location !== "undefined" && new URLSearchParams(location.search).get("source") === "replay" ? {} : undefined);
   if (replay) cfg = { ...cfg, kind: "live" };
-  const connect: Connect = replay ? (_cfg, message, status) => connectReplay(message, status, replay) : opts.connect ?? connectFactory;
+  const connect: Connect = replay ? (_cfg, message, status) => lazyReplay(message, status, replay) : opts.connect ?? connectFactory;
   const now = opts.now ?? Date.now;
   let state: FactoryState | null = null;
   let status: "connecting" | "live" | "offline" = "connecting";

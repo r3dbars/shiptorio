@@ -1,5 +1,9 @@
 # The simple screen
 
+> **Historical, 3D map era (marked 2026-10-29).** This page describes the old map, shaft or React UI, not the 2D deck
+> that is the product now. It stays here because code comments point at it. Where it disagrees with
+> [VISION.md](VISION.md), VISION wins.
+
 > Status: behind `?simple=1` (2026-10-28). Thread "Simplify the whole game UI". Audit and picks:
 > https://claude.ai/artifact/F2Rd8CtzAxJhH1sfDCriLT. Builds on docs/ATTENTION.md (one card shape, Continue/Later)
 > and the calm pass (one map marker).

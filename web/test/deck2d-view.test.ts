@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import type { FactoryState, Item, Move, ServerToWeb, WebToServer } from "@shiptorio/shared";
 import { STOPS, type DeckView } from "../src/deck2d/contract";
 import { connectSim } from "../src/sim/engine";
 import type { Source, SourceConfig } from "../src/source";
 import { createLiveSource } from "../src/deck2d/data/source";
 import { createWatchSource, isWatchMode } from "../src/deck2d/data/watch";
+import { loadSim } from "../src/source/connect";
 import { ALL_CLEAR, deckView, FIRST_LINE, itemStop } from "../src/deck2d/data/view";
 import { createBuild } from "../src/deck2d/build/build";
 import { createBus } from "../src/deck2d/contract";
@@ -22,6 +23,9 @@ const base = (over: Partial<FactoryState> = {}): FactoryState => ({
 const item = (id: string, state: Item["state"], over: Partial<Item> = {}): Item => ({ id, kind: "bug", source: "github_issue", title: id, district: "web", state, attempts: 0, updatedAt: 0, ...over });
 const card = (id: string, tool: string, over: Partial<Move> = {}): Move => ({ id, title: `Approve ${id}?`, why: "", createdAt: 0, options: [{ id: "go", label: "Go", recommended: true, actions: [{ tool, args: {}, reason: "" }] }, { id: "skip", label: "Not now", recommended: false, actions: [] }], ...over });
 const stop = (v: DeckView, id: string) => v.stops.find((x) => x.id === id)!;
+
+// The deck loads the simulator on demand; once loaded, sim sources connect synchronously, as these tests step them.
+beforeAll(() => loadSim());
 
 test("watch mode is explicitly simulator-only", () => {
   expect(isWatchMode("?source=sim&watch=1")).toBe(true);

@@ -1,5 +1,5 @@
 import { ServerToWeb } from "@shiptorio/shared";
-import type { Source, Listener, StatusListener } from "../../source";
+import type { Source, Listener, StatusListener } from "../../source/config";
 
 export interface DeckTrace {
   version: 1;

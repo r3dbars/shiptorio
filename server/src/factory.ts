@@ -268,6 +268,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     return this.ctx.storage.put(key, value);
   }
 
+  /** Every decision refresh lands here; most leave the stored JSON as it was, and storage stays the judge of that. */
+  private async accountPutChanged<T>(key: string, value: T) {
+    if (this.accountErased) throw new Error("Factory deleted");
+    if (JSON.stringify(await this.ctx.storage.get(key)) !== JSON.stringify(value)) await this.ctx.storage.put(key, value);
+  }
+
   private accountAlarm(at: number) {
     if (this.accountErased) throw new Error("Factory deleted");
     return this.ctx.storage.setAlarm(at);
@@ -445,8 +451,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     s.learned = learning ? learnedList(this.deckBook!) : [];
     s.liveBottleneck = projectLiveBottleneck(s, jobs, now);
     await this.logDeck(deck);
-    await this.accountPut("openMoves", this.openMoves);
-    await this.accountPut("deckBook", this.deckBook);
+    await this.accountPutChanged("openMoves", this.openMoves);
+    await this.accountPutChanged("deckBook", this.deckBook);
     await this.save();
     this.broadcast({ type: "patch", patch: { bottleneck: s.bottleneck, liveBottleneck: s.liveBottleneck, learned: s.learned, pipeline: projectPipeline(s, jobs, presenceFresh) } });
     // Unchanged decisions need no new transport frame. Every frame we do publish

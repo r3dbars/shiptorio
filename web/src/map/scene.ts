@@ -174,8 +174,8 @@ interface BiterView {
   attacking: boolean;
 }
 
-import { oreKind, ghostSpots, type OreKind, type GhostSource } from "./ghosts";
-export { GHOST_SOURCES, ghostSpots, type GhostSource } from "./ghosts";
+import { oreKind, ghostSpots, type OreKind, type GhostSource } from "../deck2d/rules/ghosts";
+export { GHOST_SOURCES, ghostSpots, type GhostSource } from "../deck2d/rules/ghosts";
 
 // Item Lab variants: [name, color, extra?]
 const ORE_VARIANT: Record<OreKind, BuildOpts["variant"]> = {

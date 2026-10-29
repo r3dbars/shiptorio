@@ -1,7 +1,7 @@
 // The live check-in deck is a projection, never an executor. The DO supplies all open
 // proposals and stores resolutions separately. A new proposal joins the set; it does
 // not overwrite the previous card. All times/ids below are deterministic for replay.
-import { attentionOf, type FactoryState, type Item, type Move, type MoveKind } from "@shiptorio/shared";
+import { attentionOf, type FactoryState, type Move, type MoveKind } from "@shiptorio/shared";
 
 // A modest, fixed bonus (weighted item-minutes) favors growing the loop without
 // letting a new connection card bury an old, valuable shipping decision forever.

@@ -75,6 +75,16 @@ test("arrow keys answer, and a dry deck right after says All caught up", async (
   expect(t.host.children.length).toBe(0);
 });
 
+test("Shippy talking (guide cards) is not a queue: no All caught up after its card while the next thing builds", async () => {
+  const t = await mount();
+  t.h.show({ id: "tour-0-2", title: "Software is a factory", line: "Let's build your line.", dots: null, stop: "repo", yes: "Build it", guide: "shippy" });
+  (t.live()!.querySelector(".ic-btn.approve") as HTMLButtonElement).click();
+  expect(t.got).toEqual(["approve:tour-0-2"]);
+  t.h.show(null);
+  expect(t.live()).toBeNull();
+  t.h.destroy();
+});
+
 test("a swipe right past the line approves; a short drag snaps back", async () => {
   const t = await mount();
   t.h.show(card("d"));

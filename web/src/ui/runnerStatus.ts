@@ -1,14 +1,9 @@
 import { useEffect, useState } from "react";
 import { RUNNER } from "../copy";
 
-export interface RunnerStatus {
-  paired: boolean; online: boolean; seenAt: number | null; harnesses: string[];
-  lastJob: { id: string; status: string } | null;
-  /** The job your machine is on right now, newest server only. */
-  working?: { itemId: string; number: number | null; title: string; status: string; harness: string } | null;
-  /** The plan or build card it waits on you for. */
-  waitingOn?: { moveId: string; title: string } | null;
-}
+import type { RunnerStatus } from "../deck2d/rules/runner";
+
+export type { RunnerStatus };
 
 /** Polls the runner's status every five seconds while the tab is visible. */
 export function useRunnerStatus(repo?: string) {

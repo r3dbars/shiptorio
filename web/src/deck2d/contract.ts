@@ -64,6 +64,9 @@ export interface CardView {
   hold?: boolean; // ships real code (a merge): needs a held press or a full swipe, never a flick
   guide?: "shippy"; // verified Meta-guided recommendation; ordinary setup/status cards stay plain
   setup?: boolean; // a "plug in an agent" / connect card rather than a decision on work
+  /** A story card: Shippy stands inside the card and says `line` (typed out). `yes` defaults to "Next"; Later only shows
+   *  when `no` is set. Tap the card, swipe right or press → to go on (onApprove). dots, hold and guide are ignored. */
+  shippy?: "talk" | "wave" | "point" | "happy";
 }
 
 export type ShippyPose = "folded" | "peek" | "unfold" | "walking" | "lever" | "happy" | "alarmed" | "weld" | "carry" | "inspect" | "poke" | "skid" | "idle";
@@ -119,7 +122,7 @@ export type DeckEvent =
   | { type: "deck-grow"; size: "small" | "medium" | "large"; phase: "beams" | "plates" | "rails" | "glow" | "rocks" | "done" } // grow/
   | { type: "build-stage"; stop: StopId; stage: "plot" | "scaffold" | "frame" | "panels" | "top" | "burst" | "check" } // build/
   | { type: "launch-stage"; stage: "island-rising" | "island-up" | "bridge" | "bridge-done" | "tower" | "rocket-lowering" | "rocket-seated" } // launch/
-  | { type: "tap"; target: TapTarget } // interact/ (docs/PIXEL-PLAN.md section 6)
+  | { type: "tap"; target: TapTarget } // interact/ (docs/context/pixel-deck.md)
   | { type: "shippy-arrive"; target: TapTarget }
   | { type: "interact"; target: TapTarget; action: string };
 

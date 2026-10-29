@@ -14,8 +14,6 @@ export const IRON: Ramp = ["soot", "iron-0", "iron-0", "iron-1", "iron-1", "iron
 export const BRASS: Ramp = ["soot", "plate-0", "brass-0", "brass-1", "brass-2", "brass-3", "brass-4", "brass-5"];
 export const COPPER: Ramp = ["soot", "brass-0", "sun-0", "copper-0", "copper-1", "copper-2", "sun-4", "sun-6"];
 export const STEEL: Ramp = ["iron-0", "steel-1", "steel-2", "steel-3", "haze-2", "haze-3"];
-/** Light machined steel (gears): reads grey next to the brass. */
-export const GEAR: Ramp = ["soot", "iron-1", "iron-3", "iron-4", "haze-2", "haze-3"];
 export const SMOKE: Ramp = ["iron-2", "iron-3", "steel-3", "haze-2", "haze-3"];
 
 /** Light direction (x right, y up, z toward the viewer), normalised. */

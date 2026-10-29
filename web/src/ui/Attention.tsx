@@ -6,7 +6,7 @@
 // big red button you hold down, and more cards waiting show as plates peeking out behind this one.
 
 import { useEffect, useRef, useState } from "react";
-import { openUnlockLink } from "./unlockLink";
+import { openUnlockLink } from "../deck2d/rules/unlockLink";
 import { attentionOf, ATTENTION_RANK, continueOption, type Attention, type Move, type WebToServer } from "@shiptorio/shared";
 import { ATTENTION, NEXT_MOVE, STAGE_LABEL, THINKS, WORDS } from "../copy";
 import { because } from "./because";

@@ -10,10 +10,12 @@ import { createShippyRehearsal } from "./shippy/rehearsal";
 import { createWatchSource, isWatchMode } from "./data/watch";
 import { createMachineRehearsal, mountMachineControls } from "./stations/rehearsal";
 import { createMachineInteraction } from "./stations/inspector";
+import { createWhatIsState, mountWhatIs } from "./stations/whatis";
 import { createFirstVisitDemo } from "./stations/first-visit";
 import { createConveyorDemo } from "./engine/conveyor-demo";
 import { createPayoff } from "./payoff";
 import { createFirstRun } from "./data/firstrun";
+import { askPassword } from "./password";
 import type { AttentionView } from "./stations/attention";
 
 /** Keyboard and screen-reader access for the existing card; it never invents an action. */
@@ -172,6 +174,7 @@ const seed = Number(params.get("seed")) || 0;
   const connections = createConnections({
     repo: signedIn ? params.get("repo") || undefined : undefined, origin: location.origin, path: location.pathname + location.search,
     navigate: url => { location.href = url; }, copy: copyText,
+    askPassword: next => askPassword(document, next, url => { location.href = url; }),
     onStart: id => (source as DeckSource & { focusItem?: (id: string) => void }).focusItem?.(id),
   });
   let source: DeckSource;
@@ -243,13 +246,22 @@ const seed = Number(params.get("seed")) || 0;
     stage: () => !signedIn ? (guestStory?.phase() === "end" ? "intro" : null) : !repo ? "hello" : connections.engineReady() ? "engine" : "repo",
     established: () => !!(source.view() as import('./data/view').LiveDeckView).work,
   }) : null;
-  const engine = createEngine(cv, art, bus, shippy, layers, { onPowerSelect: () => { if (setupReachable) connections.open("power"); }, onMachineSelect: id => {
+  // Tap a station: brass corners + a small "what is this" note in Shippy's words (stations/whatis.ts). Ignored while
+  // Shippy's tour talks, so a tap never fights the story card. The machine rehearsal keeps its inspector card.
+  const whatis = createWhatIsState();
+  let tourTalking = false;
+  const note = mountWhatIs(document, () => whatis.close());
+  document.addEventListener("pointerdown", e => { const t = e.target as HTMLElement; if (t !== cv && !t.closest?.(".whatis")) whatis.close(); });
+  const engine = createEngine(cv, art, bus, shippy, layers, { onPowerSelect: () => {
+    if (setupReachable) connections.open("power"); else whatis.tap("engine", tourTalking);
+  }, onTapEmpty: () => whatis.close(), onMachineSelect: id => {
     deckSound.playTap(id);
     if (id === "repo" && setupReachable) { connections.open("repo"); return; }
-    if (machines) machines.cycling = false;
+    if (machines) { machines.cycling = false; inspector.select(id); return; }
     (source as DeckSource & { selectStop?: (stop: typeof id) => void }).selectStop?.(id);
-    inspector.select(id);
+    whatis.tap(id, tourTalking);
   } });
+  if (import.meta.env.DEV) (window as unknown as { deckAnchor: typeof engine.anchor }).deckAnchor = id => engine.anchor(id); // shot scripts tap stations
   let updateConveyorControls: (() => void) | undefined;
   if (conveyor) {
     const controls = document.createElement("div"); controls.className = "shippy-tools";
@@ -326,7 +338,13 @@ const seed = Number(params.get("seed")) || 0;
     cv.dataset.workStop = work?.stop ?? '';
     cv.dataset.workMoving = String(!!(view as import('./data/view').LiveDeckView).followItem);
     cv.dataset.allClear = String(!!(view as import('./data/view').LiveDeckView).allClear);
+    tourTalking = !!firstRun?.playing() || !!view.card?.shippy;
+    if (tourTalking) whatis.close();
     engine.frame(view, dt);
+    const anchor = whatis.open && engine.anchor(whatis.open);
+    if (whatis.open && !anchor) whatis.close();
+    engine.pick(whatis.open);
+    note.show(whatis.open, anchor || null);
     card.show(view.card, { quiet: !!firstRun?.playing() });
     accessibility.update(view.card, view.caption);
     if (view.caption !== caption) caption = view.caption;

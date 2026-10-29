@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { FactoryState, Item, Move } from "./model";
+import type { FactoryState } from "./model";
 
 export const PIPELINE_IDS = ["planner", "builder", "checks", "review", "gate", "launch"] as const;
 export const PIPELINE_REASONS = {

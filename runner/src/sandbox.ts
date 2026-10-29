@@ -11,6 +11,15 @@ export interface CheckSandbox {
 }
 const quote = (value: string) => JSON.stringify(value);
 
+/** A supervisor timeout is a transport-style interruption: the saved build resumes on the next claim. */
+export function resumeOnTimeout(boundary: CheckSandbox, defaultCwd: string): CheckSandbox {
+  return { run: async (args, cwd = defaultCwd, options) => {
+    const result = await boundary.run(args, cwd, options);
+    if (result.timedOut) throw new TypeError("Supervisor interrupted or timed out; saved build will resume");
+    return result;
+  }, close: () => boundary.close() };
+}
+
 /** The repository and all child processes are untrusted. Env filtering alone is not isolation. */
 export async function verificationGit(): Promise<string> {
   if (process.platform === "linux" && Bun.which("git")) return (await realpath(Bun.which("git")!));

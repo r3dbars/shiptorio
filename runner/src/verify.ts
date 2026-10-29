@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { checkSandbox, type CheckSandbox } from "./sandbox";
+import { checkSandbox, resumeOnTimeout, type CheckSandbox } from "./sandbox";
 import { snapshotApproved } from "./publication";
 
 export const TEST_PATH = /(^|\/)(test|tests|__tests__|spec)\/.*\.[cm]?[jt]sx?$|\.(test|spec)\.[cm]?[jt]sx?$/i;
@@ -32,12 +32,7 @@ export async function verifyRegression(work: string, baseSha: string, paths: str
   const args = [process.execPath, "test", ...tests.map(p => `./${p}`)];
   const command = `bun test ${tests.map(p => `./${p}`).join(" ")}`.slice(0, 1000);
   if (!tests.length) return { failsOnBase: false, passesOnHead: false, baseSha, command: "No changed test files", logTail: "No reproducible test recipe was attached." };
-  const boundary = await checkSandbox(boundaryRoot);
-  const sandbox: CheckSandbox = { run: async (args, cwd = work, options) => {
-      const result = await boundary.run(args, cwd, options);
-      if (result.timedOut) throw new TypeError("Supervisor interrupted or timed out; saved build will resume");
-      return result;
-    }, close: () => boundary.close() };
+  const sandbox = resumeOnTimeout(await checkSandbox(boundaryRoot), work);
   const run = async (args: string[], cwd: string, boundary: CheckSandbox = sandbox, install = false): Promise<Result> => {
     const result = await boundary.run(args, cwd, { install });
     if (result.timedOut) throw new TypeError("Verification interrupted or timed out; saved build will resume");

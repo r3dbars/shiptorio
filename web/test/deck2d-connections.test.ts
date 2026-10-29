@@ -147,6 +147,26 @@ test('anonymous front door asks for sign-in without a protected API request', as
   ui.open('repo');await settle();expect(ui.card()?.title).toBe('Sign in to your factory');expect(ui.card()?.yes).toBe('Sign in');expect(calls).toEqual(['/api/me']);
 });
 
+test('a visitor without the preview password gets the password popup before GitHub sign-in', async () => {
+  const asked: string[] = [], navigations: string[] = [];
+  const ui = createConnections({origin:'https://shiptorio.dev',path:'/deck?source=live',navigate:url=>navigations.push(url),askPassword:next=>asked.push(next),copy:async()=>{},
+    fetch:(async()=>new Response('Preview password required',{status:401})) as typeof fetch});
+  ui.open('repo');await settle();
+  expect(ui.card()).toMatchObject({title:'Sign in to your factory',yes:'Sign in'});
+  await ui.answer(ui.card()!.id,true);
+  expect(asked).toEqual(['/auth/login?next=%2Fdeck%3Fsource%3Dlive']);
+  expect(navigations).toEqual([]);
+});
+
+test('a visitor who already has the password goes straight to GitHub', async () => {
+  const asked: string[] = [], navigations: string[] = [];
+  const ui = createConnections({origin:'https://shiptorio.dev',path:'/deck?source=live',navigate:url=>navigations.push(url),askPassword:next=>asked.push(next),copy:async()=>{},
+    fetch:(async()=>Response.json({guest:true,login:null,githubConfigured:true})) as typeof fetch});
+  ui.open('repo');await settle();await ui.answer(ui.card()!.id,true);
+  expect(asked).toEqual([]);
+  expect(navigations).toEqual(['/auth/login?next=%2Fdeck%3Fsource%3Dlive']);
+});
+
 test('ready engine keeps unplug behind Options and never disconnects on the first tap', async () => {
   const f = setup([{ paired: true, online: true, harnesses: ['codex'] }]);
   f.ui.open('power'); await settle();
@@ -186,4 +206,18 @@ test('opening a repo never leaves the site, even from a protocol-relative page p
     fetch: (async url => Response.json(String(url) === '/api/me' ? { login: 'alice' } : { repos: [{ fullName: 'alice/only' }] })) as typeof fetch });
   ui.open('repo'); await settle();
   expect(navigations).toEqual(['/deck?source=live&repo=alice%2Fonly&onboard=codex']);
+});
+test("Shippy's suggested issue comes first with one plain reason, and names Meta Muse Spark only for Spark's pick", async () => {
+  const rows = [{ id: 1, number: 101, title: 'Fix cart', body: 'Real issue' }, { id: 2, number: 102, title: 'Fix typo', body: '' }];
+  const f = setup([{ issues: rows, nextPage: null, suggested: { number: 102, because: "it's docs only, so nothing can break.", by: 'spark' } }]);
+  f.ui.open('repo'); await settle();
+  expect(f.ui.card()?.title).toBe('#102: Fix typo');
+  expect(f.ui.card()?.line).toBe("I'd start with #102, because it's docs only, so nothing can break. (Picked by Meta Muse Spark.) Review the plan before your engine starts.");
+  await f.no(); expect(f.ui.card()?.title).toBe('#101: Fix cart'); expect(f.ui.card()?.line).not.toContain("I'd start");
+  const g = setup([{ issues: rows, nextPage: null, suggested: { number: 101, because: "it's the smallest clear ask in your repo.", by: 'fallback' } }]);
+  g.ui.open('repo'); await settle();
+  expect(g.ui.card()?.line).toBe("I'd start with #101, because it's the smallest clear ask in your repo. Review the plan before your engine starts.");
+  const h = setup([{ issues: rows, nextPage: null, suggested: { number: 999, because: 'gone', by: 'spark' } }]);
+  h.ui.open('repo'); await settle();
+  expect(h.ui.card()?.title).toBe('#101: Fix cart'); expect(h.ui.card()?.line).not.toContain('Spark');
 });

@@ -11,6 +11,14 @@ const DECK = (): CardView[] => [
   { id: "d", title: "Connect your error tracker?", dots: null, line: "Then the factory sees bugs on its own.", stop: "repo", yes: "Connect", no: "Not now" },
   { id: "e", title: "Ship the checkout fix?", dots: null, line: "This merges real code. Hold to ship.", stop: "launch", yes: "Ship it", hold: true },
 ];
+// ?card=story-hi: the Shippy-first opening, a few story cards in a row (CardView.shippy)
+const STORY = (): CardView[] => [
+  { id: "s1", shippy: "wave", title: "", line: "Hi, I'm Shippy! Great to meet you.", dots: null, stop: "repo" },
+  { id: "s2", shippy: "talk", title: "", line: "This game mirrors your GitHub repo. What you decide here really happens there.", dots: null, stop: "repo" },
+  { id: "s3", shippy: "point", title: "Your software factory", line: "Software is a factory. Ideas come in on the left, shipped code goes out on the right.", dots: null, stop: "planner" },
+  { id: "s4", shippy: "talk", title: "", line: "I'm powered by Meta's model. I'll read what you connect and suggest your next move.", dots: null, stop: "repo", no: "Skip" },
+  { id: "s5", shippy: "happy", title: "", line: "Approve the PR waiting at the gate and I'll show you how shipping works.", dots: null, stop: "gate", yes: "Show me" },
+];
 // One of each kind the deck really deals, with the longest words those kinds use (story/, data/view.ts, data/connections.ts).
 const KINDS: Record<string, CardView> = {
   story: DECK()[0],
@@ -22,10 +30,15 @@ const KINDS: Record<string, CardView> = {
   "setup-busy": { id: "connection-setup-busy", title: "Finding your repositories…", dots: null, line: "This should only take a moment.", stop: "repo", yes: "Please wait…", no: "Close", setup: true },
   "setup-issue": { id: "connection-setup-issue", title: "#128: Search results flicker when you type fast on a slow phone", dots: null, line: "r3dbars/testing · 1 of 12. Typing quickly in the search box makes the list jump between old and new results before it settles… Start issue prepares a plan. Your engine waits for your approval.", stop: "repo", yes: "Start issue", no: "Next", setup: true },
   signin: { id: "connection-signin", title: "Sign in to your factory", dots: null, line: "Sign in with GitHub to choose your repository. No coding starts yet.", stop: "repo", yes: "Sign in", no: "Close", setup: true },
+  "story-wave": STORY()[0],
+  "story-point": STORY()[2],
+  "story-skip": STORY()[3],
+  // the longest beat the guest tour deals (story/tour.ts)
+  "story-long": { id: "story-long", shippy: "talk", title: "Powered by Meta", line: "Meta's model is my brain. I'll cheer you on and suggest what to do next, based on what you connect: GitHub first, then issues and feedback.", dots: null, stop: "repo", no: "Back" },
   live: { id: "live", title: "Approve fix for checkout bug?", dots: { have: 2, need: 3 }, line: "Approve this one and it's automatic.", stop: "review", yes: "Continue", no: "Later" },
 };
 const only = new URLSearchParams(location.search).get("card");
-let deck = only === "empty" ? [] : only && KINDS[only] ? [KINDS[only]] : DECK();
+let deck = only === "empty" ? [] : only === "story-hi" ? STORY() : only && KINDS[only] ? [KINDS[only]] : DECK();
 const say = (s: string) => (log.textContent = s);
 const card = mountCard(document.body, {
   onApprove(id) { say(`approved ${id}`); deck = deck.filter((c) => c.id !== id); setTimeout(() => card.show(deck[0] ?? null), 120); },

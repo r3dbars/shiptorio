@@ -24,7 +24,8 @@ export type PxFrame =
   | "box0" | "box1" | "unfold2" | "unfold3" | "stand" | "armout" | "peek"
   | `walk${0 | 1 | 2 | 3 | 4 | 5}` | `carry${0 | 1 | 2 | 3 | 4 | 5}`
   | "lever0" | "lever1" | "happy" | "alarm" | "weld0" | "weld1" | "inspect0" | "inspect1"
-  | "poke0" | "poke1" | "skid" | "idle0" | "idle1";
+  | "poke0" | "poke1" | "skid" | "idle0" | "idle1"
+  | "talk0" | "talk1" | "wave0" | "wave1" | "point0" | "point1";
 
 type Cells = Map<string, string>;
 export interface PxGrid { cells: Cells; minX: number; maxX: number; minY: number; maxY: number }
@@ -102,6 +103,14 @@ const ARMS: Record<string, [number, number, string][]> = {
   weld: [[0, 0, "k"], [1, 1, "t"], [2, 2, "t"], [3, 3, "R"], [4, 4, "r"]],
   poke0: [[0, 0, "k"], [1, 0, "t"], [2, 0, "t"], [3, 0, "t"], [4, 0, "e"], [5, 0, "u"]],
   poke1: [[0, 0, "k"], [1, 0, "t"], [2, 0, "t"], [3, 0, "t"], [4, 0, "t"], [5, 0, "e"], [6, 0, "u"], [6, -1, "u"], [6, 1, "u"]],
+  // the story card's hello: elbow out, hand up, rocking side to side
+  wave0: [[0, 0, "k"], [1, 0, "t"], [2, 0, "t"], [3, 0, "e"], [3, -1, "t"], [3, -2, "t"], [3, -3, "t"], [3, -4, "u"],
+    [2, -5, "u"], [3, -5, "v"], [4, -5, "u"], [2, -6, "u"], [4, -6, "u"]],
+  wave1: [[0, 0, "k"], [1, 0, "t"], [2, 0, "t"], [3, 0, "e"], [3, -1, "t"], [4, -2, "t"], [4, -3, "t"], [5, -4, "u"],
+    [4, -5, "u"], [5, -5, "v"], [6, -5, "u"], [5, -6, "u"], [7, -6, "u"]],
+  // pointing at the words beside him: a straight arm, the hand cocked up, nudging out a px
+  point0: [[0, 0, "k"], [1, 0, "t"], [2, 0, "t"], [3, 0, "e"], [4, 0, "t"], [5, 0, "u"], [5, -1, "v"]],
+  point1: [[0, 0, "k"], [1, 0, "t"], [2, 0, "t"], [3, 0, "t"], [4, 0, "e"], [5, 0, "t"], [6, 0, "u"], [6, -1, "v"]],
 };
 function arm(g: PxGrid, by: number, name: keyof typeof ARMS, dx = 0) {
   for (const [ax, ay, ch] of ARMS[name]) put(g, 17 - MID + ax + dx, by - (BODY.length - 1 - EYE_ROW) + ay, ch);
@@ -159,6 +168,11 @@ function build(name: PxFrame): PxGrid {
     case "inspect0": case "inspect1": body(g, STAND + 1, "wide"); legs(g, STAND + 1); arm(g, STAND + 1, "out"); break;
     case "poke0": body(g, STAND, "on"); legs(g, STAND); arm(g, STAND, "poke0"); break;
     case "poke1": body(g, STAND, "on"); legs(g, STAND); arm(g, STAND, "poke1"); break;
+    // talking: the eye slit flickers and the box hops a px on every other beat
+    case "talk0": body(g, STAND, "on"); legs(g, STAND); break;
+    case "talk1": body(g, STAND - 1, "wide"); legs(g, STAND - 1); break;
+    case "wave0": case "wave1": body(g, STAND, "ok"); legs(g, STAND); arm(g, STAND, name); break;
+    case "point0": case "point1": body(g, STAND, "on"); legs(g, STAND); arm(g, STAND, name); break;
     case "skid": body(g, STAND + 1, "on", -1); legs(g, STAND + 1, 0, 0, 2); break;
   }
   finish(g);
@@ -208,4 +222,5 @@ export const PX_FRAMES: PxFrame[] = [
   "lever0", "lever1", "happy", "alarm", "weld0", "weld1",
   "carry0", "carry1", "carry2", "carry3", "carry4", "carry5",
   "inspect0", "inspect1", "poke0", "poke1", "skid", "idle0", "idle1",
+  "talk0", "talk1", "wave0", "wave1", "point0", "point1",
 ];

@@ -1,14 +1,15 @@
 import type { CardView, DeckView } from '../contract';
-import type { RunnerStatus } from '../../ui/runnerStatus';
+import type { RunnerStatus } from '../rules/runner';
 import { runnerInstallCommand } from '../../runner-install';
 
 type Repo = { fullName: string };
 type Issue = { id: number; number: number; title: string; body: string };
+type Suggested = { number: number; because: string; by: 'spark' | 'fallback' };
 type Pane = 'repos' | 'issues' | 'power' | 'setup' | 'disconnect';
 // The two engines a player can plug in, in preference order. Claude Code stays a development-only runner option.
 const ENGINES = [['codex', 'Codex'], ['muse_code', 'Muse Code']] as const;
 const readyEngine = (status: RunnerStatus | null) => status?.online ? ENGINES.find(([h]) => status.harnesses.includes(h))?.[1] : undefined;
-type Options = { repo?: string; origin: string; path: string; fetch?: typeof fetch; navigate: (url: string) => void; copy: (text: string | Promise<string>) => Promise<void>; onStart?: (id: string) => void; now?: () => number };
+type Options = { repo?: string; origin: string; path: string; fetch?: typeof fetch; navigate: (url: string) => void; askPassword?: (next: string) => void; copy: (text: string | Promise<string>) => Promise<void>; onStart?: (id: string) => void; now?: () => number };
 
 /** Browsing is read-only. Starting one issue requests a plan; a separate card approves the build.
  * Setup asks for as few taps as possible: one repo is used without asking, one tap copies the setup line,
@@ -17,7 +18,8 @@ export function createConnections(o: Options) {
   const request = o.fetch ?? fetch, now = o.now ?? Date.now;
   let accountChecked = false;
   let pane: Pane | null = null, revision = 0, displayRevision = 0, busy = false, refreshing = false, error = '', login = false;
-  let repos: Repo[] = [], issues: Issue[] = [], index = 0, page = 1, nextPage: number | null = null;
+  let locked = false; // shiptorio.dev shows the tutorial to anyone; the preview password comes before GitHub sign-in (password.ts)
+  let repos: Repo[] = [], issues: Issue[] = [], suggested: Suggested | null = null, index = 0, page = 1, nextPage: number | null = null;
   let status: RunnerStatus | null = null, command = '', copied = false, copyFailed = false, expires = 0, nextPoll = 0;
   let leaving = '', onboarding = false; // leaving: the one repo we're opening. onboarding: go straight to the inbox once an engine is ready.
   const repo = o.repo && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(o.repo) && !o.repo.split('/').some(part => part === '.' || part === '..') ? o.repo : undefined;
@@ -36,6 +38,7 @@ export function createConnections(o: Options) {
         try {
           const info = await request('/api/me', { cache: 'no-store' });
           if (info.ok) configured = (await info.json()).githubConfigured !== false;
+          else if (info.status === 401) locked = true;
         } catch { /* Keep the original authentication error when readiness is unavailable. */ }
         if (!configured) { login = false; throw new Error('GitHub setup is not finished on this server. The factory owner must connect its GitHub App before anyone can sign in.'); }
       }
@@ -53,6 +56,7 @@ export function createConnections(o: Options) {
         // so an expected sign-in step does not produce a failed API request in the browser.
         if (!accountChecked) {
           const response = await request('/api/me', { cache: 'no-store' });
+          if (response.status === 401) { locked = login = true; throw new Error('Sign in with GitHub to choose your repository.'); }
           if (!response.ok) throw new Error('Could not check sign-in. Try again.');
           const account = await response.json();
           if (current !== revision) return;
@@ -67,8 +71,13 @@ export function createConnections(o: Options) {
         // Only one repo: there's nothing to choose, so open it.
         if (current === revision && repos.length === 1 && !nextPage && page === 1) { leaving = repos[0].fullName; o.navigate(liveUrl(leaving)); }
       } else if (target === 'issues') {
-        const data = await json<{ issues: Issue[]; nextPage: number | null }>(`${api}/issues?page=${page}`);
-        if (current === revision) { issues = data.issues; nextPage = data.nextPage; index = 0; }
+        const data = await json<{ issues: Issue[]; nextPage: number | null; suggested?: Suggested }>(`${api}/issues?page=${page}`);
+        if (current === revision) {
+          // Shippy's pick goes first, so the first issue card is the one he'd start with.
+          const pick = data.suggested && data.issues.find(issue => issue.number === data.suggested!.number);
+          suggested = pick ? data.suggested! : null;
+          issues = pick ? [pick, ...data.issues.filter(issue => issue !== pick)] : data.issues; nextPage = data.nextPage; index = 0;
+        }
       } else {
         const data = await json<RunnerStatus>(`${api}/runner/status`);
         if (current === revision) status = data;
@@ -98,7 +107,8 @@ export function createConnections(o: Options) {
       yes = r ? 'Use this repo' : nextPage ? 'More repos' : 'Connect GitHub'; no = r && (repos.length > 1 || nextPage || page > 1) ? 'Next repo' : 'Close';
     } else if (pane === 'issues') {
       const issue = issues[index]; title = issue ? `#${issue.number}: ${issue.title}` : 'No open issues on this page';
-      line = issue ? `${repo} · ${index + 1} of ${issues.length}. ${issue.body ? `${issue.body.slice(0, 120).trim()}${issue.body.length > 120 ? '…' : ''} ` : ''}Review the plan before ${readyEngine(status) ?? 'your engine'} starts.` : `Issues are what the factory builds. Add one to ${repo} on GitHub, then refresh.`;
+      line = issue && suggested?.number === issue.number ? `I'd start with #${issue.number}, because ${suggested.because}${suggested.by === 'spark' ? ' (Picked by Meta Muse Spark.)' : ''} Review the plan before ${readyEngine(status) ?? 'your engine'} starts.`
+        : issue ? `${repo} · ${index + 1} of ${issues.length}. ${issue.body ? `${issue.body.slice(0, 120).trim()}${issue.body.length > 120 ? '…' : ''} ` : ''}Review the plan before ${readyEngine(status) ?? 'your engine'} starts.` : `Issues are what the factory builds. Add one to ${repo} on GitHub, then refresh.`;
       yes = issue ? 'Plan' : nextPage ? 'More issues' : 'Refresh'; no = issue ? 'Next issue' : 'Close';
     } else if (pane === 'setup') {
       title = copied ? 'Paste it into Terminal' : 'Copy the setup line';
@@ -120,7 +130,8 @@ export function createConnections(o: Options) {
     displayRevision++; // A refresh is a new card even when its content is unchanged.
     if (busy || leaving) return true;
     if (error && approve) {
-      if (login) o.navigate(`/auth/login?next=${encodeURIComponent(o.path)}`); else if (pane === 'disconnect') { error = ''; } else { await refresh(); return true; }
+      const signIn = `/auth/login?next=${encodeURIComponent(o.path)}`;
+      if (login && locked && o.askPassword) o.askPassword(signIn); else if (login) o.navigate(signIn); else if (pane === 'disconnect') { error = ''; } else { await refresh(); return true; }
       if (login) return true;
     }
     if (!approve) {

@@ -30,13 +30,13 @@ import { testUserRoutes } from "./test-users";
 
 import { Hono, type Context, type Next } from "hono";
 import { ops } from "./ops";
-import { starterIssue } from "./starterIssue";
+import { plannerRoom, starterIssue } from "./starterIssue";
+import { askSpark, suggestFirstIssue } from "./first-issue";
 import { authCallback, login, logout, ownerSession, publicUrl, setupCallback, setupPage } from "./auth";
 import { Factory, type FactoryEnv } from "./factory";
 import { appJwt, gh, registerGithubCredential, repoInstallationId } from "./github";
 import { currentUser, MAX_PROGRESS_BYTES, readPrefs, readProgress, reposFor, writePrefs, writeProgress, type User } from "./accounts";
 
-import { isAllowed } from "./session";
 import { isJudgeAsset, isPublicDocs, previewAccess, publicRoute, secureTransport, selfhostSetupAccess } from "./access";
 import { deckFrontDoor } from "./redirect";
 import { joinWaitlist } from "./waitlist";
@@ -221,7 +221,8 @@ app.use("*", async (c, next) => {
     return response;
   }
   const publicDocs = isPublicDocs(c.req.path) && ["GET", "HEAD"].includes(c.req.method);
-  const denied = publicDocs ? null : signupMode(c.env) === "password" ? await previewAccess(c.req.raw, c.env) : await signupGate(c.req.raw, c.env);
+  // The public deck (access.ts isPublicDeck) runs the normal app path: deckFrontDoor's redirect, then the static asset.
+  const denied = publicDocs || open === "deck" ? null : signupMode(c.env) === "password" ? await previewAccess(c.req.raw, c.env) : await signupGate(c.req.raw, c.env);
   if (denied) { c.set("gateResponse", true); return denied; }
   await next();
   // Docs are public static content; authenticated build assets retain their private immutable policy.
@@ -716,7 +717,13 @@ app.get("/api/repos/:owner/:repo/issues", async c => {
   const installationId = await installationFor(c.env, repo);
   if (!installationId) return c.json({ error: "GitHub App is not connected to this repository" }, 403);
   const token = await installationToken(c.env, installationId, { repositories: [c.req.param("repo")], permissions: { issues: "read", metadata: "read" } });
-  return c.json(await issueInbox(repo, token, page));
+  // Shippy's first pick: fixed rules always answer; Meta Muse Spark may choose among the safe ones (cached per repo).
+  const suggest = (rows: Parameters<typeof suggestFirstIssue>[1]) => suggestFirstIssue(repo, rows, {
+    plannerRoom: () => plannerRoom(c.env, repo),
+    ask: askSpark({ ...c.env, budgetRepo: repo, budgetAccount: () => budgetAccount(c.env.DB, repo) }),
+    cache: c.env.CACHE,
+  });
+  return c.json(await issueInbox(repo, token, page, undefined, suggest));
 });
 
 app.get("/api/repos", async (c) => {
@@ -1030,7 +1037,7 @@ app.post("/webhooks/support/:owner/:repo/:token", async (c) => {
   try { payload = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
   const message = normalizeEmail(payload);
   if (!message) return c.json({ ok: true, ignored: true, reason: "no sender or text" });
-  return queueSupport(c, repo, message, body);
+  return queueSupport(c, repo, message);
 });
 
 // Intercom: /webhooks/intercom/<owner>/<repo>, signed with that map's client secret.
@@ -1044,10 +1051,10 @@ app.post("/webhooks/intercom/:owner/:repo", async (c) => {
   try { payload = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
   const message = normalizeIntercom(payload);
   if (!message) return c.json({ ok: true, ignored: true });
-  return queueSupport(c, repo, message, body);
+  return queueSupport(c, repo, message);
 });
 
-async function queueSupport(c: Context<AppEnv>, repo: string, message: SupportMessage, body: string) {
+async function queueSupport(c: Context<AppEnv>, repo: string, message: SupportMessage) {
   if (!await admit(c.env, `webhook:support:${repo}`, 120, 60000, "Support webhook flood")) return c.json({ error: "webhook throttled" }, 429);
   const digest = `${repo}:` + [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${repo}:${message.channel}:${message.messageId}`)))].map((b) => b.toString(16).padStart(2, "0")).join("");
   const now = Date.now();
@@ -1060,7 +1067,7 @@ async function queueSupport(c: Context<AppEnv>, repo: string, message: SupportMe
   return c.json({ ok: true, queued: true }, 202);
 }
 
-adminRoutes(app, factory);
+adminRoutes(app);
 godRoutes(app, factory);
 tapsRoutes(app);
 

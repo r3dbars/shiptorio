@@ -2,7 +2,7 @@ import { KeychainUnavailable, prepareAgentKeychain, unlockAgentKeychain } from "
 import { chmod, lstat, mkdir, realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 import { agentEnvironment } from "./policy";
-export type Subscription = "codex" | "claude_code" | "muse_code";
+import type { Subscription } from "./health";
 // Muse Code documents no status command: `--version` proves the binary starts; sign-in is read from its files.
 export const subscriptionArgs = (h: Subscription, login = false): string[] =>
   h === "codex" ? ["login", ...(login ? [] : ["status"])] : h === "muse_code" ? [login ? "login" : "--version"] : ["auth", login ? "login" : "status", login ? "--claudeai" : "--json"];
