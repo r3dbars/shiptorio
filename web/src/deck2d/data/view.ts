@@ -23,6 +23,7 @@ export interface LiveDeckView extends DeckView {
 export interface DeckOpts {
   now?: number; // Date.now(), for the short lever / happy beats
   pulled?: { stop: StopId; at: number } | null; // the last Approve, so Shippy pulls the lever there
+  completed?: { stop: StopId; at: number } | null; // a real job completed at the station he was attending
   hidden?: ReadonlySet<string>; // cards answered here that the server hasn't dropped yet
 }
 
@@ -183,12 +184,27 @@ function shippyOf(s: FactoryState, stops: Stop[], jam: StopId | null, card: Card
   // a kind of work just went automatic, or a rocket just left: beat 4's payoff
   const fresh = (s.learned ?? []).filter((l) => now - l.since < HAPPY_MS).sort((a, b) => b.since - a.since)[0];
   if (fresh) return { pose: "happy", at: learnedStop(fresh.key) ?? "corner" };
-  if (s.items.some((it) => it.state === "launched" && now - it.updatedAt < HAPPY_MS)) return { pose: "happy", at: "launch" };
+  if (s.items.some((it) => it.state === "launched" && now - it.updatedAt < HAPPY_MS)) return { pose: "happy", at: "gate" };
   if (jam && card) return { pose: "alarmed", at: jam };
+  if (opts.completed && now - opts.completed.at < LEVER_MS) return { pose: "happy", at: opts.completed.stop };
+
+  // These are animations of work the factory has already started, not new work
+  // decisions. Rejected or blocked items do not become a repair until a job runs.
+  const waitingForHuman = (it: FactoryItem) => it.state === "inspecting" && itemStop(it) === "gate" && !it.inspection?.humanApproved;
+  const active = s.items.filter(it => it.state === "working" || (it.state === "inspecting" && !waitingForHuman(it))).sort((a, b) => a.updatedAt - b.updatedAt);
+  const busy = stops.filter(stop => s.machines.some(machine => machine.state === "working" && MACHINE_STOP[machine.type] === stop.id));
+  const workingAt = (stop: StopId) => active.some(it => itemStop(it) === stop) || busy.some(s => s.id === stop);
+  const workPose = (at: StopId): ShippyView => ({ at, pose: at === "builder" ? "weld" : "inspect" });
   const target = placeStop(s, s.foreman?.targetId);
-  if (target) return { pose: "walking", at: target };
-  const moving = stops.filter((x) => x.state === "working").sort((a, b) => b.items.length - a.items.length)[0];
-  if (moving) return { pose: "walking", at: moving.id };
+  if (target && workingAt(target)) return workPose(target);
+  if (target && s.foreman?.thinking) return { pose: "inspect", at: target };
+  if (active.length) return workPose(itemStop(active[0])!);
+  if (busy.length) return workPose(busy[0].id);
   if (jam) return { pose: "alarmed", at: jam };
+  if (s.items.some(waitingForHuman)) return { pose: "alarmed", at: "gate" };
+  const blocked = s.machines.find(machine => machine.state === "blocked" && MACHINE_STOP[machine.type]);
+  if (blocked) return { pose: "alarmed", at: MACHINE_STOP[blocked.type] };
+  const rejected = s.items.find(it => it.state === "rejected");
+  if (rejected) return { pose: "alarmed", at: "builder" };
   return { pose: "folded", at: "corner" };
 }

@@ -4,11 +4,11 @@
 // (docs/LEARN.md: Approve fills a dot, Later empties them).
 
 import { continueOption, type FactoryState, type Move, type ServerToWeb, type WebToServer } from "@shiptorio/shared";
-import { connect as connectFactory, type Source, type SourceConfig } from "../../source";
+import { connect as connectFactory, readConfig, type Source, type SourceConfig } from "../../source";
 import { applyPatch } from "../../store";
 import { openUnlockLink } from "../../ui/unlockLink";
 import type { DeckSource, StopId } from "../contract";
-import { cardStop, deckView, isSetupCard, type LiveDeckView } from "./view";
+import { cardStop, deckView, isSetupCard, itemStop, type LiveDeckView } from "./view";
 
 type Connect = (cfg: SourceConfig, onMessage: (m: ServerToWeb) => void, onStatus: (s: "connecting" | "live" | "offline") => void) => Source;
 
@@ -29,17 +29,24 @@ export function fold(s: FactoryState | null, msg: ServerToWeb): FactoryState | n
   return s;
 }
 
-export function createLiveSource(cfg: SourceConfig, opts: { onPower?: () => void; connect?: Connect; now?: () => number } = {}): LiveDeckSource {
+export function createLiveSource(cfg: SourceConfig = readConfig(), opts: { onPower?: () => void; connect?: Connect; now?: () => number } = {}): LiveDeckSource {
   const now = opts.now ?? Date.now;
   let state: FactoryState | null = null;
   let status: "connecting" | "live" | "offline" = "connecting";
   let pulled: { stop: StopId; at: number } | null = null;
+  let completed: { stop: StopId; at: number } | null = null;
   const hidden = new Set<string>(); // answered here, gone before the server agrees
   const fns = new Set<() => void>();
   const changed = () => fns.forEach((fn) => fn());
   const src = (opts.connect ?? connectFactory)(cfg, (msg) => {
     const next = fold(state, msg);
     if (next === state) return;
+    if (state && next) {
+      const shippy = deckView(state, { now: now(), hidden }).shippy;
+      const attended = state.items.filter(it => (it.state === "working" || it.state === "inspecting") && itemStop(it) === shippy.at);
+      if (attended.some(it => next.items.some(done => done.id === it.id && ["passed", "on_pad", "launched"].includes(done.state))))
+        completed = { stop: shippy.at as StopId, at: now() };
+    }
     state = next;
     // forget answers the server has dropped, so the set never grows
     const open = new Set([...(state?.deck ?? []), ...(state?.move ? [state.move] : [])].map((m) => m.id));
@@ -50,7 +57,7 @@ export function createLiveSource(cfg: SourceConfig, opts: { onPower?: () => void
   const send = (msg: WebToServer) => src.send(msg);
 
   return {
-    view: () => deckView(state, { now: now(), pulled, hidden }),
+    view: () => deckView(state, { now: now(), pulled, completed, hidden }),
     state: () => state,
     status: () => status,
     approve(id) {

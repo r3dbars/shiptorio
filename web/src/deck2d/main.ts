@@ -32,7 +32,7 @@ const seed = Number(params.get("seed")) || 0;
   if (rehearsal) source = rehearsal;
   else if (want === "launch-demo") source = createLaunchDemo();
   else if (want === "orb-demo") source = createOrbDemo();
-  else if (want === "live" && data?.createLiveSource) source = await (data.createLiveSource as () => Promise<DeckSource> | DeckSource)();
+  else if ((want === "live" || want === "sim") && data?.createLiveSource) source = await (data.createLiveSource as () => Promise<DeckSource> | DeckSource)();
   else if (want !== "demo" && story?.createStory) source = (story.createStory as (o: { seed: number; speed: number }) => DeckSource)({ seed, speed });
   else source = createDemo();
 
