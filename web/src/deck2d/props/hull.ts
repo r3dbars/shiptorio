@@ -13,11 +13,13 @@ import { dressFloor } from "./clutter";
 // Coordinates here are art px (world / ART_PX). hullCanvas(w) renders a deck w art px wide, cached; the deck grows by
 // re-rendering at the new width (the vents and the right-hand end ride with the edge).
 
+// More walkable floor in front of the machines, without scaling any artwork.
+const FRONT_DEPTH = 14;
 export const A = {
-  back: Math.round(HULL.back / ART_PX), // 20: back edge of the floor
-  front: Math.round(HULL.front / ART_PX), // 64: front edge (the bridge meets this rail)
-  skirt: Math.round(HULL.skirt / ART_PX), // 78: bottom of the front skirt
-  orb: { x: HULL.orb.x / ART_PX, y: HULL.orb.y / ART_PX },
+  back: Math.round(HULL.back / ART_PX),
+  front: Math.round(HULL.front / ART_PX) + FRONT_DEPTH,
+  skirt: Math.round(HULL.skirt / ART_PX) + FRONT_DEPTH,
+  orb: { x: HULL.orb.x / ART_PX, y: HULL.orb.y / ART_PX + FRONT_DEPTH },
 };
 /** The canvas starts TOP art px above y 0 (lanterns on the back rail) and is H tall (orb at the bottom). */
 export const TOP = 20, H = 196, PAD = 2;
@@ -39,7 +41,7 @@ const xr = (y: number, w: number) => w - 1 - Math.max(0, CH - (y - A.back));
 export const orbX = (w: number) => (w >= A.orb.x + 24 ? A.orb.x : w / 2);
 /** The two steam vents ride with the right-hand end. */
 export const ventXs = (w: number) => [w - 98, w - 78];
-export const VENT_MOUTH = 106;
+export const VENT_MOUTH = 106 + FRONT_DEPTH;
 
 // ---------- floor ----------
 // Rows compress toward the rear rail and open up toward the viewer.

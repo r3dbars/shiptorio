@@ -1,5 +1,9 @@
 # Claude project threads (as of 2026-10-26 ~20:40 UTC)
 
+## Deck visual iteration (Codex, 2026-10-28)
+
+`codex/deck-visuals` adds a deeper foreground floor, grounded machines and Shippy, green/red conveyor flow, a pulsing blocked-state orb, persistent macOS pinch zoom, and detailed rocket launch/return effects. Justin approved the descent and fast side jets; the latest floor-depth pass remains open for visual iteration. Before/after phone and desktop shots are in `docs/evidence/deck-visuals/`. Targets `dev`; no deployment or merge is authorized by this visual PR.
+
 ## Browser signing key reuse (Codex, 2026-10-28)
 
 Session cookies and preview-form proofs now reuse the existing bounded, isolate-local HMAC key cache. Before: every sign/verification imported a key; after: concurrent checks with the same secret share one import. Cookie signatures, expiry, password rotation and fresh authorization checks remain unchanged. Focused session/gate/cache tests pass; full check and exact-head dev CI govern merge. This CPU reduction is not a claim that the connection latency target has been achieved.
