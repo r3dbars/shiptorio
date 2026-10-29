@@ -9,7 +9,8 @@ import { FLIGHT } from "../launch/flight";
 import { BOILER_H, BOILER_W, boilerFrame } from "../../bakeoff/boiler2d";
 import { stationSize, type StationId } from "../stations";
 import { advanceBeltDistance } from "./flow";
-import { needsAttention } from "../stations/attention";
+import { needsAttention, type AttentionView } from "../stations/attention";
+import { anchoredCenter, pixelZoom, settleCamera } from "./camera";
 
 // stations/ (its own thread) draws each machine in pixel code; until it lands, pixel mode shows the snapped webp.
 type DrawStation = (cx: CanvasRenderingContext2D, id: StopId, state: string, t: number, x: number, feetY: number, scale?: number, attention?: boolean) => void;
@@ -93,7 +94,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   // A tall phone would show the whole line tiny, so the camera parks on whatever matters (plan pick: left to right,
   // park on the bottleneck, one tap to see it all).
   function focusX(v: DeckView) {
-    const pin = cam.pin ?? v.card?.stop ?? v.jam;
+    const pin = cam.pin ?? (v as AttentionView).focus ?? v.card?.stop ?? v.jam;
     if (pin) return STOP_X[pin] + (pin === "launch" ? -200 : 60);
     if (v.shippy.at !== "corner") return STOP_X[v.shippy.at] + 120;
     if (rocket.mode === "count" || rocket.mode === "up") return STOP_X.launch - 200;
@@ -105,7 +106,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   function target(v: DeckView) {
     const all = fitAll();
     if (cam.all) return all;
-    if (v.card && !rehearsingMachines) return { x: focusX(v), y: 225, s: Math.max(all.s, W / 1100) };
+    if ((v.card || (v as AttentionView).focus) && !rehearsingMachines) return { x: focusX(v), y: 225, s: Math.max(all.s, W / 1100) };
     if (rehearsingMachines) {
       return { x: focusX(v), y: 225, s: Math.max(all.s, W / 1000) };
     }
@@ -144,7 +145,10 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     moved += Math.abs(e.clientX - p[0]) + Math.abs(e.clientY - p[1]);
     if (moved < 6) return;
     cam.manual = Infinity;
-    if (ptrs.size === 1) { cam.x -= (e.clientX - p[0]) / cam.s; cam.y -= (e.clientY - p[1]) / cam.s; }
+    if (ptrs.size === 1) {
+      const visibleScale = px ? px.k / (ART_PX * DPR) : cam.s;
+      cam.x -= (e.clientX - p[0]) / visibleScale; cam.y -= (e.clientY - p[1]) / visibleScale;
+    }
     else if (ptrs.size === 2) {
       const [a, b] = [...ptrs.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]);
       if (pinch) zoomAt((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, d / pinch);
@@ -153,8 +157,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   });
   const up = (e: PointerEvent) => {
     if (e.type === "pointerup" && moved < 6 && ptrs.size === 1 && prev) {
-      const scale = px ? Math.max(1, Math.round(cam.s * ART_PX * DPR)) / (ART_PX * DPR) : cam.s;
-      const x = cam.x + (e.clientX - W / 2) / scale, y = cam.y + (e.clientY - H / 2) / scale;
+      const [x, y] = px ? px.toWorld(e.clientX, e.clientY) : [cam.x + (e.clientX - W / 2) / cam.s, cam.y + (e.clientY - H / 2) / cam.s];
       const hit = prev.stops.find(s => {
         if (!s.built || s.id === "launch" || layers.some(l => l.owns?.(s))) return false;
         const size = stationSize(s.id as StationId), feet = BELT_Y + LOOK[s.id].drop;
@@ -185,13 +188,16 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   }, { passive: false });
   cv.addEventListener("gestureend", (e) => { e.preventDefault(); gestureScale = 1; }, { passive: false });
   cv.addEventListener("dblclick", () => { cam.manual = 0; cam.pin = null; });
-  function zoomAt(px: number, py: number, f: number) {
-    const visibleScale = () => pixelOn() ? Math.max(1, Math.round(cam.s * ART_PX * DPR)) / (ART_PX * DPR) : cam.s;
-    const before = visibleScale();
-    const wx = cam.x + (px - W / 2) / before, wy = cam.y + (py - H / 2) / before;
+  function zoomAt(screenX: number, screenY: number, f: number) {
+    const world = px ? px.toWorld(screenX, screenY) : [cam.x + (screenX - W / 2) / cam.s, cam.y + (screenY - H / 2) / cam.s];
     cam.s = Math.max(fitAll().s * 0.8, Math.min(1.6, cam.s * f));
-    const after = visibleScale();
-    cam.x = wx - (px - W / 2) / after; cam.y = wy - (py - H / 2) / after;
+    if (px) {
+      const zoom = pixelZoom(cam.s * ART_PX * DPR, px.k);
+      cam.x = anchoredCenter(world[0], screenX * DPR, cv.width, zoom, ART_PX);
+      cam.y = anchoredCenter(world[1], screenY * DPR, cv.height, zoom, ART_PX);
+    } else {
+      cam.x = world[0] - (screenX - W / 2) / cam.s; cam.y = world[1] - (screenY - H / 2) / cam.s;
+    }
   }
 
   // ---------- views -> motion + events ----------
@@ -414,7 +420,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     const rv = v.stops.find((x) => x.id === "review")!;
     if (!rv.built) return;
     const e = 1 - drop.review, fall = -420 * e * e;
-    if (prev && v.shippy.pose === "lever") lever = 0.4;
+    if (prev && v.shippy.at === "review" && v.shippy.pose === "lever") lever = 0.4;
     const mode = lever > 0 ? "down" : rv.state === "jammed" ? "glow" : "up";
     if (px) pd.lever(cx, LEVER.x, LEVER.base + fall, mode);
     else put("lever-" + mode, LEVER.x, LEVER.base + fall, LEVER.h);
@@ -443,8 +449,14 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     t += dt; lever = Math.max(0, lever - dt);
     take(v, dt); rocketStep(dt);
     if (performance.now() >= cam.manual) {
-      const tg = target(v), k = first ? 1 : Math.min(1, dt * 1.8); first = false;
-      cam.x += (tg.x - cam.x) * k; cam.y += (tg.y - cam.y) * k; cam.s += (tg.s - cam.s) * k;
+      const tg = target(v);
+      if (first) Object.assign(cam, tg);
+      else {
+        cam.x = settleCamera(cam.x, tg.x, dt, ART_PX / 4);
+        cam.y = settleCamera(cam.y, tg.y, dt, ART_PX / 4);
+        cam.s = settleCamera(cam.s, tg.s, dt, 0.0001);
+      }
+      first = false;
     }
     for (const l of layers) l.update(dt, v);
     const act = builder?.shippyAct?.(); // a running build calls Shippy over to weld

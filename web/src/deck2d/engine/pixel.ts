@@ -2,6 +2,8 @@
 // pixel), then blown up onto the screen at a whole-number scale with smoothing off. That buffer is what makes code
 // shapes and snapped pictures read as one piece of pixel art. Optional last step snaps every pixel to the palette.
 
+import { pixelZoom } from "./camera";
+
 export interface PixelCanvas {
   /** Start a frame. cam is in world units (x, y = what's centered, s = screen px per world unit). */
   begin(cam: { x: number; y: number; s: number }): CanvasRenderingContext2D;
@@ -18,7 +20,7 @@ export function createPixelCanvas(screen: HTMLCanvasElement, artPx: number, pale
   const buf = document.createElement("canvas");
   const cx = buf.getContext("2d", { willReadFrequently: !!palette })!;
   screen.style.imageRendering = "pixelated";
-  let k = 2, ox = 0, oy = 0, wu = 1; // wu = world units per buffer px after snapping
+  let k = 2, ox = 0, oy = 0, wu = 1, initialized = false; // wu = world units per buffer px after snapping
   const rgb = palette?.map((h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)));
   const near = new Map<number, number>();
 
@@ -43,7 +45,8 @@ export function createPixelCanvas(screen: HTMLCanvasElement, artPx: number, pale
     get k() { return k; },
     begin(cam) {
       // whole device px per art px; the camera zoom snaps to the nearest one
-      k = Math.max(1, Math.round(cam.s * artPx * (screen.width / screen.clientWidth || 1)));
+      k = pixelZoom(cam.s * artPx * (screen.width / screen.clientWidth || 1), initialized ? k : undefined);
+      initialized = true;
       const bw = Math.ceil(screen.width / k), bh = Math.ceil(screen.height / k);
       if (buf.width !== bw || buf.height !== bh) { buf.width = bw; buf.height = bh; }
       wu = artPx;

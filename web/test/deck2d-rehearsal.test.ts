@@ -3,6 +3,7 @@ import { createShippyRehearsal } from "../src/deck2d/shippy/rehearsal";
 import { createShippy } from "../src/deck2d/shippy/shippy";
 import { STOP_X } from "../src/deck2d/contract";
 import { createBuild } from "../src/deck2d/build/build";
+import { DOCK_HOME_X } from "../src/deck2d/shippy/dock";
 
 test("Shippy arrives before construction starts, then works and walks home", () => {
   const source = createShippyRehearsal();
@@ -17,7 +18,7 @@ test("Shippy arrives before construction starts, then works and walks home", () 
     built = builder.built;
   }
   for (const pose of ["carry", "weld", "inspect", "poke", "lever", "happy"]) expect(poses.has(pose)).toBe(true);
-  expect(Math.abs(shippy.state.x - (STOP_X.repo - 150))).toBeLessThan(1);
+  expect(Math.abs(shippy.state.x - DOCK_HOME_X)).toBeLessThan(1);
 });
 
 test("the rehearsal can pause, skip jobs, and replay", () => {

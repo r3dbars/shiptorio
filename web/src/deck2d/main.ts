@@ -37,7 +37,10 @@ const seed = Number(params.get("seed")) || 0;
   const updateMachineControls = machines ? mountMachineControls(machines) : null;
   if (rehearsal) source = rehearsal;
   else if (machines) { source = machines; document.body.classList.add("machine-rehearsal"); }
-  else if (want === "attention-demo") source = createFirstVisitDemo();
+  else if (want === "attention-demo") source = createFirstVisitDemo({ ready: () => {
+    const actor = shippy as typeof shippy & { state?: { world: string } };
+    return !actor.state || actor.state.world === "stand";
+  } });
   else if (isWatchMode(location.search)) {
     source = createWatchSource();
     document.body.classList.add("factory-watch");
@@ -65,6 +68,7 @@ const seed = Number(params.get("seed")) || 0;
       ["Pause", (button: HTMLButtonElement) => { rehearsal.paused = !rehearsal.paused; button.textContent = rehearsal.paused ? "Play" : "Pause"; }],
       ["Next job", () => rehearsal.next()],
       ["Replay", () => rehearsal.reset()],
+      ["Charge", () => { rehearsal.rest(); engine.focus(null); }],
     ] as const) {
       const button = document.createElement("button"); button.type = "button"; button.textContent = label;
       button.onclick = () => run(button); controls.append(button);

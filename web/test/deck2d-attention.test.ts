@@ -11,6 +11,8 @@ test("first visit presents two decisions, then work and review, without inventin
     expect(choose.card?.yes).toBe("Start agent"); expect(needsAttention(choose, "planner")).toBe(true);
     expect(choose.jam).toBeNull();
     src.approve(choose.card!.id);
+    expect(src.view().shippy).toEqual({ at: "planner", pose: "lever" });
+    src.step?.(1.3);
     expect(src.view().stops.find(s => s.id === "builder")?.state).toBe("working");
     src.step?.(6);
     const review = src.view();
@@ -18,6 +20,18 @@ test("first visit presents two decisions, then work and review, without inventin
     src.approve(review.card!.id);
   }
   expect(src.view().card).toBeNull();
+});
+
+test("startup waits for Shippy, then powers the machine at contact before sending the build", () => {
+  let ready = false;
+  const src = createFirstVisitDemo({ ready: () => ready });
+  src.approve(src.view().card!.id); src.step?.(10);
+  expect(src.view().stops.some(s => s.state === "working")).toBe(false);
+  ready = true; src.step?.(0.7);
+  expect(src.view().stops.find(s => s.id === "planner")?.state).toBe("working");
+  expect(src.view().shippy).toEqual({ at: "planner", pose: "lever" });
+  src.step?.(0.6);
+  expect(src.view().shippy).toEqual({ at: "builder", pose: "weld" });
 });
 
 test("yellow preview opens an approval card and clears on approval, not on Later", () => {

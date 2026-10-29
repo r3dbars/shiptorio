@@ -32,5 +32,10 @@ source errors, failed work and blocked machines. A busy queue alone is not a red
 `/deck.html?source=attention-demo` previews a first visit with two sample GitHub issues, agent work,
 and human review through the existing swipe card. Each decision zooms to its station.
 
+After Start, Shippy activates the Planner before heading to the Builder. The activation waits for him
+to arrive, and the camera keeps the startup in view. When no work remains, he returns to the recessed
+charging dock in the far-left corner. Its small cyan battery cells fill while he is parked; Charge on
+the Shippy rehearsal page holds this quiet home view for review.
+
 `/stations.html?only=code` still provides the original sprite comparison sheet. The in-deck preview is
 for focused motion review with the actual floor, shadows, spacing, conveyor and orb.
