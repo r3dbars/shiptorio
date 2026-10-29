@@ -16,7 +16,7 @@ const SECRET_KEY = /(?:token|password|secret|authorization|cookie|credential|pri
 export function sanitizeTraceValue(value: unknown): unknown {
   if (typeof value === "string") return value
     .replace(/https?:\/\/[^\s<>"']+/gi, text => {
-      try { const url = new URL(text); url.username = ""; url.password = ""; url.hash = ""; for (const key of [...url.searchParams.keys()]) if (SECRET_KEY.test(key) || /^(key|code|session|signature)$/i.test(key)) url.searchParams.delete(key); return url.href; }
+      try { const url = new URL(text); url.username = ""; url.password = ""; url.hash = ""; for (const key of [...url.searchParams.keys()]) if (SECRET_KEY.test(key) || /^(key|code|session|signature|state|nonce|code_verifier|code_challenge)$/i.test(key)) url.searchParams.delete(key); return url.href; }
       catch { return "[redacted URL]"; }
     })
     .replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/g, "[redacted private key]")
