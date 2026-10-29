@@ -90,11 +90,15 @@ try { for (const [index,view] of views.entries()) {
         const first=page.locator('.ic-card:not(.ic-ghost)[data-card^="tour-"]');
         await first.waitFor({timeout:30000});assert.match(await first.innerText(),/Shippy/);
         await first.locator('.later').click();
+        // Sign-in waits for the tour's own ask (the password comes up there, never before).
+        const ask=card().getByRole('button',{name:'Create my factory',exact:true});
+        await ask.waitFor({timeout:30000});assert.equal(await card().getByRole('button',{name:'Sign in',exact:true}).count(),0);
+        assert.equal(await page.locator('.connection-tools').count(),0);
       });
-      await step('story-sign-in',async()=>{await card().getByRole('button',{name:'Sign in',exact:true}).waitFor({timeout:45000});assert.equal(await page.locator('.connection-tools').count(),0);});
     }
+    // "Create my factory" is the one press that goes to GitHub (a returning baseline taps the plain Sign in card).
     // The fixture account has one repo, so signing in opens it with no pick: the next card is the Codex setup.
-    await step('github-sign-in',async()=>{await card().getByRole('button',{name:'Sign in',exact:true}).click();await page.waitForURL(u=>u.searchParams.get('repo')===stub.state.repo);signedIn=true;await card().getByRole('button',{name:'Copy setup',exact:true}).waitFor();});
+    await step('github-sign-in',async()=>{await card().getByRole('button',{name:baseline?'Sign in':'Create my factory',exact:true}).click();await page.waitForURL(u=>u.searchParams.get('repo')===stub.state.repo);signedIn=true;await card().getByRole('button',{name:'Copy setup',exact:true}).waitFor();});
     let joinTicket;
     await step('codex-setup',async()=>{
       const response=page.waitForResponse(r=>r.request().method()==='POST'&&new URL(r.url()).pathname.endsWith('/runner/join'));
