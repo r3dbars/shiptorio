@@ -1,3 +1,4 @@
+import { createAway } from "./data/away";
 import { createConnections } from "./data/connections";
 import "./deck.css";
 import { SPRITES, createBus, type CardView, type StopId, type AttachJuice, type CreateLayer, type CreateShippy, type DeckLayer, type DeckSource, type MountCard } from "./contract";
@@ -125,6 +126,10 @@ const seed = Number(params.get("seed")) || 0;
   else if (want !== "demo" && story?.createStory) source = (story.createStory as (o: { seed: number; speed: number }) => DeckSource)({ seed, speed });
   else source = createDemo();
 
+  const liveState = (source as DeckSource & { state?: () => import("@shiptorio/shared").FactoryState | null }).state;
+  // Live only; ?source=sim&away=5h or ?source=replay&away=5h shows it for rehearsals and the video.
+  const away = (want === "live" && params.has("repo") || (want === "replay" || want === "sim") && params.has("away")) && liveState ? createAway({ scope: params.get("repo") ?? want, search: location.search, state: liveState }) : null;
+
   bus.on(event => {
     if (event.type === 'crate-arrive') (source as DeckSource & { arrive?: (id: string, stop: StopId) => void }).arrive?.(event.id, event.stop);
   });
@@ -179,8 +184,8 @@ const seed = Number(params.get("seed")) || 0;
 
   const mountCard = (cardMod?.mountCard as MountCard | undefined) ?? fallbackCard;
   const card = mountCard(document.getElementById("card-host")!, {
-    onApprove(id) { if (id.startsWith("connection-")) { void connections.answer(id, true); return; } bus.emit({ type: "approve", cardId: id }); if (!inspector.answer(id, true)) source.approve(id); },
-    onLater(id) { if (id.startsWith("connection-")) { void connections.answer(id, false); return; } bus.emit({ type: "later", cardId: id }); if (!inspector.answer(id, false)) source.later(id); },
+    onApprove(id) { if (away?.answer(id)) return; if (id.startsWith("connection-")) { void connections.answer(id, true); return; } bus.emit({ type: "approve", cardId: id }); if (!inspector.answer(id, true)) source.approve(id); },
+    onLater(id) { if (away?.answer(id)) return; if (id.startsWith("connection-")) { void connections.answer(id, false); return; } bus.emit({ type: "later", cardId: id }); if (!inspector.answer(id, false)) source.later(id); },
   });
   (juiceMod?.attachJuice as AttachJuice | undefined)?.(bus, document.body, (s) => engine.where(s));
 
@@ -206,7 +211,8 @@ const seed = Number(params.get("seed")) || 0;
       updateMachineControls?.();
     }
     connections.tick();
-    const view = connections.view(inspector.view(source.view()));
+    const base = inspector.view(source.view());
+    const view = connections.view(away ? away.view(base) : base);
     const work = (view as import('./data/view').LiveDeckView).work;
     cv.dataset.workId = work?.id ?? '';
     cv.dataset.workStop = work?.stop ?? '';
