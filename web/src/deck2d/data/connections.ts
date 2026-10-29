@@ -1,5 +1,5 @@
 import type { CardView, DeckView } from '../contract';
-import type { RunnerStatus } from '../../ui/runnerStatus';
+import type { RunnerStatus } from '../rules/runner';
 import { runnerInstallCommand } from '../../runner-install';
 
 type Repo = { fullName: string };

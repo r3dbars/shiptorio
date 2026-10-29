@@ -4,8 +4,8 @@ The same attention demo runs before and after. Its waiting card sends Shippy to 
 
 | View | Before | After |
 | --- | --- | --- |
-| 1280×720 | [arrival](before/desktop-1280/01-settled.png), [settled](before/desktop-1280/clip-11s.png) | [arrival](after/desktop-1280/01-settled.png), [settled](after/desktop-1280/clip-11s.png) |
-| 390×844 | [arrival](before/phone-390/01-settled.png), [settled](before/phone-390/clip-11s.png) | [arrival](after/phone-390/01-settled.png), [settled](after/phone-390/clip-11s.png) |
+| 1280×720 | _arrival (screenshot moved out of the repo: project files `shiptorio/evidence/web/test/evidence/shippy-calm/before/desktop-1280/01-settled.png`)_, _settled (screenshot moved out of the repo: project files `shiptorio/evidence/web/test/evidence/shippy-calm/before/desktop-1280/clip-11s.png`)_ | _arrival (screenshot moved out of the repo: project files `shiptorio/evidence/web/test/evidence/shippy-calm/after/desktop-1280/01-settled.png`)_, _settled (screenshot moved out of the repo: project files `shiptorio/evidence/web/test/evidence/shippy-calm/after/desktop-1280/clip-11s.png`)_ |
+| 390×844 | _arrival (screenshot moved out of the repo: project files `shiptorio/evidence/web/test/evidence/shippy-calm/before/phone-390/01-settled.png`)_, _settled (screenshot moved out of the repo: project files `shiptorio/evidence/web/test/evidence/shippy-calm/before/phone-390/clip-11s.png`)_ | _arrival (screenshot moved out of the repo: project files `shiptorio/evidence/web/test/evidence/shippy-calm/after/phone-390/01-settled.png`)_, _settled (screenshot moved out of the repo: project files `shiptorio/evidence/web/test/evidence/shippy-calm/after/phone-390/clip-11s.png`)_ |
 
 Captured with `ONLY=desktop-1280` / `ONLY=phone-390`, `CLIP=12`, `DECK_PATH='/deck.html?source=attention-demo'`, and `BASE_URL=http://127.0.0.1:5257 node scripts/shots/deck.mjs <output>`. Phone screenshots use DPR 2, so their bitmap is 780×1688 while the CSS viewport is 390×844.
 

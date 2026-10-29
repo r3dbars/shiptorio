@@ -11,6 +11,7 @@ import { stationSize, type StationId } from "../stations";
 import { advanceBeltDistance, beltConnectionAt } from "./flow";
 import { needsAttention, type AttentionView } from "../stations/attention";
 import { anchoredCenter, frameShot, pixelZoom, settleCamera, SHOT_RATE, wholeScale } from "./camera";
+import { DIM, dimPixels } from "./dim";
 
 // stations/ (its own thread) draws each machine in pixel code; until it lands, pixel mode shows the snapped webp.
 type DrawStation = (cx: CanvasRenderingContext2D, id: StopId, state: string, t: number, x: number, feetY: number, scale?: number, attention?: boolean) => void;
@@ -359,24 +360,10 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   }
   // Justin (10-29): the sky, city and cloud sea were as bright as the deck, so the platform didn't pop. In pixel
   // mode the background pictures are dimmed the pixel-art way: every pixel snaps to its nearest palette color, then
-  // steps darker on that color's own ramp (DIM shades, one more on the long sun ramp, whose steps are small),
+  // steps darker on that color's own ramp (dim.ts: DIM shades, one more on the long sun ramp, whose steps are small),
   // so hues and detail stay and only the brightness drops. Done once per picture and cached; ?px=0 keeps the old
   // bright pictures.
-  const DIM = 1;
-  const SUN = Object.keys(PALETTE).indexOf("sun"), ramps = Object.values(PALETTE).map((r) => r.map((h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16))));
-  const darker = new Map<number, number[]>();
-  function stepDown(r: number, g: number, b: number) {
-    const key = (r << 16) | (g << 8) | b;
-    let c = darker.get(key);
-    if (!c) {
-      let best = Infinity, ri = 0, ci = 0;
-      ramps.forEach((ramp, a) => ramp.forEach(([pr, pg, pb], n) => {
-        const e = (pr - r) ** 2 + (pg - g) ** 2 + (pb - b) ** 2; if (e < best) { best = e; ri = a; ci = n; }
-      }));
-      c = ramps[ri][Math.max(0, ci - DIM - (ri === SUN ? 1 : 0))]; darker.set(key, c);
-    }
-    return c;
-  }
+  const darker = new Map<number, number>();
   const dimmed = new Map<string, HTMLCanvasElement>();
   function dimArt(name: string): HTMLCanvasElement | HTMLImageElement | null {
     const im = img(name); if (!im || !px) return im;
@@ -385,7 +372,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
       c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = im.naturalHeight;
       const g = c.getContext("2d")!; g.drawImage(im, 0, 0);
       const data = g.getImageData(0, 0, c.width, c.height), d = data.data;
-      for (let i = 0; i < d.length; i += 4) if (d[i + 3]) [d[i], d[i + 1], d[i + 2]] = stepDown(d[i], d[i + 1], d[i + 2]);
+      dimPixels(d, darker);
       g.putImageData(data, 0, 0); dimmed.set(name, c);
     }
     return c;

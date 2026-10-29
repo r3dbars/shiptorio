@@ -3,7 +3,7 @@ import ts from 'typescript';
 import { readFileSync } from 'node:fs';
 import { FactoryState, Patch, ServerToWeb } from '../../shared/src';
 import { assertWire } from './assert-wire';
-import { applyPatch } from '../../web/src/store';
+import { applyPatch } from '../../web/src/source/patch';
 
 const read = (path: string) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
 const variants = ServerToWeb.options.map(s => s.shape.type.value);
@@ -39,7 +39,7 @@ describe('wire contract drift guards', () => {
   });
 
   it('covers every Patch field in the actual web reducer (new fields fail closed)', () => {
-    const source = ts.createSourceFile('store.ts', read('web/src/store.ts'), ts.ScriptTarget.Latest, true);
+    const source = ts.createSourceFile('patch.ts', read('web/src/source/patch.ts'), ts.ScriptTarget.Latest, true);
     const consumed = new Set<string>();
     const visit = (node: ts.Node) => {
       if (ts.isPropertyAccessExpression(node) && node.expression.getText(source) === 'p') consumed.add(node.name.text);
