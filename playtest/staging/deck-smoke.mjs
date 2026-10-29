@@ -81,7 +81,10 @@ export async function deckSmoke({ origin = 'https://shiptorio.dev', password, ou
         reports.push({ ...viewport, readyMs, storyMs: Date.now() - start - readyMs, storyCards, guest: true, url: page.url(), errors });
       } catch (error) {
         await page.screenshot({ path: join(out, `guest-${viewport.width}-failed.png`), timeout: 5000 }).catch(() => {});
-        await writeFile(join(out, 'report.json'), JSON.stringify({ passed: false, width: viewport.width, phase, error: error.message, errors, pending: [...pending.values()].slice(0, 20).map(({ started, ...request }) => ({ ...request, ageMs: Date.now() - started })), reports }, null, 2));
+        const stuck = [...pending.values()].slice(0, 20).map(({ started, ...request }) => ({ ...request, ageMs: Date.now() - started }));
+        // The artifact is not always reachable; the job log must say which request was still in flight.
+        console.error(`Deck smoke failed at ${viewport.width}px during ${phase}. Still in flight: ${JSON.stringify(stuck)}`);
+        await writeFile(join(out, 'report.json'), JSON.stringify({ passed: false, width: viewport.width, phase, error: error.message, errors, pending: stuck, reports }, null, 2));
         throw error;
       } finally { await context.close(); }
     }

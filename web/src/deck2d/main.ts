@@ -32,7 +32,8 @@ export function wireDeckAccessibility(canvas: HTMLCanvasElement, host: HTMLEleme
     if (!face) return;
     if (e.key === "Escape") {
       e.preventDefault(); face.querySelector<HTMLButtonElement>(".later")?.click();
-    } else if (e.key === "Enter" && !e.repeat && !target?.closest("button,a")) {
+    } else if (e.key === "Enter" && !e.repeat && target && face.contains(target) && !target.closest("button,a")) {
+      // Only when the card has focus: a stray Enter elsewhere must not start a Codex build.
       e.preventDefault();
       const primary = face.querySelector<HTMLButtonElement>(".approve");
       if (!primary) return;
@@ -177,9 +178,11 @@ const seed = Number(params.get("seed")) || 0;
   const away = (want === "live" && params.has("repo") || (want === "replay" || want === "sim") && params.has("away")) && liveState ? createAway({ scope: params.get("repo") ?? want, search: location.search, state: liveState }) : null;
 
   // After a ship: the rocket goes, then one calm "Shipped. That's 3 today." before the next card (payoff.ts).
-  const live = want === "live" || want === "replay";
+  // A guest on /deck?source=live plays the story first: its crates are not real ships, so they neither
+  // get a beat each nor go into the saved "today" count a signed-in player sees later.
+  const live = !!liveState && (want === "live" || want === "replay");
   const payoff = createPayoff({ every: live, phase: (source as DeckSource & { phase?: () => string }).phase,
-    store: want === "live" ? { get: k => localStorage.getItem(k), set: (k, v) => localStorage.setItem(k, v) } : null });
+    store: want === "live" && liveState ? { get: k => localStorage.getItem(k), set: (k, v) => localStorage.setItem(k, v) } : null });
   bus.on(event => {
     payoff.event(event);
     if (event.type === 'crate-arrive') (source as DeckSource & { arrive?: (id: string, stop: StopId) => void }).arrive?.(event.id, event.stop);

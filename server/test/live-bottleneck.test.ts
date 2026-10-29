@@ -65,3 +65,10 @@ test("the main signal uses the oldest matching approval, even with a newer plan 
   s.holdingBack = selected(["repo:approve_queue:repo"]);
   expect(projectLiveBottleneck(s, [], now)?.itemId).toBe("gh-17");
 });
+
+test("a Meta pick on a busy station focuses the call waiting on the player, not older plain work there", () => {
+  const s = base();
+  s.items.push(item("gh-9", "working", 5)); // older crate the engine is already building
+  s.holdingBack = selected(["factory:queue_jam:build"]);
+  expect(projectLiveBottleneck(s, [], now)).toMatchObject({ stop: "builder", itemId: "gh-16", source: "spark" });
+});

@@ -90,7 +90,7 @@ export function createStory(opts: StoryOptions = {}): Story {
       spawnEvery: 1, spawnT: 0.9, nextId: 1, shipped: 0,
       budget: 2 as number | null, // how many crates Review may still pass (the first two ship). null = no limit
       reviewSvc: SVC.review,
-      approvals: 0, card: null as CardView | null, laterUntil: 0,
+      approvals: 0, card: null as CardView | null, laterUntil: 0, asked: [] as string[], // crate titles already on a card
       autoReview: false, jam: null as StopId | null, nextJam: null as StopId | null,
       shippy: { pose: "folded", at: "corner" } as ShippyView,
       caption: null as string | null, captionAt: 0,
@@ -146,6 +146,13 @@ export function createStory(opts: StoryOptions = {}): Story {
 
   function showCall() {
     const n = S.approvals, left = 3 - n;
+    // Titles cycle, so the third call could repeat the first. Each call names a different fix.
+    const head = S.st.review.q[0];
+    if (head?.title && S.asked.includes(head.title)) {
+      const unused = S.fixes.map(f => `Fix ${f}`).find(t => !S.asked.includes(t));
+      if (unused) head.title = unused;
+    }
+    if (head?.title && !S.asked.includes(head.title)) S.asked.push(head.title);
     S.card = {
       id: `${STORY_CARD.call}${n + 1}`,
       title: `Approve ${S.st.review.q[0]?.title?.toLowerCase().replace(/^fix /, "fix for ") ?? "this fix"}?`,
