@@ -16,9 +16,9 @@ test("one issue physically arrives at each station before processing and only sh
   source.arrive(id, "builder"); source.step?.(4);
   expect(cargo()).toMatchObject({ id, badge: "PR301" });
   source.arrive(id, "checks"); source.step?.(2.5);
-  source.arrive(id, "review"); expect(source.view().card?.yes).toBe("Approve review");
-  source.step?.(100); expect(source.view().shipped).toBe(0);
-  source.approve(source.view().card!.id); source.arrive(id, "gate");
+  source.arrive(id, "review"); expect(source.view().card).toBeNull(); // review is the factory's job, not a card
+  source.step?.(2.5); expect(source.view().shipped).toBe(0);
+  source.arrive(id, "gate"); expect(source.view().card?.yes).toBe("Launch preview");
   source.approve(source.view().card!.id); expect(source.view().shipped).toBe(0);
   source.arrive(id, "launch"); expect(source.view().shipped).toBe(1);
   source.replay(); source.approve(source.view().card!.id); expect(cargo().id).not.toBe(id);
@@ -33,4 +33,15 @@ test("a blocked machine does not process time until the blockage clears", () => 
   source.approve(source.view().card!.id); expect(source.view().jam).toBeNull();
   expect(source.view().stops[1].items[0].id).toBe(id);
   source.step?.(2.5); expect(source.view().stops[2].items[0].id).toBe(id);
+});
+
+test("one card starts an issue, and three starts in a row make starting automatic", () => {
+  const source = createConveyorDemo();
+  expect(source.view().card).toMatchObject({ yes: "Start", dots: { have: 0, need: 3 } });
+  for (let i = 0; i < 3; i++) {
+    expect(source.view().card?.dots?.have).toBe(i);
+    source.approve(source.view().card!.id); source.replay();
+  }
+  expect(source.view().card).toBeNull();
+  expect(source.view().stops.flatMap(s => s.items)).toHaveLength(1);
 });

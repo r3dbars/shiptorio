@@ -69,3 +69,9 @@ body { -webkit-tap-highlight-color: transparent; overscroll-behavior: none; user
 body:has(.ic-card) .connection-tools { bottom: auto; top: 54px; }
 
 .ic-card[data-card^="connection-"] { max-height: calc(100dvh - 130px); overflow-y: auto; overflow-wrap: anywhere; }
+
+/* The caption sits above the bottom-left entry buttons so long captions never run under them. */
+body:has(.connection-tools) .toast { bottom: calc(60px + env(safe-area-inset-bottom, 0px)); }
+/* Demo controls own the top-left row; "See all" tucks under it on the right instead of drifting over the clouds. */
+.machine-rehearsal .zoom { top: calc(62px + env(safe-area-inset-top, 0px)); bottom: auto; }
+body:has(.connection-tools) .toast { width: calc(100% - 24px); max-width: 560px; white-space: normal; text-align: center; }
