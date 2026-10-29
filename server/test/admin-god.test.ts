@@ -118,7 +118,7 @@ it('/api/me exposes admin only from configuration and displays the viewed player
 
 it('signing out clears the admin view so another account does not inherit the context',async()=>{
  const {env,owner}=await fixture();const result=await retainedView(env,owner);const cookie=owner+'; '+result.headers.get('set-cookie')!.split(';')[0];
- const response=await app.fetch(new Request(url+'/auth/logout',{headers:{cookie}}),env);
+ const response=await app.fetch(new Request(url+'/auth/logout',{headers:{cookie,'sec-fetch-site':'same-origin'}}),env);
  expect(response.headers.get('set-cookie')).toContain('shiptorio_admin_view=;');
  expect(response.headers.get('set-cookie')).toContain('Max-Age=0');
  expect(await readAdminView(env,new Request(url,{headers:{cookie}}))).toBeNull();

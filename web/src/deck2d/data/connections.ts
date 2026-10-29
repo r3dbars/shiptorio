@@ -75,26 +75,26 @@ export function createConnections(o: Options) {
     if (!pane) return null;
     let title = '', line = '', yes = 'Refresh', no = 'Close';
     if (busy) { title = pane === 'repos' ? 'Finding your repositories…' : pane === 'issues' ? 'Opening your inbox…' : 'Checking Codex…'; line = 'This should only take a moment.'; yes = 'Please wait…'; }
-    else if (error) { title = login ? 'Sign in to your factory' : 'Connection needs attention'; line = login ? 'Sign in with GitHub to choose your repository. No coding starts yet.' : `Shippy: ${error}`; yes = login ? 'Sign in' : 'Try again'; }
+    else if (error) { title = login ? 'Sign in to your factory' : 'Connection needs attention'; line = login ? 'Sign in with GitHub so Shippy can see your repos. No coding starts yet.' : error; yes = login ? 'Sign in' : 'Try again'; }
     else if (pane === 'repos') {
       const r = repos[index]; title = r ? `Use ${r.fullName}?` : 'Connect your GitHub repo';
-      line = r ? `Repository ${index + 1} of ${repos.length}. Connect Codex next. Choosing this repo does not start a coding job.` : 'Install the GitHub App on a repository, then return here and refresh.';
+      line = r ? `${repos.length > 1 ? `Repository ${index + 1} of ${repos.length}. ` : ""}Shippy reads its issues and opens PRs here. Codex is next.` : 'Install the GitHub App so Shippy can read your issues. Then come back and refresh.';
       yes = r ? 'Use this repo' : nextPage ? 'More repos' : 'Connect GitHub'; no = r && (repos.length > 1 || nextPage || page > 1) ? 'Next repo' : 'Close';
     } else if (pane === 'issues') {
       const issue = issues[index]; title = issue ? `#${issue.number}: ${issue.title}` : 'No open issues on this page';
-      line = issue ? `${repo} · ${index + 1} of ${issues.length}. ${issue.body ? `${issue.body.slice(0, 120).trim()}${issue.body.length > 120 ? '…' : ''} ` : ''}Start issue prepares a plan. Codex waits for your approval.` : `${repo} has no open issues on this page. Add an issue on GitHub, then refresh.`;
-      yes = issue ? 'Start issue' : nextPage ? 'More issues' : 'Refresh'; no = issue ? 'Next' : 'Close';
+      line = issue ? `${repo} · ${index + 1} of ${issues.length}. ${issue.body ? `${issue.body.slice(0, 120).trim()}${issue.body.length > 120 ? '…' : ''} ` : ''}Review the plan before Codex starts.` : `Issues are what the factory builds. Add one to ${repo} on GitHub, then refresh.`;
+      yes = issue ? 'Plan' : nextPage ? 'More issues' : 'Refresh'; no = issue ? 'Next issue' : 'Close';
     } else if (pane === 'setup') {
       title = copied ? 'Setup command copied' : 'Connect your Codex subscription';
-      line = copyFailed ? `Copy this into Terminal: ${command}` : 'Copy the setup command and paste it into Terminal. Sign in to Codex if asked, then return here. Your sign-in stays on your computer.';
-      yes = 'Copy setup'; no = 'Check';
+      line = copyFailed ? `Copy this into Terminal: ${command}` : 'This links your computer so Codex can build here. Paste it into Terminal, then choose Check.';
+      yes = copied ? 'Check' : 'Copy setup'; no = copied ? 'Copy setup' : 'Check';
     } else if (pane === 'disconnect') {
-      title = 'Disconnect this engine?'; line = 'Shippy: This revokes the factory pairing. It does not sign you out of Codex.'; yes = 'Disconnect'; no = 'Close';
+      title = 'Engine options'; line = 'Unplug this engine from the factory. Your Codex sign-in stays on your computer.'; yes = 'Unplug'; no = 'Close';
     } else {
       const ready = status?.online && status.harnesses.includes('codex');
       title = !status?.paired ? 'Connect your Codex engine' : !status.online ? 'Codex engine is offline' : !ready ? 'Sign in to Codex' : status.working ? 'Engine is busy' : 'Codex engine is ready';
-      line = !status?.paired ? 'Shippy: Connect the local runner to use your Codex subscription. Connecting never starts a coding job.' : !status.online ? 'Shippy: Start shiptorio-runner watch on your computer. The factory is paired, but the worker is not reachable.' : !ready ? 'Shippy: Run shiptorio-runner login codex on your computer, then return here. Codex is not currently available.' : status.working ? `Shippy: Working on ${status.working.title}. This engine has no free slot until the job finishes.` : 'Codex is ready. Choose an issue next. You review the plan before any code is written.';
-      yes = !status?.paired ? 'Set up Codex' : ready && !status.working ? 'Open inbox' : 'Refresh'; no = status?.paired ? 'Unplug' : 'Close';
+      line = !status?.paired ? 'Codex writes the code on your computer, with your own subscription. Connecting starts no job.' : !status.online ? 'Run shiptorio-runner watch on your computer so the factory can hand Codex work.' : !ready ? 'Run shiptorio-runner login codex on your computer so Codex can write code for you.' : status.working ? `Working on ${status.working.title}.` : 'Codex is ready. Pick an issue so the factory has something to build.';
+      yes = !status?.paired ? 'Set up Codex' : ready && !status.working ? 'Open inbox' : 'Refresh'; no = status?.paired ? 'Options' : 'Close';
     }
     return { id: `connection-${revision}-${displayRevision}-${pane}`, stop: pane === 'power' || pane === 'setup' || pane === 'disconnect' ? 'builder' : 'repo', title, line, yes, no, dots: null };
   }
@@ -116,7 +116,10 @@ export function createConnections(o: Options) {
         if (index + 1 < repos.length) { index++; revision++; }
         else { page = nextPage ?? 1; index = 0; await refresh(); }
       }
-      else if (pane === 'setup') { pane = 'power'; revision++; await refresh(); }
+      else if (pane === 'setup') {
+        if (copied && expires > now()) { try { await o.copy(command); copyFailed = false; } catch { copyFailed = true; } revision++; }
+        else { pane = 'power'; revision++; await refresh(); }
+      }
       else if (pane === 'power' && status?.paired) { pane = 'disconnect'; revision++; }
       else { pane = null; revision++; }
       return true;
@@ -153,7 +156,7 @@ export function createConnections(o: Options) {
       } catch (e) { if (generation === revision) error = e instanceof Error ? e.message : 'Setup failed'; }
       finally { if (generation === revision) busy = false; }
     } else if (pane === 'setup') {
-      if (expires <= now()) { pane = 'power'; revision++; await refresh(); }
+      if (copied || expires <= now()) { pane = 'power'; revision++; await refresh(); }
       else { try { await o.copy(command); copied = true; copyFailed = false; } catch { copied = false; copyFailed = true; } revision++; }
     } else if (pane === 'disconnect') {
       busy = true;

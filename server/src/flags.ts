@@ -1,5 +1,5 @@
 /** Global false is a kill switch; user overrides may opt out or opt into a default-off feature. */
-export const FLAG_DEFAULTS = { intro: true, research: true, permits: true, autonomy: false, newFeatures: false, attention: true, brain: false, learn: true };
+export const FLAG_DEFAULTS = { research: true, permits: true, autonomy: false, newFeatures: false, attention: true, brain: false, learn: true };
 export type Flag = keyof typeof FLAG_DEFAULTS;
 export type Flags = Record<Flag, boolean>;
 /** FEATURES="all" (the staging worker, shiptorio.dev) defaults every flag on: new features ship ON on dev

@@ -12,7 +12,7 @@ import type { StationDef } from "./types";
 
 const GLASS: Record<StopState, readonly Color[]> = {
   idle: ["iron-0", "steel-1", "steel-2", "steel-3", "haze-3"],
-  working: ["sun-2", "sun-4", "sun-5", "sun-6", "white"],
+  working: ["energy-0", "energy-1", "energy-2", "energy-3", "white"],
   jammed: ["jam-0", "jam-1", "jam-2", "jam-2", "haze-3"],
   auto: ["ok-0", "ok-1", "ok-2", "ok-2", "white"],
 };
@@ -78,7 +78,7 @@ export const builder: StationDef = {
       tone(g, cx, cy, gl, 0.75); tone(g, cx + 1, cy, gl, 1); tone(g, cx, cy + 1, gl, 0.5); tone(g, cx + 1, cy + 1, gl, 0.75);
     }
     if (s !== "idle") { // lamp glow on the iron around the window (light layer)
-      const c = s === "working" ? "sun-5" : s === "jammed" ? "jam-2" : "ok-2";
+      const c = s === "working" ? "energy-2" : s === "jammed" ? "jam-2" : "ok-2";
       g.glowDisc(26.5, 27, 8.5, c, 0.25, [21, 23, 11, 8]);
       g.glow(21, 22, 11, 1, c, 0.5); g.glow(20, 23, 1, 8, c, 0.25); g.glow(32, 23, 1, 8, c, 0.5); g.glow(21, 31, 11, 1, c, 0.25);
     }

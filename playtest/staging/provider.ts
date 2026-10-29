@@ -6,7 +6,7 @@ import { ISOLATED_TEST_CONTEXT } from "../../server/src/test-delegation";
 import { requireUser } from "../../server/src/authorization";
 import { pairToken } from "../../server/src/runner-auth";
 import { TEST_PERSONAS, personaId, personaRepo, testUsersEnabled, type TestPersona } from "../../server/src/test-users-policy";
-import type { FixtureEnv } from "./env";
+import { fixtureProviderEnv, type FixtureEnv } from "./env";
 // @ts-ignore Shared provider fixtures are JavaScript and also serve the local Stranger journey.
 import { githubStub } from "../stranger/github-stub.mjs";
 // @ts-ignore Shared provider fixture; no production implementation is duplicated here.
@@ -256,9 +256,10 @@ export class FixtureRuntime {
 export class FixtureProvider extends DurableObject<FixtureEnv> {
   private runtime: FixtureRuntime;
   constructor(ctx: DurableObjectState, env: FixtureEnv) {
-    super(ctx, env);
+    const isolated = fixtureProviderEnv(env);
+    super(ctx, isolated);
     const context = { waitUntil: (p:Promise<unknown>) => ctx.waitUntil(p), passThroughOnException() {} } as ExecutionContext;
-    this.runtime = new FixtureRuntime(ctx.storage, env, async request => app.fetch(request, { ...env, [ISOLATED_TEST_CONTEXT]: true }, context));
+    this.runtime = new FixtureRuntime(ctx.storage, isolated, async request => app.fetch(request, { ...isolated, [ISOLATED_TEST_CONTEXT]: true }, context));
   }
   fetch(request: Request) { return this.runtime.fetch(request); }
   alarm() { return this.runtime.alarm(); }

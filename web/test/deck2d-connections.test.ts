@@ -26,7 +26,7 @@ test('empty pages can advance, and empty inbox is clearly different from error',
 test('starting the selected issue requests only its plan, once, then returns to the live deck', async () => {
   const f = setup([{issues:[{id:1,number:16,title:'README',body:''}],nextPage:null},{jobId:'planned'}]);
   f.ui.open('repo'); await settle();
-  expect(f.ui.card()?.yes).toBe('Start issue');
+  expect(f.ui.card()?.yes).toBe('Plan');
   await f.yes();
   expect(f.calls).toEqual([{url:'/api/repos/owner/repo/issues?page=1',method:'GET'},{url:'/api/repos/owner/repo/issues/16/start',method:'POST'}]);
   expect(f.ui.card()).toBeNull();
@@ -63,7 +63,7 @@ test('setup requires an explicit click, copies locally, and never enqueues work'
 });
 test('disconnect requires a second explicit confirmation and can be cancelled', async () => {
   const f = setup([{ paired: true, online: true, harnesses: ['codex'] }]); f.ui.open('power'); await settle();
-  await f.no(); expect(f.ui.card()?.title).toBe('Disconnect this engine?'); await f.no();
+  await f.no(); expect(f.ui.card()?.title).toBe('Engine options'); await f.no();
   expect(f.ui.card()).toBeNull(); expect(f.calls).toHaveLength(1);
 });
 test('stale inbox response cannot replace the engine card', async () => {
@@ -118,8 +118,8 @@ test('rate-limit errors remain visible rather than being cleared by status polli
 test('choosing a repo leads to Codex, then directly to the first issue card', async () => {
   const calls: string[] = [];
   const ui = createConnections({repo:'owner/repo',origin:'https://shiptorio.dev',path:'/deck?source=live&repo=owner%2Frepo&onboard=codex',navigate:()=>{},copy:async()=>{},fetch:(async url=>{calls.push(String(url));return Response.json(String(url).includes('/status')?{paired:true,online:true,harnesses:['codex']}:{issues:[{id:1,number:16,title:'README',body:''}],nextPage:null});}) as typeof fetch});
-  await settle();expect(ui.card()?.yes).toBe('Open inbox');expect(ui.card()?.no).toBe('Unplug');
-  await ui.answer(ui.card()!.id,true);expect(ui.card()?.yes).toBe('Start issue');
+  await settle();expect(ui.card()?.yes).toBe('Open inbox');expect(ui.card()?.no).toBe('Options');
+  await ui.answer(ui.card()!.id,true);expect(ui.card()?.yes).toBe('Plan');
   expect(calls).toEqual(['/api/repos/owner/repo/runner/status','/api/repos/owner/repo/issues?page=1']);
 });
 
@@ -128,4 +128,32 @@ test('anonymous front door asks for sign-in without a protected API request', as
   const calls: string[] = [];
   const ui = createConnections({origin:'https://shiptorio.dev',path:'/deck?source=live',navigate:()=>{},copy:async()=>{},fetch:(async url=>{calls.push(String(url));return Response.json({guest:true,login:null,githubConfigured:true});}) as typeof fetch});
   ui.open('repo');await settle();expect(ui.card()?.title).toBe('Sign in to your factory');expect(ui.card()?.yes).toBe('Sign in');expect(calls).toEqual(['/api/me']);
+});
+
+test('ready engine keeps unplug behind Options and never disconnects on the first tap', async () => {
+  const f = setup([{ paired: true, online: true, harnesses: ['codex'] }]);
+  f.ui.open('power'); await settle();
+  expect(f.ui.card()).toMatchObject({ yes: 'Open inbox', no: 'Options' });
+  await f.no();
+  expect(f.ui.card()).toMatchObject({ title: 'Engine options', yes: 'Unplug', no: 'Close' });
+  expect(f.calls.every(call => call.method === 'GET')).toBe(true);
+});
+
+test('after copy, Check is primary and Copy setup remains secondary', async () => {
+  const f = setup([{ paired: false, online: false, harnesses: [] }, { join: 'example-code', expires: Date.now() + 60000 }, { paired: true, online: true, harnesses: ['codex'] }]);
+  f.ui.open('power'); await settle(); await f.yes();
+  expect(f.ui.card()).toMatchObject({ yes: 'Copy setup', no: 'Check' });
+  await f.yes();
+  expect(f.ui.card()).toMatchObject({ title: 'Setup command copied', yes: 'Check', no: 'Copy setup' });
+  await f.no(); expect(f.copied).toHaveLength(2);
+  await f.yes(); expect(f.ui.card()?.title).toBe('Codex engine is ready');
+  expect(f.calls.filter(call => call.method === 'POST')).toHaveLength(1);
+});
+
+test('a single repo and an issue use short labels without repeated setup warnings', async () => {
+  const f = setup([{ repos: [{ fullName: 'owner/repo' }] }], ''); f.ui.open('repo'); await settle();
+  expect(f.ui.card()?.line).toBe('Shippy reads its issues and opens PRs here. Codex is next.');
+  const issue = setup([{ issues: [{id:1,number:16,title:'Fix checkout',body:''}], nextPage:null }]);
+  issue.ui.open('repo'); await settle(); expect(issue.ui.card()?.no).toBe('Next issue');
+  expect(issue.ui.card()?.line).not.toContain('Shippy:');
 });

@@ -169,7 +169,7 @@ const DOCS_FILE = /\.(md|mdx|txt)$|(^|\/)docs\//i;
  * v1 proof, from what the PR carries: the local runner already refused to push unless typecheck, tests
  * and build passed on this exact commit. On top of that the diff must include a test that pins the fix.
  * Docs-only changes have nothing to reproduce. The real bay (the PR's test fails on base, passes on head)
- * runs in the local runner next (docs/context/live-loop.md).
+ * runs in the local runner next (docs/context/archive/live-loop.md).
  */
 export function verifyFromDiff(files: string[], runnerReceipts: boolean, proof?: RegressionProof): { passed: boolean; reason: string } {
   if (!files.length) return { passed: false, reason: "The PR has no changed files to verify." };

@@ -119,5 +119,6 @@ Visual deck polish stays with Justin's local Codex (`codex/deck-visuals`) and Cl
 
 Claude threads (2026-10-29 18:26): "Polish the station and belt art" owns station drawing + belt art; "Write the 2-minute demo video script" owns docs/context/demo-script.md.
 18:50: "Bring the old sound and music to the 2D deck" owns web/src/sound/** and the sound wiring in web/src/deck2d/juice/{sounds,index}.ts.
+"Use one meaning per color everywhere" (18:55): yellow = waiting on you, red = actually stuck, green = automatic/done, cyan = running. Touched stations/{status,palette,*station LIT ramps}, engine/{pxdraw,engine}.ts (belt, crate, lever, beacon), story/index.ts (calls are yellow, not jams), data/view.ts (crate look), shippy.ts (glow tints). New color work follows that map.
 
 Status 18:30: merged #46 (#617), #45 (#616). Open: #43 (#618), #44 (#615), #48 (#621 draft), #57 (#622 draft). Others in progress.

@@ -87,3 +87,30 @@ test("updating for refresh jobs still resumes an existing normal-job recovery jo
     await first.close();
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test('expired unfinished work is cleaned after wake without touching another repo or pairing', async () => {
+  const root=await realpath(await mkdtemp(resolve(tmpdir(),'shiptorio-expired-wake-')));
+  try {
+    const j=assignment(), workspace=await recoverWorkspace(root,j);
+    await mkdir(workspace.work);await Bun.write(resolve(workspace.work,'value.ts'),'partial edit');await workspace.checkpoint('initialized');
+    await replayReceipts(root,'other/repo',async()=>{throw Error('must not send');},j.deadline+600000);
+    expect(await Bun.file(resolve(workspace.work,'value.ts')).exists()).toBe(true);
+    await replayReceipts(root,j.repo,async()=>{throw Error('must not send');},j.deadline+600000);
+    expect(await Bun.file(resolve(root,'.recovery',`${j.id}.json`)).exists()).toBe(false);
+    expect(await Bun.file(resolve(workspace.work,'value.ts')).exists()).toBe(false);
+  }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('expired receipts survive network loss but permanent rejection cleans the workspace', async () => {
+  const root=await realpath(await mkdtemp(resolve(tmpdir(),'shiptorio-expired-receipt-')));
+  try {
+    const j=assignment(), workspace=await recoverWorkspace(root,j);
+    const path=resolve(root,'.work',`${j.id}.receipt.json`);
+    await Bun.write(path,JSON.stringify({jobId:j.id,lease:j.lease,ok:false,summary:'Timed out',checks:[]}));
+    await expect(replayReceipts(root,j.repo,async()=>{throw new TypeError('offline');},j.deadline+1)).rejects.toThrow('offline');
+    expect(await Bun.file(resolve(root,'.recovery',`${j.id}.json`)).exists()).toBe(true);
+    await expect(replayReceipts(root,j.repo,async()=>{throw Object.assign(new Error('expired lease'),{status:409});},j.deadline+2)).rejects.toThrow('expired lease');
+    expect(await Bun.file(resolve(root,'.recovery',`${j.id}.json`)).exists()).toBe(false);
+    expect(await Bun.file(path).exists()).toBe(true);
+  }finally{await rm(root,{recursive:true,force:true});}
+});

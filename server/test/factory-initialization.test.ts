@@ -47,6 +47,10 @@ test("fresh factories never share mutable inventory, counters or source setup", 
 import { testD1 } from "./d1-fixture";
 import { ACCESS_RECHECK_MS, reconcileFactoryGitHubAccess } from "../src/factory-initialization";
 import { GitHubError } from "../src/github";
+import { RateLimitError } from "../src/rate-limit";
+
+// A recheck is due: the last GitHub lookup is older than the recheck window.
+const STALE = -ACCESS_RECHECK_MS;
 
 async function accessFixture() {
   const DB = testD1();
@@ -59,7 +63,7 @@ test("wake checks are bounded, but durable suspension bypasses the cache", async
   const { DB, env, meta } = await accessFixture();
   let calls = 0;
   const lookup = async () => { calls++; return { id: 40 }; };
-  expect(await reconcileFactoryGitHubAccess(env, meta, undefined, 10_000, lookup)).toEqual({ stopped: false, checkedAt: 10_000 });
+  expect(await reconcileFactoryGitHubAccess(env, meta, STALE, 10_000, lookup)).toEqual({ stopped: false, checkedAt: 10_000 });
   expect(await reconcileFactoryGitHubAccess(env, meta, 10_000, 10_001, lookup)).toEqual({ stopped: false });
   await DB.prepare("UPDATE installations SET status='suspended' WHERE id=40").run();
   expect(await reconcileFactoryGitHubAccess(env, meta, 10_000, 10_002, lookup)).toEqual({ stopped: true, reason: "GitHub installation suspended" });
@@ -71,30 +75,30 @@ test("wake checks are bounded, but durable suspension bypasses the cache", async
 
 test("missed installation suspension persists and does not retry GitHub", async () => {
   const { DB, env, meta } = await accessFixture();
-  const result = await reconcileFactoryGitHubAccess(env, meta, undefined, 10_000, async () => ({ id: 40, suspended_at: "2026-10-29T10:00:00Z" }));
+  const result = await reconcileFactoryGitHubAccess(env, meta, STALE, 10_000, async () => ({ id: 40, suspended_at: "2026-10-29T10:00:00Z" }));
   expect(result).toEqual({ stopped: true, reason: "GitHub installation suspended" });
   expect(await DB.prepare("SELECT status FROM installations WHERE id=40").first()).toEqual({ status: "suspended" });
-  expect(await reconcileFactoryGitHubAccess(env, meta, undefined, 20_000, async () => { throw new Error("must not fetch"); })).toEqual(result);
+  expect(await reconcileFactoryGitHubAccess(env, meta, STALE, 20_000, async () => { throw new Error("must not fetch"); })).toEqual(result);
 });
 
 test("access loss is durable and identity changes never silently switch installations", async () => {
   const { DB, env, meta } = await accessFixture();
-  expect(await reconcileFactoryGitHubAccess(env, meta, undefined, 10_000, async () => ({ id: 41 }))).toEqual({ stopped: true, reason: "GitHub repository access unavailable", archivedAt: 10_000 });
-  expect(await reconcileFactoryGitHubAccess(env, meta, undefined, 20_000, async () => { throw new Error("must not fetch"); })).toEqual({ stopped: true, reason: "GitHub repository access unavailable", archivedAt: 10_000 });
+  expect(await reconcileFactoryGitHubAccess(env, meta, STALE, 10_000, async () => ({ id: 41 }))).toEqual({ stopped: true, reason: "GitHub repository access unavailable", archivedAt: 10_000 });
+  expect(await reconcileFactoryGitHubAccess(env, meta, STALE, 20_000, async () => { throw new Error("must not fetch"); })).toEqual({ stopped: true, reason: "GitHub repository access unavailable", archivedAt: 10_000 });
   expect(await DB.prepare("SELECT installation_id FROM repos WHERE full_name='owner/repo'").first()).toEqual({ installation_id: 40 });
 });
 
 test("outages and credential failures stop this wake without archiving the repository", async () => {
   for (const status of [401, 403, 429, 503]) {
     const { DB, env, meta } = await accessFixture();
-    await expect(reconcileFactoryGitHubAccess(env, meta, undefined, 10_000, async () => { throw new GitHubError(status, "/repos/owner/repo/installation", "GET"); })).rejects.toThrow();
+    await expect(reconcileFactoryGitHubAccess(env, meta, STALE, 10_000, async () => { throw new GitHubError(status, "/repos/owner/repo/installation", "GET"); })).rejects.toThrow();
     expect(await DB.prepare("SELECT archived_at FROM repos WHERE full_name='owner/repo'").first()).toEqual({ archived_at: null });
   }
 });
 
 test("a signed access restoration during lookup invalidates stale removal evidence", async () => {
   const { DB, env, meta } = await accessFixture();
-  const result = await reconcileFactoryGitHubAccess(env, meta, undefined, 10_000, async () => {
+  const result = await reconcileFactoryGitHubAccess(env, meta, STALE, 10_000, async () => {
     await DB.prepare("UPDATE installations SET token_version=token_version+1 WHERE id=40").run();
     throw new GitHubError(404, "/repos/owner/repo/installation", "GET");
   });
@@ -105,6 +109,31 @@ test("a signed access restoration during lookup invalidates stale removal eviden
 test("a factory whose registry record disappeared stops without a provider call", async () => {
   const { DB, env, meta } = await accessFixture();
   await DB.prepare("DELETE FROM repos WHERE full_name='owner/repo'").run();
-  expect(await reconcileFactoryGitHubAccess(env, meta, undefined, 10_000, async () => { throw new Error("must not fetch"); }))
+  expect(await reconcileFactoryGitHubAccess(env, meta, STALE, 10_000, async () => { throw new Error("must not fetch"); }))
     .toEqual({ stopped: true, reason: "GitHub repository is not installed" });
+});
+
+test("a first wake seeds a jittered recheck instead of calling GitHub", async () => {
+  const { env, meta } = await accessFixture();
+  const never = async () => { throw new Error("must not fetch"); };
+  expect(await reconcileFactoryGitHubAccess(env, meta, undefined, 10_000, never, () => 0.5))
+    .toEqual({ stopped: false, checkedAt: 10_000 - ACCESS_RECHECK_MS / 2 });
+  // Fifty factories waking together spread their first lookups across the window.
+  const seeds = await Promise.all(Array.from({ length: 50 }, (_, i) =>
+    reconcileFactoryGitHubAccess(env, meta, undefined, 10_000, never, () => i / 50)));
+  expect(new Set(seeds.map(seed => !seed.stopped && seed.checkedAt)).size).toBe(50);
+});
+
+test("a first wake still honors durable revocations", async () => {
+  const { DB, env, meta } = await accessFixture();
+  await DB.prepare("UPDATE installations SET status='suspended' WHERE id=40").run();
+  expect(await reconcileFactoryGitHubAccess(env, meta, undefined, 10_000, async () => { throw new Error("must not fetch"); }))
+    .toEqual({ stopped: true, reason: "GitHub installation suspended" });
+});
+
+test("a saturated GitHub queue keeps the factory running and retries later", async () => {
+  const { DB, env, meta } = await accessFixture();
+  const result = await reconcileFactoryGitHubAccess(env, meta, STALE, 10_000, async () => { throw new RateLimitError(70_000); });
+  expect(result).toEqual({ stopped: false });
+  expect(await DB.prepare("SELECT archived_at FROM repos WHERE full_name='owner/repo'").first()).toEqual({ archived_at: null });
 });

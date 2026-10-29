@@ -39,12 +39,12 @@ export function createConveyorDemo() {
         shipped: phase === "done" ? 1 : 0,
         card: blocked && showCard ? {
           id: `conveyor-${revision}-blocked`, stop, dots: null, title: `${STOP_LABEL[stop]} is blocked`,
-          line: "Shippy: This preview bay is stopped. Clear it to let the same crate continue.", yes: "Clear blockage", no: "Later",
+          line: "This preview bay is stopped. Clear it to let the same crate continue.", yes: "Resume", no: "Later",
         } : waiting && !blocked && showCard ? {
           id: cardId(), stop, dots: phase === "ready" ? { have: approvals, need: 3 } : null,
           title: phase === "ready" ? "Plan and build #101: Fix checkout retries?" : "Ship PR #301?",
-          line: phase === "ready" ? approvals === 0 ? "Shippy: Swipe and it moves." : `Shippy: Approve ${3 - approvals} more like this and it's automatic.` : "Shippy: Checks and review passed. This only launches the preview rocket.",
-          yes: phase === "ready" ? "Start" : "Launch preview", no: "Later",
+          line: phase === "ready" ? approvals === 0 ? "Swipe and it moves." : `Approve ${3 - approvals} more like this and it's automatic.` : "Checks and review passed. This only launches the preview rocket.",
+          yes: phase === "ready" ? "Start" : "Ship it", no: "Later",
         } : null,
         caption: blocked ? `${badge} · ${STOP_LABEL[stop]} is blocked. This belt bay is stopped.` : phase === "done" ? automatic() ? "PR #301 shipped. Starting issues is automatic now." : "PR #301 shipped. Replay to follow the issue again." : `${badge} · Fix checkout retries · ${phase === "travel" ? `Moving to ${STOP_LABEL[stop]}` : phase === "work" ? `Inside ${STOP_LABEL[stop]}` : "Ready"}`,
       };

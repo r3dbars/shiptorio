@@ -8,12 +8,12 @@ import type { Px } from "./px";
 /** Lamp colors per state: [dark, mid, bright]. Idle lamps are unlit glass. */
 export const LAMP: Record<StopState, [Color, Color, Color]> = {
   idle: ["iron-0", "steel-1", "steel-2"],
-  working: ["sun-1", "sun-4", "sun-6"],
+  working: ["energy-0", "energy-1", "energy-2"],
   jammed: ["jam-0", "jam-1", "jam-2"],
   auto: ["ok-0", "ok-1", "ok-2"],
 };
 /** What a lamp's glow is drawn with on the light layer (null = no glow). */
-export const HALO: Record<StopState, Color | null> = { idle: null, working: "sun-5", jammed: "jam-2", auto: "ok-2" };
+export const HALO: Record<StopState, Color | null> = { idle: null, working: "energy-2", jammed: "jam-2", auto: "ok-2" };
 
 /**
  * A riveted iron block seen from the front and a little above: front face, a top face `d` rows deep and a right

@@ -49,8 +49,15 @@ export function securityHeaders(request: Request, artNonce?: string, turnstile =
 // signed form proof for browsers that strip Origin. Every other mutation fails
 // closed without an exact same-origin header, including future API endpoints.
 export function browserMutationAllowed(request: Request, routePath = new URL(request.url).pathname): boolean {
-  if (!["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) return true;
   const url = new URL(request.url);
+  // Logout revokes a session even though its existing navigation is GET (HEAD uses
+  // the same handler). Lax cookies accompany cross-site top-level navigations.
+  if (routePath === "/auth/logout" && ["GET", "HEAD"].includes(request.method)) {
+    const origin = request.headers.get("origin"), site = request.headers.get("sec-fetch-site");
+    return site !== "cross-site" && site !== "same-site" &&
+      (origin === url.origin || !origin && (site === "same-origin" || site === "none"));
+  }
+  if (!["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) return true;
   if (["/webhooks/github", "/webhooks/sentry", "/access", "/api/runner-device/start", "/api/runner-device/poll", "/api/runner-device/join"].includes(routePath)
     || /^\/webhooks\/sentry\/[\w.-]+\/[\w.-]+$/.test(routePath)
     || /^\/webhooks\/support\/[\w.-]+\/[\w.-]+\/[0-9a-f]{40}$/.test(routePath) || /^\/webhooks\/intercom\/[\w.-]+\/[\w.-]+$/.test(routePath)

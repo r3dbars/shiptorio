@@ -1,0 +1,216 @@
+{
+  "description": "Fixed-latency GitHub boundary fixture. One issue through plan, PR, current-head checks, human-gated merge and confirmation. This isolates duplicate reads from browser poll timing.",
+  "baseline": "41effc3b",
+  "before": {
+    "counts": {
+      "inbox": 2,
+      "plan": 2,
+      "pull request": 2,
+      "checks": 8,
+      "merge": 5
+    },
+    "total": 19,
+    "calls": [
+      {
+        "step": "inbox",
+        "method": "GET",
+        "path": "/repos/fixture/workshop/issues",
+        "conditional": false
+      },
+      {
+        "step": "inbox",
+        "method": "GET",
+        "path": "/repos/fixture/workshop/issues",
+        "conditional": true
+      },
+      {
+        "step": "plan",
+        "method": "GET",
+        "path": "/repos/fixture/workshop/issues/16",
+        "conditional": false
+      },
+      {
+        "step": "plan",
+        "method": "GET",
+        "path": "/repos/fixture/workshop/issues/16",
+        "conditional": true
+      },
+      {
+        "step": "pull request",
+        "method": "GET",
+        "path": "/repos/fixture/workshop/pulls",
+        "conditional": false
+      },
+      {
+        "step": "pull request",
+        "method": "POST",
+        "path": "/repos/fixture/workshop/pulls",
+        "conditional": false
+      },
+      {
+        "step": "checks",
+        "method": "GET",
+        "path": "/repos/fixture/workshop/pulls/27",
+        "conditional": false
+      },
+      {
+        "step": "checks",
+        "method": "GET",
+        "path": "/repos/fixture/workshop/pulls/27",
+        "conditional": true
+      },
+      {
+        "step": "checks",
+        "method": "GET",
+        "path": "/repos/fixture/workshop/commits/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/check-runs",
+        "conditional": false
+      },
+      {
+        "step": "checks",
+        "method": "GET",
+        "path": "/repos/fixture/workshop/commits/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/status",
+        "conditional": false
+      },
+      {
+        "step": "checks",
+        "method": "GET",
+        "path": "/repos/fixture/workshop/commits/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/check-runs",
+        "conditional": true
+      },
+      {
+        "step": "checks",
+        "method": "GET",
+        "path": "/repos/fixture/workshop/commits/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/status",
+        "conditional": true
+      },
+      {
+        "step": "checks",
+        "method": "GET",
+        "path": "/repos/fixture/workshop/pulls/27",
+        "conditional": true
+      },
+      {
+        "step": "checks",
+        "method": "GET",
+        "path": "/repos/fixture/workshop/pulls/27",
+        "conditional": true
+      },
+      {
+        "step": "merge",
+        "method": "GET",
+        "path": "/repos/fixture/workshop/pulls/27",
+        "conditional": false
+      },
+      {
+        "step": "merge",
+        "method": "GET",
+        "path": "/repos/fixture/workshop/pulls/27",
+        "conditional": false
+      },
+      {
+        "step": "merge",
+        "method": "PUT",
+        "path": "/repos/fixture/workshop/pulls/27/merge",
+        "conditional": false
+      },
+      {
+        "step": "merge",
+        "method": "GET",
+        "path": "/repos/fixture/workshop/pulls/27",
+        "conditional": true
+      },
+      {
+        "step": "merge",
+        "method": "GET",
+        "path": "/repos/fixture/workshop/pulls/27",
+        "conditional": true
+      }
+    ],
+    "merged": true
+  },
+  "after": {
+    "counts": {
+      "inbox": 1,
+      "plan": 1,
+      "pull request": 2,
+      "checks": 4,
+      "merge": 4
+    },
+    "total": 12,
+    "calls": [
+      {
+        "step": "inbox",
+        "method": "GET",
+        "path": "/repos/fixture/workshop/issues",
+        "conditional": false
+      },
+      {
+        "step": "plan",
+        "method": "GET",
+        "path": "/repos/fixture/workshop/issues/16",
+        "conditional": false
+      },
+      {
+        "step": "pull request",
+        "method": "GET",
+        "path": "/repos/fixture/workshop/pulls",
+        "conditional": false
+      },
+      {
+        "step": "pull request",
+        "method": "POST",
+        "path": "/repos/fixture/workshop/pulls",
+        "conditional": false
+      },
+      {
+        "step": "checks",
+        "method": "GET",
+        "path": "/repos/fixture/workshop/pulls/27",
+        "conditional": false
+      },
+      {
+        "step": "checks",
+        "method": "GET",
+        "path": "/repos/fixture/workshop/commits/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/check-runs",
+        "conditional": false
+      },
+      {
+        "step": "checks",
+        "method": "GET",
+        "path": "/repos/fixture/workshop/commits/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/status",
+        "conditional": false
+      },
+      {
+        "step": "checks",
+        "method": "GET",
+        "path": "/repos/fixture/workshop/pulls/27",
+        "conditional": true
+      },
+      {
+        "step": "merge",
+        "method": "GET",
+        "path": "/repos/fixture/workshop/pulls/27",
+        "conditional": false
+      },
+      {
+        "step": "merge",
+        "method": "GET",
+        "path": "/repos/fixture/workshop/pulls/27",
+        "conditional": false
+      },
+      {
+        "step": "merge",
+        "method": "PUT",
+        "path": "/repos/fixture/workshop/pulls/27/merge",
+        "conditional": false
+      },
+      {
+        "step": "merge",
+        "method": "GET",
+        "path": "/repos/fixture/workshop/pulls/27",
+        "conditional": true
+      }
+    ],
+    "merged": true
+  }
+}

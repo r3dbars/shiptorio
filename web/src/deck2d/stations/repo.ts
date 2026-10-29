@@ -10,11 +10,11 @@ import type { StationDef } from "./types";
 
 const LIT: Record<StopState, readonly Color[]> = {
   idle: ["iron-0", "iron-2", "iron-3", "iron-4", "haze-2"],
-  working: ["sun-1", "sun-3", "sun-4", "sun-5", "sun-6"],
+  working: ["energy-0", "energy-1", "energy-2", "energy-3", "white"],
   jammed: ["jam-0", "jam-1", "jam-1", "jam-2", "haze-3"],
   auto: ["ok-0", "ok-1", "ok-1", "ok-2", "white"],
 };
-const GLOW: Record<StopState, Color | null> = { idle: null, working: "sun-5", jammed: "jam-2", auto: "ok-2" };
+const GLOW: Record<StopState, Color | null> = { idle: null, working: "energy-2", jammed: "jam-2", auto: "ok-2" };
 
 /** A pipe bend seen from the front: a quarter ring of tube, banded across its thickness like a straight run. */
 function bend(g: Px, cx: number, cy: number, r0: number, r1: number, quad: "tl" | "tr") {
