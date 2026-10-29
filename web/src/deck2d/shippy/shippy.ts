@@ -4,6 +4,8 @@
 // approve, rattles and smokes when something jams. When the view sends him to a stop he unfolds in the corner,
 // jumps out, drops onto the deck with a clunk, walks to the stop and does the pose (pulls the lever, hops, alarms).
 // Sent back to the corner he jumps off the deck and lands in the corner folding shut.
+// Pixel mode (?px=1): the deck floats in open sky, so home is on the deck itself. The box sits on the floor left of
+// Repo (entryX); he unfolds there, walks to the stop, walks back and folds up in the same spot. Feet always on the floor.
 //
 // Everything is driven by update(dt, view): the engine only says where he should be and what he's doing.
 // Times are seconds. World units are deck px (contract "world space").
@@ -43,7 +45,8 @@ type WorldMode = "off" | "drop" | "walk" | "stand" | "leave";
 const STEP = 0.06; // seconds per unfold frame
 const ANTICIPATE = 0.12;
 const UNFOLD_S = ANTICIPATE + STEP * UNFOLD.length + 0.08;
-const FOLD_S = 0.32 + STEP * UNFOLD.length + 0.35; // fall in, fold, clunk + wobble
+const FOLD_FALL = 0.32; // the drop into the corner before folding
+const FOLD_S = FOLD_FALL + STEP * UNFOLD.length + 0.35; // fall in, fold, clunk + wobble
 const DROP_S = 0.42;
 const LAND_S = 0.3;
 const LEAVE_S = 0.4;
@@ -79,6 +82,7 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
 
   const spot = (at: StopId) => STOP_X[at] + o.standDx;
   const wantsDeck = () => view.at !== "corner";
+  const home = o.entryX; // pixel mode: where the box sits on the deck floor
 
   function puff(list: Puff[], x: number, y: number, n: number, spread: number, color = "200,180,150", rise = 0) {
     if (still) return;
@@ -104,7 +108,8 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
     if (corner.mode === "home" && wantsDeck() && world.mode === "off") { corner.mode = "unfold"; corner.t = 0; }
     if (corner.mode === "unfold" && corner.t >= UNFOLD_S) {
       corner.mode = "gone"; corner.t = 0;
-      if (wantsDeck()) { world.mode = "drop"; world.t = 0; world.x = o.entryX; world.facing = 1; }
+      if (wantsDeck() && o.pixel) { world.mode = "walk"; world.t = 0; world.x = home; world.facing = 1; }
+      else if (wantsDeck()) { world.mode = "drop"; world.t = 0; world.x = o.entryX; world.facing = 1; }
       else { corner.mode = "fold"; } // changed his mind mid-unfold
     }
     if (corner.mode === "fold" && corner.t >= FOLD_S) { corner.mode = "home"; corner.t = 0; }
@@ -114,7 +119,7 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
 
     // ---- world ----
     world.t += dt;
-    const target = view.at === "corner" ? null : spot(view.at);
+    const target = view.at === "corner" ? (o.pixel ? home : null) : spot(view.at);
     switch (world.mode) {
       case "drop":
         if (crossed(world.t, dt, DROP_S)) feet(8);
@@ -127,11 +132,17 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
         if (d !== 0) world.facing = d > 0 ? 1 : -1;
         const stepLen = Math.min(Math.abs(d), o.speed * dt * walkEase());
         world.x += Math.sign(d) * stepLen;
-        if (Math.abs(world.tx - world.x) < 0.5) { world.x = world.tx; world.mode = "stand"; world.t = 0; world.poseT = 0; feet(3); }
+        if (Math.abs(world.tx - world.x) < 0.5) {
+          world.x = world.tx; world.t = 0; world.poseT = 0; feet(3);
+          // pixel mode: back home, he folds up right where he stands (no fall in from above)
+          if (o.pixel && view.at === "corner") { world.mode = "off"; corner.mode = "fold"; corner.t = FOLD_FALL; }
+          else world.mode = "stand";
+        }
         break;
       }
       case "stand":
         if (target === null) { world.mode = "leave"; world.t = 0; feet(5); }
+        else if (o.pixel && view.at === "corner") startWalk(target);
         else if (Math.abs(target - world.x) > 0.5) startWalk(target);
         else standEffects(dt);
         break;
@@ -241,7 +252,7 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
         const ft = t - ANTICIPATE;
         const i = Math.min(UNFOLD.length - 1, Math.floor(ft / STEP));
         const a = clamp01(ft / (UNFOLD_S - ANTICIPATE));
-        const leap = a > 0.7 ? easeIn((a - 0.7) / 0.3) : 0;
+        const leap = a > 0.7 && !o.pixel ? easeIn((a - 0.7) / 0.3) : 0;
         return {
           ...base, frame: UNFOLD[i], y: fy - Math.sin(Math.min(a, 0.7) / 0.7 * Math.PI) * size * 0.12 - leap * size * 0.9,
           sx: 1 - 0.08 * Math.sin(a * Math.PI) - leap * 0.1, sy: 1 + 0.14 * Math.sin(a * Math.PI) + leap * 0.15,
@@ -250,7 +261,7 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
       }
       case "fold": {
         // drop in from above, fold up the strip backwards, slam shut and wobble
-        const fall = 0.32;
+        const fall = FOLD_FALL;
         if (t < fall) {
           const a = easeIn(t / fall);
           return { ...base, frame: "shippy-5", y: fy - (1 - a) * size * 1.1, sx: 0.92, sy: 1.12, alpha: clamp01(t / 0.1) };
@@ -398,21 +409,19 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
       const d = worldDraw();
       if (o.pixel) {
         if (d) paintPx(ctx, d, ART_PX, o.floorAt(world.x), true);
+        // home is the box on the deck floor: the corner animations, drawn in world space at home
+        const fy = o.floorAt(home), c = cornerDraw(home - o.size * 0.5, fy - o.size * 0.9, o.size);
+        if (c) paintPx(ctx, c, ART_PX, fy, false);
         paintPuffsPx(ctx, worldPuffs, (x, y) => [x, y], ART_PX);
+        paintPuffsPx(ctx, cornerPuffs, (px, py) => [home - o.size * 0.5 + px * o.size, fy - o.size * 0.9 + py * o.size], ART_PX);
         return;
       }
       if (d) paint(ctx, d, o.size / STRIP_H, o.size, o.floorAt(world.x));
       paintPuffs(ctx, worldPuffs, (x, y) => [x, y], 1);
     },
     drawCorner(ctx, x, y, size) {
+      if (o.pixel) return; // pixel mode: home is the box on the deck floor, drawn by drawWorld
       const d = cornerDraw(x, y, size);
-      if (o.pixel) {
-        // the same pixel art at a whole number of screen px per art px
-        const unit = Math.max(1, Math.floor(size / 24));
-        if (d) paintPx(ctx, d, unit, y + size * 0.9, false);
-        paintPuffsPx(ctx, cornerPuffs, (px, py) => [x + px * size, y + py * size], unit);
-        return;
-      }
       if (d) paint(ctx, d, (size * 0.8) / 282, size * 0.8, y + size * 0.9);
       paintPuffs(ctx, cornerPuffs, (px, py) => [x + px * size, y + py * size], size);
     },
