@@ -4,9 +4,9 @@ A named card gets focus. Tab reaches Later and the main action in their existing
 
 | View | Before | After | Keyboard focus | After keyboard loop |
 | --- | --- | --- | --- | --- |
-| 1280×720 | [before](before/desktop-1280/01-settled.png) | [after](after/desktop-1280/01-settled.png) | [focus](desktop-1280-focus.png) | [complete](desktop-1280-complete.png) |
-| 390×844 | [before](before/phone-390/01-settled.png) | [after](after/phone-390/01-settled.png) | [focus](phone-390-focus.png) | [complete](phone-390-complete.png) |
-| 390×844 reduced motion | — | — | [focus](phone-390-reduced-focus.png) | [complete](phone-390-reduced-complete.png) |
+| 1280×720 | _before (screenshot moved out of the repo: project files `shiptorio/evidence/web/test/evidence/deck-keyboard/before/desktop-1280/01-settled.png`)_ | _after (screenshot moved out of the repo: project files `shiptorio/evidence/web/test/evidence/deck-keyboard/after/desktop-1280/01-settled.png`)_ | _focus (screenshot moved out of the repo: project files `shiptorio/evidence/web/test/evidence/deck-keyboard/desktop-1280-focus.png`)_ | _complete (screenshot moved out of the repo: project files `shiptorio/evidence/web/test/evidence/deck-keyboard/desktop-1280-complete.png`)_ |
+| 390×844 | _before (screenshot moved out of the repo: project files `shiptorio/evidence/web/test/evidence/deck-keyboard/before/phone-390/01-settled.png`)_ | _after (screenshot moved out of the repo: project files `shiptorio/evidence/web/test/evidence/deck-keyboard/after/phone-390/01-settled.png`)_ | _focus (screenshot moved out of the repo: project files `shiptorio/evidence/web/test/evidence/deck-keyboard/phone-390-focus.png`)_ | _complete (screenshot moved out of the repo: project files `shiptorio/evidence/web/test/evidence/deck-keyboard/phone-390-complete.png`)_ |
+| 390×844 reduced motion | — | — | _focus (screenshot moved out of the repo: project files `shiptorio/evidence/web/test/evidence/deck-keyboard/phone-390-reduced-focus.png`)_ | _complete (screenshot moved out of the repo: project files `shiptorio/evidence/web/test/evidence/deck-keyboard/phone-390-reduced-complete.png`)_ |
 
 Before/after uses `ONLY=phone-390` / `ONLY=desktop-1280`, `BASE_URL=http://127.0.0.1:5258`, `DECK_PATH='/deck.html?source=attention-demo'`, and `node scripts/shots/deck.mjs <output>`. These are explicit sample issues, not live work. Phone generic shots use DPR 2 (780×1688 bitmap); keyboard proof uses DPR 1 at the same CSS size.
 

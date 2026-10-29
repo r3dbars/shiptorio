@@ -53,7 +53,7 @@ When you learn or decide something that will matter tomorrow, add it to the righ
 
 ## Evidence and history
 
-- [evidence/](evidence/): before/after shots attached to finished tasks.
+- Before/after screenshots live in project files (`shiptorio/evidence/<repo path>`), not in git. `.gitignore` blocks new ones.
 - [archive/](archive/README.md): retired docs (3D map era, old plans, one-off proofs). Not how things work today.
 
 No secrets in this folder, ever. Resource ids (D1, KV) aren't secrets.
