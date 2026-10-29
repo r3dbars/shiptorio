@@ -138,3 +138,7 @@ to reconcile its retained access state. Do not globally resume factories to test
 If a repository is still accessible, access restoration does not clear an independent
 admin pause. Testing remains a separate factory. A removed repository is archived on its
 next permitted wake; no coding job or PR merge is triggered by that reconciliation.
+
+An in-flight access lookup is tied to the installation's token generation. A signed
+restore or permission transition that arrives during the lookup invalidates its stale
+removal/suspension evidence, so it cannot re-pause newly restored access.

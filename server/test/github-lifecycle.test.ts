@@ -138,6 +138,8 @@ describe("GitHub lifecycle fixture payloads", () => {
     expect(obj.data.get("githubLifecycle").reason).toBe("GitHub installation suspended");
     await handleLifecycle(f.env, "installation", { ...payload, action: "created", repositories: [payload.repository] });
     expect(obj.alarm()).toBeNull();
+    await handleLifecycle(f.env, "installation", { ...payload, action: "new_permissions_accepted" });
+    expect(obj.alarm()).toBeNull();
     expect(await pausedForGitHubAccess(f.env.DB)).toBe(1);
     await handleLifecycle(f.env, "installation", { ...payload, action: "deleted" });
     const deadline = obj.alarm();

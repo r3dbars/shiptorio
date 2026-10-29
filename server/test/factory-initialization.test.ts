@@ -91,3 +91,13 @@ test("outages and credential failures stop this wake without archiving the repos
     expect(await DB.prepare("SELECT archived_at FROM repos WHERE full_name='owner/repo'").first()).toEqual({ archived_at: null });
   }
 });
+
+test("a signed access restoration during lookup invalidates stale removal evidence", async () => {
+  const { DB, env, meta } = await accessFixture();
+  const result = await reconcileFactoryGitHubAccess(env, meta, undefined, 10_000, async () => {
+    await DB.prepare("UPDATE installations SET token_version=token_version+1 WHERE id=40").run();
+    throw new GitHubError(404, "/repos/owner/repo/installation", "GET");
+  });
+  expect(result).toEqual({ stopped: false });
+  expect(await DB.prepare("SELECT archived_at FROM repos WHERE full_name='owner/repo'").first()).toEqual({ archived_at: null });
+});

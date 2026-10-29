@@ -3694,6 +3694,15 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       return;
     }
     try { await this.load(); } catch (error) { if (this.accountErased) return; throw error; }
+    if (this.meta) {
+      const access = await reconcileFactoryGitHubAccess(this.env, this.meta, await this.ctx.storage.get<number>("githubAccessCheckedAt"));
+      if (access.stopped) {
+        if (access.archivedAt !== undefined) await this.archiveGitHub(access.reason, access.archivedAt);
+        else await this.pauseGitHub(access.reason);
+        return;
+      }
+      if (access.checkedAt !== undefined) await this.accountPut("githubAccessCheckedAt", access.checkedAt);
+    }
     return inTrace({ requestId: crypto.randomUUID(), repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), async () => {
       try { await this.tick(); } catch (error) { report(error, "factory.alarm_failed"); throw error; }
     });
@@ -3704,15 +3713,6 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     this.batchingDecisions = true;
     try {
     await this.load();
-    if (this.meta) {
-      const access = await reconcileFactoryGitHubAccess(this.env, this.meta, await this.ctx.storage.get<number>("githubAccessCheckedAt"));
-      if (access.stopped) {
-        if (access.archivedAt !== undefined) await this.archiveGitHub(access.reason, access.archivedAt);
-        else await this.pauseGitHub(access.reason);
-        return;
-      }
-      if (access.checkedAt !== undefined) await this.accountPut("githubAccessCheckedAt", access.checkedAt);
-    }
     // Paused factories retain queued deliveries without spending provider calls.
     if (await adminPaused(this.env.DB,this.meta?.repo)) { await this.accountAlarm(Date.now()+TICK_MS); return; }
     await this.processDeliveries();

@@ -38,9 +38,9 @@ export async function reconcileFactoryGitHubAccess(
   now = Date.now(),
   lookup?: () => Promise<{ id: number; suspended_at?: string | null }>,
 ): Promise<AccessResult> {
-  const row = await env.DB.prepare(`SELECT r.archived_at, r.archive_reason, i.status FROM repos r
-    LEFT JOIN installations i ON i.id = r.installation_id WHERE r.full_name = ? AND r.installation_id = ?`)
-    .bind(meta.repo.toLowerCase(), meta.installationId).first<{ archived_at: number | null; archive_reason: string | null; status: string | null }>();
+  const row = await env.DB.prepare(`SELECT r.archived_at, r.archive_reason, i.status, i.token_version FROM repos r
+    LEFT JOIN installations i ON i.id = r.installation_id WHERE lower(r.full_name) = ? AND r.installation_id = ?`)
+    .bind(meta.repo.toLowerCase(), meta.installationId).first<{ archived_at: number | null; archive_reason: string | null; status: string | null; token_version: number }>();
   // Coordinator and local fixture objects have no repository row and do not run a factory.
   if (!row) return { stopped: false };
   if (row.archived_at != null) return { stopped: true, reason: row.archive_reason ?? ACCESS_LOST_REASON, archivedAt: row.archived_at };
@@ -58,8 +58,9 @@ export async function reconcileFactoryGitHubAccess(
     })());
     if (current.id !== meta.installationId) return lost(ACCESS_LOST_REASON);
     if (current.suspended_at) {
-      await env.DB.prepare("UPDATE installations SET status = 'suspended', token_version = token_version + 1 WHERE id = ?").bind(meta.installationId).run();
-      return { stopped: true, reason: "GitHub installation suspended" };
+      const changed = await env.DB.prepare("UPDATE installations SET status = 'suspended', token_version = token_version + 1 WHERE id = ? AND token_version = ?")
+        .bind(meta.installationId, row.token_version).run();
+      return changed.meta.changes ? { stopped: true, reason: "GitHub installation suspended" } : { stopped: false };
     }
     return { stopped: false, checkedAt: now };
   } catch (error) {
@@ -69,9 +70,15 @@ export async function reconcileFactoryGitHubAccess(
     throw error;
   }
   async function lost(reason: string): Promise<AccessResult> {
-    await env.DB.prepare("UPDATE repos SET archived_at = COALESCE(archived_at, ?), archive_reason = ? WHERE full_name = ? AND installation_id = ?")
-      .bind(now, reason, meta.repo.toLowerCase(), meta.installationId).run();
-    await env.DB.prepare("DELETE FROM user_repos WHERE repo = ? AND installation_id = ?").bind(meta.repo.toLowerCase(), meta.installationId).run();
-    return { stopped: true, reason, archivedAt: now };
+    // A signed restore/permission transition invalidates evidence obtained before it.
+    await env.DB.prepare(`UPDATE repos SET archived_at = ?, archive_reason = ? WHERE lower(full_name) = ?
+      AND installation_id = ? AND archived_at IS NULL
+      AND (SELECT token_version FROM installations WHERE id = ?) = ?`)
+      .bind(now, reason, meta.repo.toLowerCase(), meta.installationId, meta.installationId, row!.token_version).run();
+    const saved = await env.DB.prepare("SELECT archived_at, archive_reason FROM repos WHERE lower(full_name) = ? AND installation_id = ?")
+      .bind(meta.repo.toLowerCase(), meta.installationId).first<{ archived_at: number | null; archive_reason: string | null }>();
+    if (saved?.archived_at == null) return { stopped: false };
+    await env.DB.prepare("DELETE FROM user_repos WHERE lower(repo) = ? AND installation_id = ?").bind(meta.repo.toLowerCase(), meta.installationId).run();
+    return { stopped: true, reason: saved.archive_reason ?? reason, archivedAt: saved.archived_at };
   }
 }

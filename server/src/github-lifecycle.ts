@@ -93,7 +93,7 @@ export async function handleLifecycle(env: RepositoryEnv, event: string, p: GitH
   const stored = await env.DB.prepare("SELECT status FROM installations WHERE id = ?").bind(id).first<{ status: string }>();
   // A delayed add/created delivery cannot resurrect an explicitly stopped installation.
   if (stored?.status === "deleted" && p.action !== "deleted") return;
-  const status = p.action === "deleted" ? "deleted" : p.action === "suspend" || p.action === "created" && stored?.status === "suspended" ? "suspended" : "active";
+  const status = p.action === "deleted" ? "deleted" : p.action === "suspend" || p.action !== "unsuspend" && stored?.status === "suspended" ? "suspended" : "active";
   if (event === "installation") {
     if (!["created", "deleted", "suspend", "unsuspend", "new_permissions_accepted"].includes(p.action ?? "")) return;
     await env.DB.prepare("INSERT INTO installations (id, account_login, status, permissions, account_type) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET account_login = excluded.account_login, status = excluded.status, permissions = COALESCE(excluded.permissions, installations.permissions), account_type = COALESCE(excluded.account_type, installations.account_type)").bind(id, account?.login ?? "", status, p.installation?.permissions ? JSON.stringify(p.installation.permissions) : null, account?.type ?? null).run();
