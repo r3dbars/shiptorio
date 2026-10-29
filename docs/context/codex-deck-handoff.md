@@ -91,8 +91,8 @@ idea in your PR instead.
 
 ```
 node scripts/shots/deck.mjs /tmp/deck-shots                      # starts vite itself
-DECK_PATH='/deck.html?px=1&seed=1' node scripts/shots/deck.mjs /tmp/deck-shots
-CLIP=12 DECK_PATH='/deck.html?px=1&seed=1' node scripts/shots/deck.mjs /tmp/deck-shots   # + 12s clip
+DECK_PATH='/deck.html?seed=1' node scripts/shots/deck.mjs /tmp/deck-shots
+CLIP=12 DECK_PATH='/deck.html?seed=1' node scripts/shots/deck.mjs /tmp/deck-shots   # + 12s clip
 ```
 
 It saves `00-first`, `01-settled`, `02-full` and `report.json` per view (desktop-1440, desktop-1280, phone-390, and
