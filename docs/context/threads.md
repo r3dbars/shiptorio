@@ -4,6 +4,8 @@
 
 PR #598 (`codex/dev-deck-default`) makes authorized bare visits to shiptorio.dev open the approved pixel deck with the automatic Shippy watch loop. Explicit repo/onboarding links and production behavior stay unchanged; the existing access gate still runs first. Justin requested this as the staging default.
 
+- #66: exact duplicate Meta requests share only an in-flight result within the same run/account; later decisions are fresh. Duplicate triage/plan/review fixture: 10 → 5 calls, 1000 → 500 reported tokens, identical outputs; sequential happy-path savings are not claimed.
+
 ## Deck visual iteration (Codex, 2026-10-28)
 
 2026-10-29 · Codex #57 (`codex/shippy-calm`): stable floor anchors, one-shot reactions and still waiting poses; preserve purposeful work and charging, with no new moves.
