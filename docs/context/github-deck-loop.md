@@ -32,3 +32,21 @@ Justin, 2026-10-29: establish the physical conveyor behavior first, then connect
 - Validate single issue, several queued issues, outage/recovery, rejected checks/rework, permission loss, reconnect and duplicate webhook cases before declaring the real loop complete.
 
 The current `/deck.html?source=conveyor-demo` is an isolated visual prototype with a sample issue and PR. It performs no GitHub or Meta requests and never merges real code.
+
+## Milestone 1: real inbox and Codex connection
+
+The deck has Repo inbox and Codex engine entry buttons. Clicking Repo in live mode browses the same inbox; clicking the back-left boilers opens the engine card. A player without a selected repo chooses from their authenticated GitHub repositories first. The inbox reads open GitHub issues (not PRs), one bounded page at a time. It does not import tasks, invoke Meta, enqueue a worker or approve work.
+
+The engine uses the existing repo-scoped runner pairing/status endpoints. It distinguishes unpaired, offline, Codex sign-in needed, ready and busy. Generating a setup command requires a click; disconnect requires confirmation. Subscription sign-in stays local. A reachable runner with only Claude is not described as Codex-ready. Availability describes a worker slot, not an invented subscription quota.
+
+Player acceptance checklist:
+- Sign in, choose a GitHub repository, and compare two inbox titles/numbers with GitHub.
+- Refresh the inbox; no duplicates or jobs should appear. Empty repos should say they are empty.
+- Click the boilers or Codex engine. Copy and run setup locally, then sign in with `shiptorio-runner login codex`.
+- Return and check again: only an online runner advertising Codex should say ready.
+- Stop the runner: the card should report offline. Restart it and verify recovery.
+- Open Options, cancel disconnect, then confirm disconnect: cancellation changes nothing; confirmation revokes the pairing.
+
+Validation distinguishes API/controller fixtures from real account acceptance. Authenticated GitHub and local Codex checks require the player's sign-in and selected repository; the guest demo alone cannot prove them.
+
+The default staging entry now opens `/deck?source=live` and performs setup within the pixel deck instead of entering the simulator. Its disconnected backdrop is idle and contains no fake work. The guest account response reports whether GitHub sign-in is configured, so a missing staging App stays an explanatory card rather than sending the player to a broken login page. Explicit demo URLs remain available for visual iteration.

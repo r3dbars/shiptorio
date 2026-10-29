@@ -274,7 +274,7 @@ export async function gh<T>(path: string, token: string, init: RequestInit = {})
 
 interface InstallationTokenScope {
   repositories: string[];
-  permissions: { contents: "write"; metadata: "read" };
+  permissions: { contents: "write"; metadata: "read" } | { issues: "read"; metadata: "read" };
 }
 
 export async function installationToken(env: AppCredentials, installationId: number, scope?: InstallationTokenScope): Promise<string> {

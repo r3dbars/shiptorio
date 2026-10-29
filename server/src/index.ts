@@ -1,3 +1,4 @@
+import { issueInbox } from "./issue-inbox";
 import { privateSocketTiming, measureSocket } from "./private-socket-timing";
 import { configuredAdmin } from "./admin-policy";
 import { auditAdmin } from "./admin-control";
@@ -331,7 +332,7 @@ app.get("/auth/logout", async (c) => {
 });
 // The App's Setup URL: GitHub sends a player here after they install it. The install webhook has
 // already given them the repo, so send them back to the repo picker (new-user-path.md, snag 3).
-app.get("/github/installed", (c) => c.redirect("/?onboard=repo&source=live", 302));
+app.get("/github/installed", (c) => c.redirect(new URL(c.req.url).hostname === "shiptorio.dev" ? "/deck?source=live" : "/?onboard=repo&source=live", 302));
 app.post("/auth/owner-session", (c) => ownerSession(c.req.raw, c.env));
 app.get("/setup", (c) => setupPage(publicUrl(new URL(c.req.url), c.env), c.env));
 app.get("/setup/callback", (c) => setupCallback(new URL(c.req.url), c.env));
@@ -349,10 +350,10 @@ app.get("/api/me", async (c) => {
       await touchGuest(c.env, guest);
       c.header("Set-Cookie", await guestCookie(c.env, guest.id));
     }
-    return c.json({ login: null, guest: true, allowed: false, prefs: guest.save.prefs, installUrl: null });
+    return c.json({ login: null, guest: true, allowed: false, prefs: guest.save.prefs, installUrl: null, githubConfigured: !!(c.env.GITHUB_CLIENT_ID && c.env.GITHUB_CLIENT_SECRET) });
   }
   const view = await readAdminView(c.env,c.req.raw);
-  return c.json({ login: user.login, allowed: true, admin: configuredAdmin(c.env,user.login), viewingAs: view && {login:view.login,repo:view.repo,writable:view.writable}, prefs: await readPrefs(c.env, view ? {id:view.userId,login:view.login} : user), installUrl: await installUrl(c.env) });
+  return c.json({ login: user.login, allowed: true, githubConfigured: !!(c.env.GITHUB_CLIENT_ID && c.env.GITHUB_CLIENT_SECRET), admin: configuredAdmin(c.env,user.login), viewingAs: view && {login:view.login,repo:view.repo,writable:view.writable}, prefs: await readPrefs(c.env, view ? {id:view.userId,login:view.login} : user), installUrl: await installUrl(c.env) });
 });
 
 // Settings that follow the player across browsers (intro seen, guide progress, achievements).
@@ -690,6 +691,17 @@ app.on(["GET", "POST"], "/connect/:kind", async (c) => {
   return c.html(connectPage({ kind, repo, connected: true, webhookUrl, saved: true }));
 });
 
+// Same repository authorization as the factory; fetching the inbox never starts a job.
+app.get("/api/repos/:owner/:repo/issues", async c => {
+  const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
+  const page = Number(c.req.query("page") ?? 1);
+  if (!Number.isInteger(page) || page < 1 || page > 1000) return c.json({ error: "invalid page" }, 400);
+  const installationId = await installationFor(c.env, repo);
+  if (!installationId) return c.json({ error: "GitHub App is not connected to this repository" }, 403);
+  const token = await installationToken(c.env, installationId, { repositories: [c.req.param("repo")], permissions: { issues: "read", metadata: "read" } });
+  return c.json(await issueInbox(repo, token, page));
+});
+
 app.get("/api/repos", async (c) => {
   try {
     const user = await resolveUser(c.req.raw, c.env);
@@ -702,8 +714,8 @@ app.get("/api/repos", async (c) => {
       fullName: repo.full_name,
       blurb: repo.default_branch ? `Default branch: ${repo.default_branch}` : "Connected GitHub repository",
     })) });
-  } catch {
-    log("warn", "github.repositories_unavailable");
+  } catch (error) {
+    log("warn", "github.repositories_unavailable", { error });
     c.header("Retry-After", "5");
     return c.json({ error: "Could not load your repositories. Try again shortly.", code: "repository_discovery_unavailable" }, 503);
   }
@@ -1031,12 +1043,12 @@ app.all("/connect/*", (c) => c.notFound());
 
 // Everything else is the web app.
 app.all("*", async (c) => {
-  // Justin's staging entry point: open the approved pixel deck in hands-off watch mode.
+  // The staging product starts inside the pixel deck, including sign-in and repo selection.
   // Explicit factory/onboarding URLs keep their own route; the preview gate has already run.
   const url = new URL(c.req.url);
   if (["GET", "HEAD"].includes(c.req.method) && ["shiptorio.dev", "www.shiptorio.dev"].includes(url.hostname)
     && url.pathname === "/" && !url.search) {
-    return c.redirect("/deck?source=sim&scenario=deck-watch&watch=1", 302);
+    return c.redirect("/deck?source=live", 302);
   }
   const response = await c.env.ASSETS.fetch(c.req.raw);
   // Only trusted static art contains inline executable scripts. Never add nonces

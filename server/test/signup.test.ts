@@ -10,12 +10,12 @@ afterEach(()=>{globalThis.fetch=realFetch;});
 const env = () => ({FACTORY:unlimitedFactory,SIGNUP_GATE_MODE:'waitlist',DB:testD1(),SESSION_SECRET:'signup-test-secret',ALLOWED_LOGINS:'r3dbars',ADMIN_LOGINS:'r3dbars',TURNSTILE_SITE_KEY:'public-test',TURNSTILE_SECRET_KEY:'private-test',ASSETS:{fetch:async()=>new Response('factory app')}});
 const req=(path:string,cookie='',body?:Record<string,string>,origin='https://shiptorio.com')=>new Request('https://shiptorio.com'+path,{method:body?'POST':'GET',headers:{cookie,origin,'content-type':'application/x-www-form-urlencoded'},body:body?new URLSearchParams(body):undefined});
 
-test('staging opens the deck watch loop by default and preserves explicit routes and production',async()=>{
+test('staging opens the live deck setup by default and preserves explicit routes and production',async()=>{
   const e=env(),cookie=await signedInCookie(e,'r3dbars');
   for(const host of ['shiptorio.dev','www.shiptorio.dev']) {
     const response=await app.fetch(new Request(`https://${host}/`,{headers:{cookie}}),e as never);
     expect(response.status).toBe(302);
-    expect(response.headers.get('location')).toBe('/deck?source=sim&scenario=deck-watch&watch=1');
+    expect(response.headers.get('location')).toBe('/deck?source=live');
   }
   for(const url of ['https://shiptorio.com/','https://shiptorio.dev/?source=live&repo=owner/repo','https://shiptorio.dev/?onboard=repo','https://shiptorio.dev/deck']) {
     const response=await app.fetch(new Request(url,{headers:{cookie}}),e as never);

@@ -81,6 +81,8 @@ surface, on by default everywhere (`?px=0` still shows the old painted look; the
 threads and Codex iterate on this same deck, not on copies or variants. The rules for working on it are in
 [`docs/context/pixel-deck.md`](context/pixel-deck.md).
 
+**2026-10-29: The 2D deck is the actual product, including sign-in, repo selection and coding-agent connection. Bridge the existing backend and account flows into this UI; simplify duplicate entry points rather than building another frontend. Demos remain explicit previews, not the default product.**
+
 ## Current focus: a great player experience (Justin, 2026-10-27 10:50)
 
 "Focus less on the judges and just focus more on making this web app a great experience." The game itself is the
