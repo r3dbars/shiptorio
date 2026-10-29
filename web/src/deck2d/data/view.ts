@@ -184,7 +184,10 @@ export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckV
   // A launched crate stays in view only while it's the one being followed (its flight); after that the line is done with it.
   const active = flow ? candidates.find(it => it.id === opts.activeItemId) ?? candidates.find(it => it.id === focus?.itemId) ?? ongoing.sort((a, b) => b.updatedAt - a.updatedAt)[0] : undefined;
   const activeStop = active && workStop(s, active);
-  const relevant = focus?.itemId ? deck.filter(m => m.itemId === focus.itemId || isSetupCard(m)) : active ? deck.filter(m => m.itemId === active.id || isSetupCard(m)) : deck;
+  // Prefer the card for the focused (or followed) crate, but never hide a call that waits on the player.
+  const forItem = (id?: string) => id ? deck.filter(m => m.itemId === id || isSetupCard(m)) : [];
+  const scoped = forItem(focus?.itemId ?? active?.id);
+  const relevant = scoped.length ? scoped : deck;
   const move = (opts.selectedStop && pickCard(relevant.filter(m => cardStop(s, m) === opts.selectedStop))) || pickCard(relevant);
   // green means you handed it over (beat 4), so CI and AI review, which never asked you, stay plain working / idle
   const handed = handedStops(s);

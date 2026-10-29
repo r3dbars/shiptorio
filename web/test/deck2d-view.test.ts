@@ -446,3 +446,8 @@ test("a launched crate is followed through its flight, then the deck rests", () 
   expect(deckView(base({ items: [launched] }), { visualFlow: true, activeItemId: "gh-16" }).work?.stop).toBe("launch");
   expect(deckView(base({ items: [launched] }), { visualFlow: true, activeItemId: null }).work).toBeUndefined();
 });
+
+test("a focus on a crate with no card never hides the call that waits on the player", () => {
+  const s = base({ items: [item("gh-9", "working"), item("gh-16", "queued")], deck: [card("approve16", "approve_runner_job", { itemId: "gh-16" })], liveBottleneck: { stop: "builder", itemId: "gh-9", reason: "The coding engine is working on #9.", source: "spark" } });
+  expect(deckView(s, { visualFlow: true }).card?.id).toBe("approve16");
+});

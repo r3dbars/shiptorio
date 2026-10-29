@@ -1,8 +1,8 @@
-import type { Color } from "../deck2d/stations/palette";
-import { Px, shift } from "../deck2d/stations/px";
-import { BRASS, blotch, noise, tone, type Ramp } from "../deck2d/stations/shade";
+import type { Color } from "../stations/palette";
+import { Px, shift } from "../stations/px";
+import { BRASS, blotch, noise, tone, type Ramp } from "../stations/shade";
 
-// Bake-off, 2D side: the twin boiler (web/public/deck/art/boiler-on.webp) drawn 100% in code on the art grid.
+// The twin boiler (web/public/deck/art/boiler-on.webp) drawn 100% in code on the art grid.
 // The hard bits on purpose: two round tanks with domed shoulders, copper pipes that bend in real elbows, brass bands
 // with rivets that follow the curve, rust and grime on cool iron, fire windows with a glow, and big soft smoke.
 // Every pixel is a Black Iron 48 color (glows are the one light-layer exception, like the stations).
