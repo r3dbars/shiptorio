@@ -356,12 +356,16 @@ if (action === "retry") {
   const backoffs = new Map<string, Backoff>();
   const heartbeatBackoffs = new Map<string, Backoff>();
   let heartbeatBusy = false;
+  // The claim loop re-checks sign-ins right before every claim. While idle, the heartbeat reports
+  // that same result instead of spawning every provider's status CLI a second time each tick.
+  let authCheckedAt = 0;
   const refreshAuth = async () => {
     const next: Job["harness"][] = [];
     for (const h of available) {
       if (h === "local" ? await signedInHarness(h) : authFailures.ready(h, await signedInHarness(h), await subscriptionCredentialVersion(h, authHome))) { next.push(h); if (h !== "local") blocked.delete(h); }
       else if (h !== "local") blocked.add(h);
     }
+    authCheckedAt = Date.now();
     return next;
   };
   let ready = await refreshAuth();
@@ -374,7 +378,7 @@ if (action === "retry") {
     if (heartbeatBusy) return;
     heartbeatBusy = true;
     try {
-      ready = await refreshAuth();
+      if (Date.now() - authCheckedAt >= 5000) ready = await refreshAuth();
       for (const pair of await connections()) {
         if (connectionStopped(pair)) continue;
         const retry = heartbeatBackoffs.get(pair.repo) ?? new Backoff(); heartbeatBackoffs.set(pair.repo, retry);
