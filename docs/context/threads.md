@@ -64,6 +64,8 @@ Backend GitHub connection reliability: cancellation, missing setup, invalid prov
 
 ## Build the agent loop that picks the bottleneck (Claude, 2026-10-27)
 
+- 2026-10-29, Codex #69: removed the unreachable retired taps-report HTML, browser script and data queries. The authenticated redirects, live tap collection and all active signal/source/runner paths stay intact; audited the named server modules before deleting.
+
 - 2026-10-29, Codex #47: project the existing Meta brain pick onto one live station/item with plain copy and honest fallback; preserve cargo while transferring and yellow human decisions. PR #623.
 
 - Loop core of the bottleneck brain (docs/BRAIN.md): `server/src/diagnose.ts` (one bottleneck + one unlock per pass, memory of Later/Continue/wins, throttle: main-signal change or 30 min, 24 a day, stops at half the model budget, rule fallback), `server/src/unlocks.ts` (playbook by signal kind; actions are only `inspect_bottleneck`, `connect_source`, `ask_goal`, everything else is a link), `server/src/signals/index.ts` (collector registry, `bind()` for collectors with their own ctx, plus the `factory:*` collector over bottleneck.ts).
