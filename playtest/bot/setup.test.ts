@@ -94,4 +94,7 @@ test("preview login accepts the current deck and its automatic repo continuation
     expect(isFixtureDeckPage(new URL(url), "https://shiptorio.dev")).toBe(true);
   for (const url of ["https://evil.test/deck?source=live", "https://shiptorio.dev/?source=live", "https://shiptorio.dev/deck?source=sim"])
     expect(isFixtureDeckPage(new URL(url), "https://shiptorio.dev")).toBe(false);
+  expect(isFixtureDeckPage(new URL("http://localhost:8809/?source=live&onboard=repo"), "http://localhost:8809", true)).toBe(true);
+  expect(isFixtureDeckPage(new URL("https://shiptorio.dev/?source=live"), "https://shiptorio.dev", true)).toBe(false);
+  expect(isFixtureDeckPage(new URL("http://localhost:8809/?source=sim"), "http://localhost:8809", true)).toBe(false);
 });
