@@ -21,7 +21,7 @@ const ORB = HULL.orb;
 /** The twin boiler: in pixel mode it is drawn in code at full art size (bakeoff/boiler2d.ts), standing on the back
  * edge of the floor behind Repo and Planner; ?px=0 keeps the small boiler-on picture. */
 const BOILER = { x: DECK_DX ? 280 : 240, base: 182 };
-const BOUNDS = { x0: -20, x1: PAD.x + 1533 * PAD.s + 20, y0: -30, y1: DECK_DX ? 740 : 670 }; // pixel mode: the whole underside, lanterns and all
+const BOUNDS = { x0: -20, x1: PAD.x + 1533 * PAD.s + 20, y0: -30, y1: DECK_DX ? 800 : 670 }; // pixel mode: the whole underside, lanterns and all
 const SPEED = 170, GAP = 50, CRATE = 42;
 // pixel mode: the lever stands on the floor in front of Review (Shippy pulls it from review + 150, facing left)
 const LEVER = DECK_DX ? { x: STOP_X.review + 92, base: 312, h: 78 } : { x: STOP_X.review + 92, base: FLOOR_Y + 48, h: 78 };

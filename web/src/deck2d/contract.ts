@@ -150,8 +150,11 @@ export const STOP_X: Record<StopId, number> = DECK_DX
 export const LAUNCH_Y = 250; // the launch circle on the rocket island
 /** The large deck's hull in world units (pixel mode draws it in code, hull/). The floor runs back..front; the belt row
  * (BELT_Y) and the stations' feet sit in the front half, the back half is open floor for the boiler and props. The
- * front rail stays at y 318 so the bridge still meets the deck at its right end. */
-export const HULL = { x0: 0, x1: DECK_END, back: 40, front: 318, skirt: 390, bottom: 600, orb: { x: DECK_DX ? 1500 : 1043, y: 578 } } as const;
+ * pixel deck has a deeper front strip (front 350) so Shippy has floor to walk on in front of the belt, and its orb hangs
+ * clear below the rocks; the picture deck keeps its front rail at 318, where its bridge meets the deck. */
+export const HULL = DECK_DX
+  ? { x0: 0, x1: DECK_END, back: 40, front: 350, skirt: 422, bottom: 632, orb: { x: 1500, y: 660 } } as const
+  : { x0: 0, x1: DECK_END, back: 40, front: 318, skirt: 390, bottom: 600, orb: { x: 1043, y: 578 } } as const;
 /** Where things stand: a sprite's feet sit on this y at a stop (slightly in front of the belt). */
 export const FLOOR_Y = BELT_Y + 42;
 /** Drawn height of each station sprite (they come in at different scales) and how far below the belt its feet sit. */

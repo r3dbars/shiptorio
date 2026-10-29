@@ -20,7 +20,7 @@ export const A = {
   orb: { x: HULL.orb.x / ART_PX, y: HULL.orb.y / ART_PX },
 };
 /** The canvas starts TOP art px above y 0 (lanterns on the back rail) and is H tall (orb at the bottom). */
-export const TOP = 8, H = 160, PAD = 2;
+export const TOP = 20, H = 196, PAD = 2;
 
 /** Warm dark iron for the skirt and posts: the deck reads brown-black like the mockups, not blue. */
 const WARM: Ramp = ["soot", "iron-0", "iron-1", "iron-2", "plate-1", "iron-3", "iron-4"];
@@ -42,7 +42,7 @@ export const ventXs = (w: number) => [w - 98, w - 78];
 export const VENT_MOUTH = 106;
 
 // ---------- floor ----------
-const ROWS = [A.back, A.back + 7, A.back + 14, A.back + 21, A.back + 28, A.back + 35, A.front - 2];
+const ROWS = [...Array.from({ length: Math.floor((A.front - 2 - A.back) / 7) }, (_, i) => A.back + i * 7), A.front - 2];
 const PLATE = 15;
 /** Floor plates: tan-brown worn iron catching the sunset, thin dark seams, a rivet in each corner. */
 const DECKPLATE: Ramp = ["iron-0", "iron-1", "iron-2", "plate-1", "plate-2", "iron-4", "plate-4"];
@@ -237,7 +237,7 @@ function rocks(g: Px, w: number) {
 
 // ---------- the core orb ----------
 function orb(g: Px, w: number) {
-  const cx = Math.round(orbX(w)) + 0.5, cy = A.orb.y - 6, R = 20; // the engine frames the world down to y 670 (134 art px): the finial stays above that
+  const cx = Math.round(orbX(w)) + 0.5, cy = A.orb.y - 6, R = 20; // it hangs clear below the rocks; the engine frames pixel mode down to y 800 (160 art px)
   // the riser that holds it: copper with brass collars, from the skirt down through the rock
   cylV(g, cx - 3.5, A.skirt - 1, 7, cy - R - A.skirt + 2, CU, { amb: 0.15, gloss: 1.1 });
   for (const y of [A.skirt + 2, A.skirt + 10]) cylV(g, cx - 5.5, y, 11, 2, BRASS, { amb: 0.15, gloss: 1 });
