@@ -25,11 +25,15 @@ test('staging opens the live deck setup by default and preserves explicit routes
   }
   const install=await app.fetch(new Request('https://shiptorio.dev/github/installed',{headers:{cookie}}),e as never);
   expect(install.headers.get('location')).toBe('/deck?source=live');
-  for(const url of ['https://shiptorio.com/','https://shiptorio.com/?onboard=repo','https://shiptorio.com/?source=live&repo=owner/repo','https://shiptorio.dev/deck','https://shiptorio.dev/?source=sim&scenario=first-run']) {
+  // The old React app is gone: shiptorio.com's "/" (past the gate) and old demo links land on the deck as well.
+  for(const [url,target] of [['https://shiptorio.com/','/deck?source=live'],['https://shiptorio.com/?onboard=repo','/deck?source=live'],['https://shiptorio.com/?source=live&repo=owner/repo','/deck?source=live&repo=owner%2Frepo'],['https://shiptorio.dev/?source=sim&scenario=first-run','/deck?source=sim&scenario=first-run']]) {
     const response=await app.fetch(new Request(url,{headers:{cookie}}),e as never);
-    expect(response.status).toBe(200);
-    expect(await response.text()).toBe('factory app');
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe(target);
   }
+  const deck=await app.fetch(new Request('https://shiptorio.dev/deck',{headers:{cookie}}),e as never);
+  expect(deck.status).toBe(200);
+  expect(await deck.text()).toBe('factory app');
 });
 
 test('staging opens on the deck tutorial; its data stays behind the preview password gate',async()=>{
@@ -55,7 +59,7 @@ test('Justin approves pending user from /admin; pending cannot access assets, AP
   expect(approved.status).toBe(302);
   expect(approved.headers.get('location')).toBe('/admin');
   expect(await signupAllowed(e,'new-player')).toBe(true);
-  expect(await (await app.fetch(req('/',friend),e as never)).text()).toBe('factory app');
+  expect(await (await app.fetch(req('/deck',friend),e as never)).text()).toBe('factory app');
   expect((await app.fetch(req('/api/repos',friend),e as never)).status).toBe(200);
   expect((await app.fetch(req('/admin',admin,{action:'deny',identity:'new-player'},'https://evil.example'),e as never)).status).toBe(403);
   await app.fetch(req('/admin',admin,{action:'deny',identity:'new-player'}),e as never);

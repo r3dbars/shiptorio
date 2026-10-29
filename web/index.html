@@ -13,29 +13,14 @@
 <meta property="og:image" content="https://shiptorio.com/brand/og.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://shiptorio.com/brand/og.png">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Shiptorio</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<!-- the font CSS starts downloading now but only blocks what comes after its <link> in <body>,
-     so the boot splash paints first (the CSP has no inline handlers, so no media="print" trick) -->
-<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@500&display=swap">
-<style>
-  /* painted before any JS: the Black Iron boot plate (mark, wordmark, caution belt), replaced when React mounts */
-  html, body { margin: 0; height: 100%; background: #0b0806; }
-  .boot { position: fixed; inset: 0; display: grid; place-content: center; justify-items: center; gap: 18px; background: radial-gradient(ellipse at 50% 120%, #4a2412 0%, #1c120c 45%, #0b0806 75%); }
-  .boot svg, .boot img { display: block; image-rendering: auto; }
-  .boot .boot-mark { width: 64px; height: 64px; }
-  .boot img { width: min(594px, 86vw); height: auto; }
-  .boot i { display: block; width: 168px; height: 10px; border: 2px solid #000; background: repeating-linear-gradient(-45deg, #ffb020 0 6px, #140c02 6px 12px); background-size: 17px 10px; animation: boot 0.5s steps(3) infinite; }
-  @keyframes boot { to { background-position: 17px 0; } }
-  @media (prefers-reduced-motion: reduce) { .boot i { animation: none; } }
-</style>
+<!-- The game is the 2D deck (/deck). The server sends "/" there (server/src/redirect.ts deckFrontDoor); this page
+     only shows when it can't, e.g. the Vite dev server. -->
+<meta http-equiv="refresh" content="0; url=/deck">
+<style>html, body { margin: 0; height: 100%; background: #0b0806; color: #f2e6d0; font: 16px system-ui, sans-serif; } a { color: #ffb020; } p { margin: 40vh auto 0; text-align: center; }</style>
 </head>
 <body>
-<div id="root"><div class="boot"><img class="boot-mark" src="/brand/mark.svg?v=foundry-s3" width="64" height="64" alt=""><img src="/brand/wordmark.svg?v=foundry-o2" width="1085" height="240" alt="Shiptorio"><i></i></div></div>
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
-<script type="module" src="/src/main.tsx"></script>
+<p><a href="/deck">Open Shiptorio</a></p>
+<script type="module" src="/src/front-door.ts"></script>
 </body>
 </html>

@@ -6,12 +6,14 @@ export function sameOriginPath(next: string | null | undefined, origin: string):
   } catch { return "/"; }
 }
 
-// shiptorio.dev has one front door: the 2D deck. Bare visits, sign-in returns ("/" or an old "/?onboard=..."),
-// the old live map and ?px=0 all 302 there; nothing is deleted, so old links never 404. Explicit demos
-// (?source=sim, ?source=replay, ?scenario=), /judge and every other path keep their own URL. shiptorio.com is unchanged.
+// One front door: the 2D deck. The old React app is gone, so "/" always 302s there (after the access gate; on
+// shiptorio.com a visitor without access still gets the landing page first). Explicit demos (?source=sim,
+// ?source=replay, ?scenario=) keep their query on /deck; everything else lands on the live deck. ?px=0 is dropped.
+// DECK_HOSTS is where the deck is public without the password (access.ts isPublicDeck).
 export const DECK_HOSTS = new Set(["shiptorio.dev", "www.shiptorio.dev"]);
+// The old app's own switches; they mean nothing to the deck.
+const OLD_APP_KEYS = ["onboard", "tour", "world", "simple", "buildout", "artpass", "intro", "px", "connect"];
 export function deckFrontDoor(url: URL): string | null {
-  if (!DECK_HOSTS.has(url.hostname)) return null;
   const q = new URLSearchParams(url.search);
   if (url.pathname === "/deck" || url.pathname === "/deck.html") {
     if (q.get("px") !== "0") return null;
@@ -20,7 +22,10 @@ export function deckFrontDoor(url: URL): string | null {
   }
   if (url.pathname !== "/") return null;
   const source = q.get("source");
-  if (source ? source !== "live" : q.has("scenario")) return null;
+  if (source ? source !== "live" : q.has("scenario")) {
+    for (const key of OLD_APP_KEYS) q.delete(key);
+    return `/deck?${q}`;
+  }
   const repo = q.get("repo");
   return `/deck?source=live${repo ? `&repo=${encodeURIComponent(repo)}` : ""}`;
 }

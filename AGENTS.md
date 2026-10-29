@@ -27,8 +27,10 @@ end users, and more polished." No new features, screens or settings. Deleting be
 
 ## The deck is the product
 
-The 2D pixel deck (`web/deck.html` → `web/src/deck2d/`) is the game. It's the default on shiptorio.dev. The old 3D
-map, the shaft, the old web UI and the experiment pages are being deleted; don't build on them.
+The 2D pixel deck (`web/deck.html` → `web/src/deck2d/`) is the game and the only web app. The old React app (3D map,
+shaft, old UI, judge replay) was deleted on 2026-10-29: "/" and old demo links 302 to `/deck` on every host
+(`server/src/redirect.ts`), and `/judge` serves the deck's story with no password. The deck's shared code lives in
+`web/src/sim/` (simulator), `web/src/source/` (config, lazy connect, live socket, applyPatch) and `web/src/copy.ts`.
 
 The line, one name per station, everywhere (cards, captions, PR comments, logs, docs):
 

@@ -1,9 +1,9 @@
-// The sound of a build moment (web/src/buildout/CONTRACT.md, slice 9). Steam and iron, to match Justin's soundboard picks
+// The sound of a build moment (the old app's Build as you go, slice 9). Steam and iron, to match Justin's soundboard picks
 // (Crowbar, Ignite, Hammer, Gear engage, Ship's bell): ratchets and rivets while the piece goes up, a rising whine as power
 // comes down the cable, an electric crackle on the burst, then a thunk and a brass bell when the ONLINE plate stamps on.
 //
 // One build is about 7 seconds:  chalk 0-0.5s · construct 0.5-4.5s · burst 4.5-5.5s · payoff 5.5-7s
-// The scene fires shiptorio:build (BUILD_EVENT in buildout/journey.ts) with phase start, burst and done. Tapping to speed a build up just brings burst sooner,
+// The scene fires shiptorio:build (BUILD_EVENT in ./buildEvent.ts) with phase start, burst and done. Tapping to speed a build up just brings burst sooner,
 // so the construct layer is cancelled and the burst and payoff always play in full.
 //
 // Calm (sound/calm.ts, Justin's "casino floor" playtest): the build itself is a big moment and always plays. The taps
@@ -11,14 +11,14 @@
 // (each under ROUTINE_PEAK). Mute and volume follow the engine's settings. engine.ts is untouched: we only use its
 // public primitives, on a bus of our own.
 
-import { BUILD_MS, onBuild, type BuildDetail } from "../buildout/journey";
+import { BUILD_MS, onBuild, type BuildDetail } from "./buildEvent";
 import { sound } from "./engine";
 import { out, play, type Cue } from "../deck2d/sound/kit";
 
 // The kit itself (cues, recipes, play) moved to the deck: deck2d/sound/kit.ts.
 export * from "../deck2d/sound/kit";
 
-// Timeline, in seconds from start (BUILD_MS in web/src/buildout/journey.ts)
+// Timeline, in seconds from start (BUILD_MS in ./buildEvent.ts)
 export const CHALK_AT = 0;
 export const CONSTRUCT_FROM = BUILD_MS.chalk / 1000;
 export const CONSTRUCT_TO = BUILD_MS.construct / 1000;

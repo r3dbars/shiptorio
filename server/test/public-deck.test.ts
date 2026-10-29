@@ -19,11 +19,15 @@ test("a stranger on shiptorio.dev lands in the tutorial with no password", async
     expect(await response.text()).toBe(`asset ${path.split("?")[0]}`);
   }
   expect((await visit("/deck")).headers.get("cache-control")).toBe("no-store");
+  // Old demo links reach the same public deck, never the account routes.
+  const demo = await visit("/?source=sim&scenario=first-run");
+  expect(demo.status).toBe(302);
+  expect(demo.headers.get("location")).toBe("/deck?source=sim&scenario=first-run");
 });
 
 test("every real-account route on shiptorio.dev still needs the password", async () => {
   for (const path of ["/api/me", "/api/repos", "/api/repos/a/b/factory", "/api/repos/a/b/runner/status", "/auth/callback?code=x&state=y",
-    "/connect/a/b", "/admin", "/settings", "/setup", "/index.html", "/?source=sim", "/deck/art/../index.html", "/deck/art/x.js", "/deck/traces/x.json.map",
+    "/connect/a/b", "/admin", "/settings", "/setup", "/index.html", "/deck/art/../index.html", "/deck/art/x.js", "/deck/traces/x.json.map",
     "/deck/secret.html", "/sw.js"]) {
     expect((await visit(path)).status, path).toBe(401);
   }
@@ -39,5 +43,7 @@ test("the password unlocks the account routes exactly as before", async () => {
 });
 
 test("shiptorio.com keeps its landing page and gates the deck", async () => {
-  for (const path of ["/deck", "/deck?source=live", "/deck/art/sky.webp"]) expect((await visit(path, undefined, "shiptorio.com")).status, path).toBe(401);
+  for (const path of ["/deck", "/deck?source=live"]) expect((await visit(path, undefined, "shiptorio.com")).status, path).toBe(401);
+  // Only the deck's static art is public there, for /judge's story.
+  expect((await visit("/deck/art/sky.webp", undefined, "shiptorio.com")).status).toBe(200);
 });

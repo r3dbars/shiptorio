@@ -20,7 +20,7 @@ export function feature(name: string, search = globalThis.location?.search ?? ""
 /** The simple screen (thread "Simplify the whole game UI", 2026-10-28): one slow-spot line, one task tray that flies the
  * camera to each ask, and a quiet map with no labels. A preview feature: ?simple=1 / ?simple=0. */
 export const simpleOn = () => feature("simple");
-/** Build as you go (web/src/buildout/CONTRACT.md): the first run starts dark and empty, every piece built in front of
+/** Build as you go (the old app's Build as you go, retired 2026-10-29): the first run starts dark and empty, every piece built in front of
  * you. A preview feature (?buildout=1 / ?buildout=0), but the simple screen has no tour (docs/SIMPLE-UI.md, journey
  * pick 1: learn by doing), so it only plays with ?simple=0. */
 export const buildoutOn = () => feature("buildout") && !simpleOn();
@@ -33,7 +33,7 @@ export async function loadFeatureFlags(): Promise<void> {
   try {
     const response = await fetch("/api/flags", { signal: AbortSignal.timeout(2000) });
     if (!response.ok) return;
-    const flags = await response.json();
+    const flags = (await response.json()) as { attention?: unknown };
     if (typeof flags.attention === "boolean") attentionEnabled = flags.attention;
   } catch { /* Keep the simulator's existing welcome behavior when offline. */ }
 }

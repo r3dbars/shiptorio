@@ -23,9 +23,8 @@ web/test/a11y/out/
 server/wrangler.selfhost.json
 server/.selfhost/
 
-# Screenshots and evidence shots live in project files, not git (kept: web/public, docs/site/img, test fixtures, e2e baselines)
+# Screenshots and evidence shots live in project files, not git (kept: web/public, docs/site/img)
 *.png
 !web/public/**/*.png
 !docs/site/img/*.png
 
-!tests/e2e/baselines/**/*.png

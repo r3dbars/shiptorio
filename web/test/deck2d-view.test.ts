@@ -2,7 +2,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:te
 import type { FactoryState, Item, Move, ServerToWeb, WebToServer } from "@shiptorio/shared";
 import { STOPS, type DeckView } from "../src/deck2d/contract";
 import { connectSim } from "../src/sim/engine";
-import type { Source, SourceConfig } from "../src/source";
+import type { Source, SourceConfig } from "../src/source/config";
 import { createLiveSource } from "../src/deck2d/data/source";
 import { createWatchSource, isWatchMode } from "../src/deck2d/data/watch";
 import { loadSim } from "../src/source/connect";

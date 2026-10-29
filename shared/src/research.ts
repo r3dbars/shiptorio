@@ -8,7 +8,7 @@ import type { Belt, FactoryState, Item, Machine, Research, Science } from "./mod
 export interface Tech {
   id: string;
   name: string; // "Leftover sweeper"
-  icon: string; // a HUD pixel icon name (web/src/ui/icons.tsx)
+  icon: string; // a HUD pixel icon name (the old React HUD drew these)
   tier: 1 | 2 | 3;
   cost: number; // science packs
   needs: string[]; // every one of these first

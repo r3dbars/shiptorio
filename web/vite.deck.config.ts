@@ -34,7 +34,7 @@ export function preloadDeckModules(): Plugin {
 }
 
 // The 2D deck (web/deck.html -> src/deck2d/) builds on its own, after the main app, into the same dist/.
-// Separate so the main app's entry and chunking stay exactly as they are (scripts/bundle-budget.ts checks them).
+// Separate so the static pages (index.html, art, docs) keep their own build; scripts/bundle-budget.ts checks the deck.
 export default defineConfig({
   publicDir: false,
   plugins: [preloadDeckModules()],

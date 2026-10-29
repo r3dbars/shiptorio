@@ -16,7 +16,7 @@ import {
   type Cue,
   PAYOFF_AFTER,
 } from "../src/sound/build";
-import { BUILD_MS } from "../src/buildout/journey";
+import { BUILD_MS } from "../src/sound/buildEvent";
 
 test("construct taps stay sparse: inside the construct window, spaced out, capped", () => {
   const cues = constructCues();
