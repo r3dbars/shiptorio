@@ -219,7 +219,8 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
 
   // ---------- views -> motion + events ----------
   function take(v: DeckView, dt: number) {
-    const p = prev;
+    // Until the first snapshot nothing is known, so the first real view isn't news (no old rocket, no rebuild).
+    const p = (prev as DeckView & { loading?: boolean } | null)?.loading ? null : prev;
     if (v.card && v.card.id !== p?.card?.id) cam.manual = 0;
     for (const s of v.stops) {
       const was = p?.stops.find((x) => x.id === s.id);
