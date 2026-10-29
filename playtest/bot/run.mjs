@@ -7,7 +7,7 @@ import { safeReportFailure, safeReportValue } from "./safe-report.mjs";
 import { localFactory } from "./local.mjs";
 import { playerAction } from "./player-action.mjs";
 import { createLaunchTracker } from "./launch-tracker.mjs";
-import { botAdmissionPath, prepareBotPersona } from "./setup.mjs";
+import { botAdmissionPath, prepareBotPersona, deckFixtureIdentity, FIXTURE_INSTALL } from "./setup.mjs";
 const args = process.argv.slice(2).filter(x => x !== "--");
 const option = (key, fallback) => { const i = args.indexOf(key); return i < 0 ? fallback : args[i + 1]; };
 const persona = option("--persona", "test-newbie");
@@ -28,6 +28,15 @@ try {
     // The pixel deck animates every frame; under CI software GL that starves page.screenshot.
     const context = await browser.newContext({ viewport: { width, height: width === 390 ? 844 : 800 }, reducedMotion: "reduce" });
     if (fixture) await context.route("https://github.com/**", route => fixture.stub.browser(route));
+    else await context.route("https://github.com/**", async route => {
+      if (route.request().url() === FIXTURE_INSTALL) await route.fulfill({ status: 302, headers: { location: `${url.origin}/test/install` } });
+      else { failures.push("Unexpected GitHub navigation outside the isolated fixture"); await route.abort(); }
+    });
+    await context.route(`${url.origin}/api/me`, async route => {
+      const response = await route.fetch();
+      if (!response.ok()) { await route.fulfill({ response }); return; }
+      await route.fulfill({ response, json: deckFixtureIdentity(await response.json(), persona) });
+    });
     const page = await context.newPage();
     lastPage = page;
     page.setDefaultTimeout(60000);
@@ -51,12 +60,17 @@ try {
     const capture = async label => {
       const file = `${width}-${String(++number).padStart(2, "0")}-${label.replace(/[^a-z0-9-]+/gi, "-").slice(0, 60)}.png`;
       console.log(`Capture ${width}px: ${label}`);
+      await page.waitForLoadState("domcontentloaded");
+      if (new URL(page.url()).origin === url.origin && new URL(page.url()).pathname === "/deck") await page.locator('[data-deck-ready="1"]').waitFor({ timeout: 30000 });
       await page.screenshot({ path: join(out, file), timeout: 60000 }); steps.push({ width, label, file, url: page.url() });
     };
     await prepareBotPersona({ page, context, origin: url.origin, persona, local, width,
       password: local ? "isolated-bot-preview" : process.env.SHIPTORIO_TEST_PASSWORD });
     admitted = true;
     if (fixture) { console.log("Seeding isolated persona"); await fixture.seed(); console.log("Persona seeded"); }
+    // The product is the 2D deck. Never silently exercise the retired root UI.
+    await page.goto(`${url.origin}/deck?source=live`);
+    await page.locator('[data-deck-ready="1"]').waitFor({ timeout: 30000 });
     await capture("signed-in");
     const deadline = Date.now() + Number(option("--duration", "180")) * 1000;
     while (Date.now() < deadline) {
@@ -64,12 +78,14 @@ try {
       if (viewportLaunch.confirmed && inFactory()) { await capture("launch-confirmed-over-socket"); break; }
       const fingerprint = createHash("sha256").update(text).digest("hex");
       if (fingerprint !== previous) { previous = fingerprint; lastChange = Date.now(); }
+      if (Date.now() - lastChange > 60_000) { failures.push(`Stuck for 60 seconds at ${width}px: ${text.slice(0, 500)}`); await capture("stuck"); break; }
       const visible = async locator => (await locator.count()) && await locator.first().isVisible();
-      const launch = page.locator("button.alaunch");
-      const go = page.locator(".acard button.ago, button.ci-act.do");
-      const later = page.locator(".acard button.alater, button.ci-act.later");
+      const launch = page.locator(".ic-card:not(.ic-ghost).hold button.approve, button.alaunch");
+      const go = page.locator(".ic-card:not(.ic-ghost):not(.hold) button.approve, .acard button.ago, button.ci-act.do");
+      const later = page.locator(".ic-card:not(.ic-ghost) button.later, .acard button.alater, button.ci-act.later");
       const play = page.getByRole("button", { name: /^(Play|Skip|Enter the factory)$/i });
-      const repo = page.getByRole("button", { name: `test-fixture/${persona}` });
+      const repo = page.getByRole("button", { name: new RegExp(`^(Use this repo|test-fixture/${persona})$`) });
+      const installButton = page.getByRole("button", { name: "Install", exact: true });
       const install = page.getByRole("link", { name: /install shiptorio on a repo/i });
       const closeSheet = page.locator(".sheet").getByRole("button", { name: "Close", exact: true });
       const checkin = page.getByRole("button", { name: /^Check in/i });
@@ -77,11 +93,27 @@ try {
       let stuck = false;
       const completed = await playerAction(async () => {
       if (await visible(launch)) {
-        await launch.first().focus(); await page.keyboard.down("Space"); await page.waitForTimeout(1000); await page.keyboard.up("Space"); await capture("held-launch");
+        await launch.first().focus(); await page.keyboard.down("Space");
+        try { await launch.first().waitFor({ state: "hidden", timeout: 10000 }); }
+        finally { await page.keyboard.up("Space"); }
+        await capture("held-launch");
+      } else if (await visible(installButton)) {
+        const target = new URL(page.url());
+        if (!(target.origin === url.origin && target.pathname === "/test/install") && !(local && target.origin === "https://github.com")) throw new Error("Refusing non-fixture install target");
+        await installButton.click();
+        await page.waitForURL(current => current.origin === url.origin, { timeout: 30000 });
+        await page.goto(`${url.origin}/deck?source=live`);
+        await page.locator('[data-deck-ready="1"]').waitFor({ timeout: 30000 });
+        await capture("installed-fixture");
+      } else if (await visible(go) && /^Connect GitHub/.test(await go.first().innerText())) {
+        await Promise.all([page.waitForURL(current => current.origin === "https://github.com", { timeout: 30000 }), go.first().click()]);
+        await capture("github-install");
       } else if (await visible(play)) { await play.first().click(); await capture("play"); }
       else if (await visible(repo)) {
         if (fixture) await fixture.startRunner((await context.cookies()).map(c => `${c.name}=${c.value}`).join("; "));
-        await repo.first().click(); await capture("open-repo");
+        await Promise.all([page.waitForURL(current => current.searchParams.get("repo") === `test-fixture/${persona}`, { timeout: 30000 }), repo.first().click()]);
+        await page.locator('[data-deck-ready="1"]').waitFor({ timeout: 30000 });
+        await capture("open-repo");
         await page.keyboard.press("Escape");
       }
       else if (await visible(install)) {
@@ -100,7 +132,10 @@ try {
       }, inFactory() ? launchConfirmed : noFactoryReceipt);
       if (completed) { await capture("launch-confirmed-over-socket"); break; }
       if (stuck) break;
-      await page.waitForTimeout(1000);
+      // Wake on a real UI state change, with a bounded polling deadline for long jobs.
+      await page.waitForFunction(before => document.body.innerText !== before, text, { timeout: 5000 }).catch(error => {
+        if (error.name !== "TimeoutError") throw error;
+      });
     }
     if (persona === "test-newbie" && !viewportLaunch.confirmed) failures.push(`No confirmed Launch receipt at ${width}px`);
     await capture("final"); await context.close();

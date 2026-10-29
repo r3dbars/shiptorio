@@ -35,3 +35,11 @@ export async function prepareBotPersona({ page, context, origin, persona, local,
   if (!reset.ok) throw new Error(`Isolated staging reset unavailable: HTTP ${reset.status}`);
   await page.goto(loginUrl);
 }
+
+// The isolated test gateway exposes /test/install, while the real deck deliberately
+// accepts only GitHub App URLs. Model that provider redirect in the browser fixture.
+export const FIXTURE_INSTALL = 'https://github.com/apps/shiptorio-stub/installations/new';
+export function deckFixtureIdentity(identity, persona) {
+  return identity?.login === persona && /^test-(newbie|guest|midgame|broke|blocked)$/.test(persona) && identity.installUrl === '/test/install'
+    ? { ...identity, installUrl: FIXTURE_INSTALL } : identity;
+}

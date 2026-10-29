@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { botAdmissionPath, prepareBotPersona } from "./setup.mjs";
+import { botAdmissionPath, prepareBotPersona, deckFixtureIdentity, FIXTURE_INSTALL } from "./setup.mjs";
 
 function harness(options: { gated?: boolean; wrongPassword?: boolean; loginStatus?: number; resetStatuses?: number[] } = {}) {
   const events: string[] = [];
@@ -73,4 +73,10 @@ test("local, guest and second-width flows retain ordinary browser login without 
     expect(h.events).toEqual(["page:/test/login", "game-mounted", "page:/test/login", "game-mounted"]);
     expect(h.events).not.toContain("api-reset");
   }
+});
+
+
+test("deck provider fixture adapts only its own relative install URL", () => {
+  expect(deckFixtureIdentity({ login: "test-newbie", installUrl: "/test/install" }, "test-newbie")).toEqual({ login: "test-newbie", installUrl: FIXTURE_INSTALL });
+  for (const identity of [{ login: "real-user", installUrl: "/test/install" }, { login: "test-newbie", installUrl: "https://github.com/apps/real/installations/new" }]) expect(deckFixtureIdentity(identity, "test-newbie")).toBe(identity);
 });
