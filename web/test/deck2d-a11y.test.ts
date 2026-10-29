@@ -51,3 +51,7 @@ test('Enter retains the real hold threshold; short key presses and Escape cannot
   f.key('Enter');await wait(40);f.key('Escape');await wait(HOLD_MS+30);expect(f.answers).toEqual(['later:ship-short']);
   f.show(card('ship-held',true));f.key('Enter');await wait(HOLD_MS+50);f.key('Enter','keyup');expect(f.answers).toEqual(['later:ship-short','yes:ship-held']);f.destroy();
 });
+test('a stray Enter outside the card cannot approve it (Start build dispatches Codex)',()=>{
+  const f=fixture();f.show(card('stray'));f.canvas.focus();f.key('Enter');expect(f.answers).toEqual([]);
+  (f.host.querySelector('[role="group"]') as HTMLElement).focus();f.key('Enter');expect(f.answers).toEqual(['yes:stray']);f.destroy();
+});

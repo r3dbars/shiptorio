@@ -32,7 +32,8 @@ export function wireDeckAccessibility(canvas: HTMLCanvasElement, host: HTMLEleme
     if (!face) return;
     if (e.key === "Escape") {
       e.preventDefault(); face.querySelector<HTMLButtonElement>(".later")?.click();
-    } else if (e.key === "Enter" && !e.repeat && !target?.closest("button,a")) {
+    } else if (e.key === "Enter" && !e.repeat && target && face.contains(target) && !target.closest("button,a")) {
+      // Only when the card has focus: a stray Enter elsewhere must not start a Codex build.
       e.preventDefault();
       const primary = face.querySelector<HTMLButtonElement>(".approve");
       if (!primary) return;
