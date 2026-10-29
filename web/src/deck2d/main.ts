@@ -116,15 +116,16 @@ const seed = Number(params.get("seed")) || 0;
   const [story, data, shippyMod, cardMod, juiceMod] = await Promise.all([
     load("story", "createStory"), load("data", "createLiveSource"), load("shippy", "createShippy"), load("card", "mountCard"), load("juice", "attachJuice")]);
 
+  const want = params.get("source");
+  const signedIn = want === "live" && await deckSignedIn();
+  const connectionToolsVisible = showConnectionTools(location.search, signedIn);
+
   const connections = createConnections({
-    repo: params.get("repo") || undefined, origin: location.origin, path: location.pathname + location.search,
+    repo: signedIn ? params.get("repo") || undefined : undefined, origin: location.origin, path: location.pathname + location.search,
     navigate: url => { location.href = url; }, copy: text => navigator.clipboard.writeText(text),
     onStart: id => (source as DeckSource & { focusItem?: (id: string) => void }).focusItem?.(id),
   });
   let source: DeckSource;
-  const want = params.get("source");
-  const signedIn = want === "live" && await deckSignedIn();
-  const connectionToolsVisible = showConnectionTools(location.search, signedIn);
   const rehearsal = want === "shippy-demo" ? createShippyRehearsal() : null;
   const machines = want === "machine-demo" ? createMachineRehearsal() : null;
   const conveyor = want === "conveyor-demo" ? createConveyorDemo() : null;

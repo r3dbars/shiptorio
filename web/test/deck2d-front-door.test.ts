@@ -18,6 +18,7 @@ test('connection chips require live mode, a signed-in player and a valid repo', 
     expect(showConnectionTools(search, true)).toBe(false);
   }
   expect(showConnectionTools('?source=live&repo=player/factory', false)).toBe(false);
+  expect(showConnectionTools('?source=live&repo=player/factory&onboard=codex', false)).toBe(false);
 });
 
 test('a stranger plays every story decision before the existing sign-in card opens once', async () => {
