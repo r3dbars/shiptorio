@@ -28,10 +28,10 @@ body { -webkit-tap-highlight-color: transparent; overscroll-behavior: none; user
 
 .toast {
   position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
-  margin: 0; font-size: 14px; color: var(--ink); text-shadow: 0 2px 0 #000; opacity: 0; transition: opacity .4s; pointer-events: none; white-space: nowrap;
+  margin: 0; font-size: 14px; color: var(--ink); text-shadow: 0 2px 0 #000; opacity: 0; transition: opacity .4s; pointer-events: none;
+  width: calc(100% - 24px); max-width: 560px; text-align: center; /* live captions name the PR and station, so they wrap */
 }
 .toast.on { opacity: 1; }
-.shippy-rehearsal .toast, .factory-watch .toast, .machine-rehearsal .toast { width: calc(100% - 24px); max-width: 560px; white-space: normal; text-align: center; }
 .machine-tools { position: fixed; top: 12px; left: 12px; right: 12px; z-index: 20; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .machine-tools button, .machine-tools select { font: inherit; font-size: 11px; padding: 8px; color: #fdec9a; background: #121e2b; border: 2px solid #a36915; cursor: pointer; }
 .machine-tools label { font-size: 11px; color: #eed3c5; }
@@ -39,22 +39,14 @@ body { -webkit-tap-highlight-color: transparent; overscroll-behavior: none; user
 .machine-tools button:focus-visible, .machine-tools select:focus-visible { outline: 2px solid #bcf6f6; outline-offset: 2px; }
 .machine-rehearsal .zoom { top: auto; bottom: 100px; }
 
-/* Entry points stay available when the camera is away from Repo and the boilers. */
-.connection-tools { top: auto; bottom: 8px; left: 8px; right: auto; z-index: 12; }
-body:has(.ic-card) .connection-tools { bottom: auto; top: 54px; }
-body.deck-replay .connection-tools { display: none; }
-
 .ic-card[data-card^="connection-"] { max-height: calc(100dvh - 130px); overflow-y: auto; }
 
-/* The caption sits above the bottom-left entry buttons so long captions never run under them. */
-body:has(.connection-tools) .toast { bottom: calc(60px + env(safe-area-inset-bottom, 0px)); }
 /* Demo controls own the top-left row; "See all" tucks under it on the right instead of drifting over the clouds. */
 .machine-rehearsal .zoom { top: calc(62px + env(safe-area-inset-top, 0px)); bottom: auto; }
-body:has(.connection-tools) .toast { width: calc(100% - 24px); max-width: 560px; white-space: normal; text-align: center; }
 
 /* Desktop: the caption is the one line that tells the story, so it reads at a glance from across the room. Silkscreen
    is drawn on an 8px grid, so 24px keeps it crisp (3x). Phones keep the 14px line above. */
 @media (min-width: 900px) and (min-height: 560px) {
   .toast { font-size: 24px; text-shadow: 0 3px 0 #000; }
-  body:has(.connection-tools) .toast, .shippy-rehearsal .toast, .factory-watch .toast, .machine-rehearsal .toast { max-width: 960px; }
+  .toast { max-width: 960px; }
 }
