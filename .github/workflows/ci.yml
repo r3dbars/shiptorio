@@ -104,7 +104,8 @@ jobs:
     runs-on: ubuntu-latest
     # Split each viewport's files across two jobs as browser coverage grows.
     # Existing per-test and individual assertion deadlines remain unchanged.
-    timeout-minutes: 18
+    # Shard 1 of each viewport carries the slow files (buildout, floors, journey) and ran past 18 minutes.
+    timeout-minutes: 30
     # Playwright keeps each file's serial fixture intact within its shard.
     strategy:
       fail-fast: false
