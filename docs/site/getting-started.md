@@ -1,69 +1,47 @@
 ---
 title: Getting started
-description: Play the sandbox, then set up a real factory on your own repo in four steps.
+description: Play the tutorial, then create your own factory on a real repo.
 section: Start here
 order: 2
 ---
 # Getting started
 
-There are two ways in. The **sandbox** is a full factory running on sample data in your browser. A **live factory** runs on one of your real GitHub repos and ships real pull requests.
+There are two parts. The **tutorial** plays on sample work in your browser and touches nothing real. **Your own factory** runs on one of your GitHub repos and ships real pull requests.
 
-## Play the sandbox first
+## Play the tutorial
 
-Open [shiptorio.com/?source=sim](/?source=sim). It needs no GitHub sign-in, but during the private preview the whole app, sandbox included, is behind the preview gate (password or waitlist). Nothing touches GitHub. Everything you see (ore, machines, the gauntlet, rockets) is simulated, but it's the same UI the live game uses.
+Open [shiptorio.dev](https://shiptorio.dev). Shippy shows you the deck: one line from your repo to the rocket, with one crate waiting on your call.
 
-![The sandbox factory](/docs/img/map.png)
+- A card shows up at the bottom. **Swipe right** (or tap the right button) to approve. **Swipe left** for Later.
+- The crate moves down the line. Watch the stations light up.
+- Approve the same kind of fix three times. The dots on the card fill up, and the fourth one goes through on its own. That's the point: you teach the factory, then it's free to work while you deal with the next jam.
 
-A few sandbox scenarios are worth a look. Add them to the URL:
+Nothing in the tutorial is real work. No GitHub, no agents, no merges.
 
-| Scenario | URL | What it shows |
-| --- | --- | --- |
-| Quiet morning | `?source=sim&scenario=quiet-morning` | A normal day. The default |
-| First run | `?source=sim&scenario=first-run` | The guided first factory, one lesson at a time |
-| Rework loop | `?source=sim&scenario=rework-loop` | PRs failing checks and riding the rework belt |
-| Heal | `?source=sim&scenario=heal` | A checkout crash going from Sentry error to fix to rocket |
-| Research | `?source=sim&scenario=research` | Science packs to spend, with a suggested check |
-| Orbit | `?source=sim&scenario=orbit` | A launch tripping orbit watch |
-| Check-in | `?source=sim&scenario=checkin` | A full deck of cards to swipe |
-| Mines | `?source=sim&scenario=mines` | Sentry and PostHog mines feeding ore |
+During the private preview the whole app, tutorial included, is still behind the preview gate. That's changing: the tutorial will be open to everyone, and the password will only come up at the next step.
 
-Add `&autolaunch` to let PRs on the pad merge themselves, which is handy if you just want to watch.
+## Create your own factory
 
-## The welcome tour
+When the tutorial ends, Shippy offers to build yours.
 
-The first time you open Shiptorio, an eight-beat tour plays on a sample island. It shows you the idea by doing: you ship a checked PR, hand a whole kind of work off to the factory, watch the bottleneck move, and connect a new mine. You can skip it any time. To watch it again, open [shiptorio.com/?intro=1](/?intro=1).
+1. **Enter the preview password.** Real repos are locked to people with the password while we're in preview.
+2. **Sign in with GitHub.** Shiptorio only uses your GitHub identity. See [Install the GitHub App](/docs/github-app).
+3. **Pick a repo.** Install the Shiptorio GitHub App on just that repo. Your open issues show up in the Repo pile.
+4. **Connect your coding agent.** Install the local runner and sign in to Codex or Claude Code on your own machine. See [Connect your machine](/docs/runner).
+5. **Start an issue.** Pick one from the pile. The Planner proposes a plan; you approve **Start build**; your agent builds it and opens a PR; Checks and Review run; you hold **Ship it** at the Gate.
 
-## Set up a live factory
+That's your first real rocket.
 
-1. **Sign in with GitHub.** On the first screen, hit **Sign in with GitHub**. Shiptorio only uses your GitHub identity. No passwords.
-2. **Pick a repo.** You'll see every repo the Shiptorio GitHub App is installed on and that you can reach. Not there? [Install the GitHub App](/docs/github-app) on it, then refresh.
-3. **Watch the island rise.** Shiptorio reads the repo tree into districts and loads up to 50 open issues as ore. Spark sorts them.
-4. **Plug in power.** Nothing gets built until one of your AI subscriptions is connected through the local runner. See [Connect your machine](/docs/runner).
+## Keyboard
 
-Your live map lives at `https://shiptorio.com/?source=live&repo=owner/name`.
+- **Enter** on a card approves it (hold Enter on **Ship it**). **Escape** chooses Later.
+- **M** mutes sound.
 
-## What you'll see on the map
+## Try it locally
 
-- **The island** is your repo. Each top-level folder is a district.
-- **Mines** on the left produce ore: issues, Sentry errors, PostHog drops.
-- **The line** runs ore through Spark's planner, your assemblers, then the gauntlet stations.
-- **The launch pad** holds PRs that passed. A merge launches the rocket.
-- **The Needs you card** at the bottom always shows the one thing waiting on you: Later on the left, Continue on the right. To launch a PR, hold its big red button until the ring fills. See [Needs you and check-in](/docs/check-in).
+```sh
+bun install
+bun run dev:web
+```
 
-Tap any station on the map to see what it does, what's waiting there and what it caught this week.
-
-## Next steps
-
-- Learn the [gauntlet](/docs/gauntlet), since that's where most of the game happens.
-- Learn the [check-in deck](/docs/check-in), the fast way to clear everything waiting on you.
-- Read the [FAQ](/docs/faq) if something looks off.
-
-## Sound and music
-
-The foundry soundtrack plays by default after your first click or keypress. It builds
-with the factory, adds pressure when work is blocked, and resolves when a rocket launches.
-Open **Activity → Settings** to turn music off or adjust its own volume separately from
-other sounds. Your choices are saved in this browser. Press **M** to mute all sound.
-
-For comparison, add `music=1` to the URL to hear the older score. The `music=2` option
-still selects the new soundtrack, but is no longer needed.
+Then open `http://localhost:5173/deck.html` for the tutorial, or add `?source=sim` for a sample factory that keeps going.

@@ -67,7 +67,7 @@ Everything from c7257d2 (11:27 AM CT) onward was built during the event.
 Nothing was carried over from an earlier project.
 
 The north star is [docs/VISION.md](docs/VISION.md). The stack is Cloudflare (Workers, Durable Objects, D1, KV).
-`PLAN.md` and `docs/ARCHITECTURE.md` are from the first day and describe an older design.
+The day-one plan and the old 3D map design are archived in `docs/context/archive/`.
 
 ## Run it
 
@@ -99,12 +99,8 @@ bun run typecheck
 
 ## Original game music
 
-The composed foundry theme plays by default. Use `?music=1` to compare the older score;
-`?music=2` links still select the foundry theme.
-Music starts after a gesture; its switch and separate volume are in Settings.
-“Up from the Mine”, its original synthesized instruments and generated audio are
-[CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/); see
-[the music inventory](web/public/music/LICENSES.md). There are no sampled audio assets.
+All music and sound is original and synthesized in code. There are no sampled audio files. The music is
+[CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/); see [the music inventory](web/public/music/LICENSES.md).
 
 ## License
 

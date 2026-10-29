@@ -1,3 +1,5 @@
+> Archived 2026-10-29: from the 3D map era (day one plan, island map, build mode). Not how Shiptorio works today; see [docs/VISION.md](../../../VISION.md).
+
 # Muse Code lane: demo app and sprites
 
 Read `AGENTS.md` and `PLAN.md` first.

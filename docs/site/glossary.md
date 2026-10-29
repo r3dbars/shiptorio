@@ -12,39 +12,31 @@ Every station has one name, and the game uses it everywhere: on the deck, on car
 
 | Station | What happens there |
 | --- | --- |
-| **Repo** | Your GitHub issues wait here |
+| **Repo** | Your open GitHub issues wait here |
 | **Planner** | Spark reads an issue and writes a plan |
 | **Builder** | Your agent (Codex or Claude Code) builds the change and opens a PR |
-| **Checks** | The CI check, the proof check and any researched checks run on the PR |
-| **Review** | Spark reviews the diff, from a different model family than the builder |
+| **Checks** | The CI check and the proof check run on the PR |
+| **Review** | Spark reviews the diff |
 | **Gate** | You decide: hold Ship it to merge |
 | **Launch** | The merge lands and the rocket goes up |
+
+More: [The line](/docs/the-line).
 
 ## Other words
 
 | Game word | Real thing |
 | --- | --- |
 | **Factory** | One GitHub repo |
-| **Island**, **district** | The repo, and its top-level folders |
-| **Ore** | A piece of work: a GitHub issue, a Sentry error, a PostHog drop |
-| **Mine** | A source of ore. See [Mines](/docs/sources) |
-| **Biter** | A Sentry error swarming a district |
-| **Spark** | Meta Muse Spark, the model that sorts, plans, reviews and picks your next card. See [How Spark decides](/docs/spark) |
-| **Power plant** | A signed-in agent subscription on your machine. See [Connect your machine](/docs/runner) |
-| **Gauntlet** | The checks every PR runs. See [The gauntlet](/docs/gauntlet) |
-| **Station** | One stop on the line: Repo, Planner, Builder, Checks, Review, Gate or Launch |
-| **Rework belt** | Where failed PRs go back, with a scar tag |
-| **Scar tag** | Which station failed a PR, why, the evidence, and the strike number |
+| **Deck** | The floating platform the line sits on. It's the whole game screen |
+| **Crate** | One piece of work: an issue, and later its PR |
+| **Shippy** | The robot on the deck. It parks on whatever is waiting on you |
+| **Spark** | Meta Muse Spark, Shippy's brain. It plans, reviews and picks your next card. See [Shippy's brain](/docs/spark) |
+| **Card** | The one decision waiting on you, at the bottom of the screen. Right approves, left is Later |
+| **Ship it** | The Gate card's button. Hold it to merge |
+| **Dots** | The trust meter on a card. Three approvals of the same kind and it's automatic. See [Trust](/docs/trust) |
+| **Automatic** | A step the factory now does without a card. Its station is green |
+| **Jam** | Where work is stuck. The only thing on the deck that pulses |
+| **Bottleneck** | The station with the most work waiting the longest |
 | **Rocket** | A merged PR |
-| **Orbit watch** | The 24 hours after a merge. See [Orbit watch](/docs/orbit-watch) |
-| **Science pack** | One shipped PR, spent on research |
-| **Research** | New checks that run on every PR. See [Research](/docs/research) |
-| **Lane** | The part of the repo a PR touches: docs, or one top-level folder |
-| **Clean ship** | A PR that passed every station the first time and merged through the game |
-| **Launch permit** | A lane's right to merge clean PRs on its own. See [Launch permits](/docs/permits) |
-| **Automated %** | Rockets launched on a permit, over all rockets |
-| **Bottleneck** | The stage with the most value waiting the longest |
-| **Needs you card** | The one card waiting on you at the bottom of the map: Later on the left, Continue on the right, hold the red button to launch |
-| **Check-in** | A deck of up to 12 cards you swipe through. See [Needs you and check-in](/docs/check-in) |
-| **Escaped defect** | A launched PR that came back: a Sentry comeback, a revert, or red on main |
-| **Ship Score** | Users unblocked + 10 × customers answered + rockets, minus 25 × escaped defects |
+| **Runner** | The small program on your machine that runs your coding agent. See [Connect your machine](/docs/runner) |
+| **Tutorial** | The short story a newcomer plays on sample work before connecting anything |

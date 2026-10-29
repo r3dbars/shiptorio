@@ -132,6 +132,8 @@ and names.
 
 ## Older docs
 
-`PLAN.md`, `docs/ARCHITECTURE.md`, `docs/ART.md`, `docs/LOOP.md`, `docs/GAMEPLAY*.md`, `briefs/` and the HTML art
-prototypes in `docs/` describe the 3D map era. Read them for background only; this file and the docs above win.
+`docs/PRODUCT.md`, `docs/LOOP.md`, `docs/ART.md`, `docs/GAMEPLAY*.md`, `docs/ATTENTION.md`, `docs/SIMPLE-UI.md`
+and the HTML art prototypes in `docs/` describe the 3D map era (each carries a banner). The day-one plan,
+architecture, build mode and lane briefs moved to `docs/context/archive/`. Read them for background only; this
+file and the docs above win.
 The public docs site is `docs/site/*.md` (served at /docs); keep it true when you change player-facing behavior.

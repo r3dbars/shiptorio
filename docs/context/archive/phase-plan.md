@@ -1,3 +1,5 @@
+> Archived 2026-10-29: from the 3D map era (day one plan, island map, build mode). Not how Shiptorio works today; see [docs/VISION.md](../../VISION.md).
+
 # Shiptorio build plan
 
 > **Stack update (Oct 26):** we host on Cloudflare (Workers, Durable Objects, D1, KV), not Fly.io and Neon.
