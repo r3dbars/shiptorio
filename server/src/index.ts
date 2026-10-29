@@ -36,7 +36,6 @@ import { Factory, type FactoryEnv } from "./factory";
 import { appJwt, gh, registerGithubCredential, repoInstallationId } from "./github";
 import { currentUser, MAX_PROGRESS_BYTES, readPrefs, readProgress, reposFor, writePrefs, writeProgress, type User } from "./accounts";
 
-import { isAllowed } from "./session";
 import { isJudgeAsset, isPublicDocs, previewAccess, publicRoute, secureTransport, selfhostSetupAccess } from "./access";
 import { deckFrontDoor } from "./redirect";
 import { joinWaitlist } from "./waitlist";
@@ -1029,7 +1028,7 @@ app.post("/webhooks/support/:owner/:repo/:token", async (c) => {
   try { payload = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
   const message = normalizeEmail(payload);
   if (!message) return c.json({ ok: true, ignored: true, reason: "no sender or text" });
-  return queueSupport(c, repo, message, body);
+  return queueSupport(c, repo, message);
 });
 
 // Intercom: /webhooks/intercom/<owner>/<repo>, signed with that map's client secret.
@@ -1043,10 +1042,10 @@ app.post("/webhooks/intercom/:owner/:repo", async (c) => {
   try { payload = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
   const message = normalizeIntercom(payload);
   if (!message) return c.json({ ok: true, ignored: true });
-  return queueSupport(c, repo, message, body);
+  return queueSupport(c, repo, message);
 });
 
-async function queueSupport(c: Context<AppEnv>, repo: string, message: SupportMessage, body: string) {
+async function queueSupport(c: Context<AppEnv>, repo: string, message: SupportMessage) {
   if (!await admit(c.env, `webhook:support:${repo}`, 120, 60000, "Support webhook flood")) return c.json({ error: "webhook throttled" }, 429);
   const digest = `${repo}:` + [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${repo}:${message.channel}:${message.messageId}`)))].map((b) => b.toString(16).padStart(2, "0")).join("");
   const now = Date.now();
@@ -1059,7 +1058,7 @@ async function queueSupport(c: Context<AppEnv>, repo: string, message: SupportMe
   return c.json({ ok: true, queued: true }, 202);
 }
 
-adminRoutes(app, factory);
+adminRoutes(app);
 godRoutes(app, factory);
 tapsRoutes(app);
 
