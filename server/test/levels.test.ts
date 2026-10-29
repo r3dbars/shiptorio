@@ -72,7 +72,7 @@ describe("autonomy level rules", () => {
   it("the HUD only sees levels with the flag on", () => {
     const book = grantLevel(ship(emptyBook(), FLOOR_SHIPS), "floor")!;
     expect(autonomyView(book)).toMatchObject({ level: "advisor", next: null });
-    expect(autonomyView(book, true)).toMatchObject({ level: "floor", next: { level: "build", need: BUILD_SHIPS } });
+    expect(autonomyView(book, { levels: true })).toMatchObject({ level: "floor", next: { level: "build", need: BUILD_SHIPS } });
   });
 
   it("the level card never asks to merge anything", () => {
@@ -98,7 +98,7 @@ describe("autonomy levels in the Factory", () => {
       async getAlarm() { return alarm; },
       async setAlarm(v: number) { alarm = v; },
     };
-    const cache = { ...membershipCache, get: async (key: string) => (key === flagKey("autonomy") ? (flag ? "true" : null) : membershipCache.get(key)) };
+    const cache = { ...membershipCache, get: async (key: string) => (key === flagKey("autonomy") || key === flagKey("permits") ? (flag ? "true" : null) : membershipCache.get(key)) };
     const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [authorizedSocket((raw: string) => events.push(JSON.parse(raw)))] };
     const f = new Factory(ctx as never, credentialEnv({ ...browserEnv, CACHE: cache, DB: { prepare: () => ({ bind: () => ({ first: async () => ({ token_version: 0, status: "active", installation_id: 1, id: 1, login: "test-player", user_id: 1, calls: 1, tokens: 100, next_at: Date.now(), failures: 0, enabled: 1, runs_daily: 20, count: 1 }), all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } }) as never);
     return { f, data, events, saved: () => data.get("state") as FactoryState };
@@ -169,7 +169,7 @@ describe("levels acting in the Factory", () => {
       async setAlarm(v: number) { alarm = v; },
     };
     const logs: { type: string; approvedBy?: string; text?: string }[] = [];
-    const cache = { ...membershipCache, get: async (key: string) => (key === flagKey("autonomy") ? "true" : membershipCache.get(key)) };
+    const cache = { ...membershipCache, get: async (key: string) => (key === flagKey("autonomy") || key === flagKey("permits") ? "true" : membershipCache.get(key)) };
     const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [authorizedSocket((raw: string) => logs.push(JSON.parse(raw)))] };
     const f = new Factory(ctx as never, credentialEnv({ ...browserEnv, CACHE: cache, DB: { prepare: () => ({ bind: () => ({ first: async () => ({ token_version: 0, status: "active", installation_id: 1, id: 1, login: "test-player", user_id: 1, calls: 1, tokens: 100, next_at: Date.now(), failures: 0, enabled: 1, runs_daily: 20, count: 1 }), all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } }) as never);
     await f.alarm();

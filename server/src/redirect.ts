@@ -9,7 +9,7 @@ export function sameOriginPath(next: string | null | undefined, origin: string):
 // shiptorio.dev has one front door: the 2D deck. Bare visits, sign-in returns ("/" or an old "/?onboard=..."),
 // the old live map and ?px=0 all 302 there; nothing is deleted, so old links never 404. Explicit demos
 // (?source=sim, ?source=replay, ?scenario=), /judge and every other path keep their own URL. shiptorio.com is unchanged.
-const DECK_HOSTS = new Set(["shiptorio.dev", "www.shiptorio.dev"]);
+export const DECK_HOSTS = new Set(["shiptorio.dev", "www.shiptorio.dev"]);
 export function deckFrontDoor(url: URL): string | null {
   if (!DECK_HOSTS.has(url.hostname)) return null;
   const q = new URLSearchParams(url.search);

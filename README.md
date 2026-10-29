@@ -4,11 +4,16 @@
 
 Review eval: caught 10/10 seeded bad fixes (100%); 0/5 good fixes flagged; 0 rules fallbacks, 0 unavailable. [Results and limits](docs/EVAL.md).
 
-Your codebase is a Factorio-style map. Feedback is the ore: Sentry errors, user emails, GitHub issues and
-PostHog traffic. The machines are agents you place and wire together. What ships is real pull requests.
+Your repo is a factory. Shiptorio draws it as one floating pixel-art deck with one line:
+Repo → Planner → Builder → Checks → Review → Gate → Launch. Issues ride the line as crates, real PRs launch as
+rockets, and there's always one bottleneck: the call that's waiting on you. Swipe the card and it moves. Approve
+the same kind of work a few times and that step runs itself.
 
-Muse Spark runs the floor: triage, splitting, routing, inspection and planning. Coding work goes to Spark's own
-agent, or to Codex and Claude Code running on your own machine with your own subscriptions.
+Shippy is your guide. He's powered by Meta Muse Spark, which reads the factory, finds the bottleneck and suggests
+the next move. The code itself is written by Codex on your own machine, with your own subscription.
+
+**Try it:** [shiptorio.dev](https://shiptorio.dev) opens straight into the tutorial. Creating your own factory
+(GitHub sign-in) still needs the preview password for now.
 
 ## Built during the Meta AI Developer Hackathon
 
@@ -18,8 +23,8 @@ GitHub App and map (e2472b7, about 4,500 lines, 11:14 AM CT), and a wiring commi
 Everything from c7257d2 (11:27 AM CT) onward was built during the event.
 Nothing was carried over from an earlier project.
 
-See [PLAN.md](PLAN.md) for the build plan and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the game design.
-The stack is Cloudflare (Workers, Durable Objects, D1, KV), not the Fly/Neon setup those docs describe.
+Where it's going: [docs/VISION.md](docs/VISION.md). The stack is Cloudflare (Workers, Durable Objects, D1, KV).
+The early [PLAN.md](PLAN.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) are history (they describe a Fly/Neon setup and the old 3D map).
 
 ## Run it
 
@@ -27,16 +32,15 @@ Needs [Bun](https://bun.sh).
 
 ```sh
 bun install
-bun run dev:web     # http://localhost:5173/?source=sim  (UI + simulator, nothing else needed)
+bun run dev:web     # http://localhost:5173/deck.html  (the deck + tutorial, nothing else needed)
 bun run dev         # full stack on wrangler dev: http://localhost:8787
 bun test
 bun run test:storage # host-only real Durable Object storage integration
 bun run typecheck
 ```
 
-`?source=sim` runs a fake factory in the browser with scripted scenarios
-(`&scenario=quiet-morning` or `rework-loop`). `?source=live&repo=owner/name` connects to
-the real factory for that repo.
+`/deck.html` plays the scripted tutorial. `/deck?source=sim` runs a fake factory in the browser, and
+`/deck?source=live&repo=owner/name` connects to the real factory for that repo.
 
 ## Layout
 
@@ -44,9 +48,8 @@ the real factory for that repo.
 | --- | --- |
 | `shared/` | zod model + wire protocol, the contract between the lanes |
 | `server/` | Cloudflare Worker (Hono), GitHub App, webhooks, Factory Durable Object, Muse Spark client |
-| `web/` | Vite + React + Three.js pixel-art map and panels |
+| `web/` | Vite app; the game is the 2D pixel deck in `web/src/deck2d/` (the old React/Three.js map is parked) |
 | `docs/` | Plan docs, art direction, and the Pixel Prototype / Item Lab HTML |
-| `briefs/` | Briefs for the other lanes (Codex, Muse Code) |
 
 `AGENTS.md` has the full context for coding agents. `docs/SETUP.md` covers going live.
 

@@ -453,16 +453,3 @@ export function drawBuildPx(ctx: CanvasRenderingContext2D, stop: StopId, t: numb
   const pk = span(t, 0, 0.25);
   if (pk < 1) plate(pen, label, Math.round(easeIn(pk) * 12));
 }
-
-/** For the lab page: draw one named piece at a stop, t seconds in. */
-export function drawPiecePx(ctx: CanvasRenderingContext2D, stop: StopId, piece: string, t = 1) {
-  const pen = penFor(ctx, stop);
-  const pieces: Record<string, () => void> = {
-    locked: () => { tarp(pen); padlock(pen, false); plate(pen, "CONNECT", 0); },
-    plot: () => plot(pen, false, t), "plot-lit": () => plot(pen, true, t),
-    scaffold: () => scaffold(pen, t), crane: () => { crane(pen, 0, -44); }, "crane-over": () => { crane(pen, 1, -48); },
-    cage: () => cage(pen), machine: () => machine(pen, stop, t),
-    burst: () => burst(pen, STAGE_AT.burst + 0.12), check: () => check(pen, STAGE_AT.check + 0.4), dust: () => dust(pen, STAGE_AT.land + 0.12),
-  };
-  pieces[piece]?.();
-}

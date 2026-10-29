@@ -36,7 +36,6 @@ export function localModelConfig(env: NodeJS.ProcessEnv, file?: { model?: unknow
   const url = env.SHIPTORIO_LOCAL_MODEL_URL || (typeof file?.url === "string" ? file.url : "");
   return { baseUrl: assertLocalEndpoint(url.trim() || OLLAMA_URL), model };
 }
-export const LOCAL_MODEL_FILE = "local-model.json";
 
 /** Cap the whole HTTP envelope before parsing, including unknown fields and chunked bodies. */
 async function boundedJson(response: Response, limit: number): Promise<unknown> {

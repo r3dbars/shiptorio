@@ -5,7 +5,7 @@ import { activeAdminView, readAdminView, viewCookieValue } from "./admin-view";
 import { pruneExpiredDeliveryMarkers } from "./delivery-retention";
 import { accountIdentity } from "./account-identity";
 import { runnerAuthMove, type AuthHarness } from "./runner-health";
-import { planningFailure, planningHold, planningCapacity, planningCapacityRaised, planningFailureKind, planningDeadline, plannerRestDeck, PLANNING_DEADLINE_MS, PLANNER_REST_KEY, type PlanningRetry } from "./planning-retry";
+import { planningFailure, planningHold, planningCapacity, planningCapacityRaised, planningFailureKind, planningDeadline, plannerRestDeck, plannerBusy, PLANNER_BUSY_LINE, PLANNING_DEADLINE_MS, PLANNER_REST_KEY, type PlanningRetry } from "./planning-retry";
 import { availableJobHarness, syncRunnerPower } from "./runner-power";
 import { factoryDeleted } from "./account-data";
 import { pollDelay, RateLimitError } from "./rate-limit";
@@ -268,6 +268,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     return this.ctx.storage.put(key, value);
   }
 
+  /** Every decision refresh lands here; most leave the stored JSON as it was, and storage stays the judge of that. */
+  private async accountPutChanged<T>(key: string, value: T) {
+    if (this.accountErased) throw new Error("Factory deleted");
+    if (JSON.stringify(await this.ctx.storage.get(key)) !== JSON.stringify(value)) await this.ctx.storage.put(key, value);
+  }
+
   private accountAlarm(at: number) {
     if (this.accountErased) throw new Error("Factory deleted");
     return this.ctx.storage.setAlarm(at);
@@ -445,8 +451,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     s.learned = learning ? learnedList(this.deckBook!) : [];
     s.liveBottleneck = projectLiveBottleneck(s, jobs, now);
     await this.logDeck(deck);
-    await this.accountPut("openMoves", this.openMoves);
-    await this.accountPut("deckBook", this.deckBook);
+    await this.accountPutChanged("openMoves", this.openMoves);
+    await this.accountPutChanged("deckBook", this.deckBook);
     await this.save();
     this.broadcast({ type: "patch", patch: { bottleneck: s.bottleneck, liveBottleneck: s.liveBottleneck, learned: s.learned, pipeline: projectPipeline(s, jobs, presenceFresh) } });
     // Unchanged decisions need no new transport frame. Every frame we do publish
@@ -1483,7 +1489,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (await this.ctx.storage.get("migratedTo")) throw new Error("Legacy factory migrated");
     if (!lifecycleEvents.includes(event) && await this.githubStopped()) return;
     if ((await this.ctx.storage.get<number>(`done:${key}`) ?? 0) > Date.now() || await this.ctx.storage.get(`failed:${key}`)) return;
-    if (!(await this.ctx.storage.get(key))) await this.accountPut(key, { event, payload, attempts: 0, trace: currentTrace() });
+    if (!(await this.ctx.storage.get(key))) await this.accountPut(key, { event, payload, attempts: 0, receivedAt: Date.now(), trace: currentTrace() });
 
     await this.scheduleTick();
   }
@@ -1494,13 +1500,15 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const key = `delivery:sentry-${deliveryId}`;
     await this.assertAccountActive(this.meta?.repo ?? "");
     if ((await this.ctx.storage.get<number>(`done:${key}`) ?? 0) > Date.now() || await this.ctx.storage.get(`failed:${key}`)) return;
-    if (!(await this.ctx.storage.get(key))) await this.accountPut(key, { source: "sentry", deliveryId, event: resource, payload, attempts: 0, trace: currentTrace() });
+    if (!(await this.ctx.storage.get(key))) await this.accountPut(key, { source: "sentry", deliveryId, event: resource, payload, attempts: 0, receivedAt: Date.now(), trace: currentTrace() });
 
     await this.scheduleTick();
   }
 
   private async processDeliveries(): Promise<void> {
-    const pending = await this.ctx.storage.list<{ trace?: Trace; source?: "sentry" | "support"; deliveryId?: string; event: string; payload: GitHubPayload; attempts: number; nextAt?: number }>({ prefix: "delivery:", limit: 100 });
+    const listed = await this.ctx.storage.list<{ trace?: Trace; source?: "sentry" | "support"; deliveryId?: string; event: string; payload: GitHubPayload; attempts: number; nextAt?: number; receivedAt?: number }>({ prefix: "delivery:", limit: 100 });
+    // Storage lists keys in delivery-GUID order; work through them in the order they arrived.
+    const pending = [...listed].sort(([, a], [, b]) => (a.receivedAt ?? 0) - (b.receivedAt ?? 0));
     let processed = 0;
 
     for (const [key, delivery] of pending) {
@@ -1542,8 +1550,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         }
         await this.accountPut(key, { ...delivery, attempts, nextAt: Date.now() + Math.min(600000, 5000 * 2 ** Math.min(attempts, 7)) * (0.5 + Math.random()) });
         this.log("error", `${delivery.source === "sentry" ? "Sentry" : delivery.source === "support" ? "Support" : "GitHub"} delivery deferred (attempt ${attempts}); check App configuration and API availability.`);
-        await this.accountAlarm(Date.now() + Math.min(600000, 5000 * 2 ** Math.min(attempts, 7)));
-        break;
+        // One bad delivery waits out its own backoff; the rest of the queue keeps moving.
+        continue;
       }
     }
     const remaining = await this.ctx.storage.list<{ nextAt?: number }>({ prefix: "delivery:" });
@@ -1895,7 +1903,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   async enqueueSupport(deliveryId: string, message: SupportMessage): Promise<void> {
     await this.assertAccountActive(this.meta?.repo);
     const key = `delivery:support-${deliveryId}`;
-    if (!(await this.ctx.storage.get(key))) await this.accountPut(key, { source: "support", deliveryId, event: message.channel, payload: message, attempts: 0 });
+    if (!(await this.ctx.storage.get(key))) await this.accountPut(key, { source: "support", deliveryId, event: message.channel, payload: message, attempts: 0, receivedAt: Date.now() });
     await this.scheduleTick();
   }
 
@@ -2184,7 +2192,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (this.state) {
 
         this.state.stations = liveStations(this.state);
-        this.state.autonomy = autonomyView(await this.permitBook(), await flagEnabled(this.env, "autonomy"));
+        this.state.autonomy = autonomyView(await this.permitBook(), await this.autonomyFlags());
         this.state.brain = { ...(this.state.brain ?? emptyBrain(sparkModel(this.env), false)), model: sparkModel(this.env), online: sparkConfigured(this.env) };
       }
     }
@@ -2548,7 +2556,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       return;
     }
     const candidate = item;
-    const levels = await flagEnabled(this.env, "autonomy");
+    const flags = await this.autonomyFlags();
     const committed = await this.ctx.blockConcurrencyWhile(async () => {
       const s = this.state!;
       const current = s.items.find(i => i.id === candidate.id);
@@ -2564,7 +2572,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         const book = recordShip(await tx.get<PermitBook>("permits") ?? emptyBook(), launchedItem, auto);
         const launched = startWatch({ ...launchedItem, state: "launched", updatedAt: now }, now, mergeSha);
         const items = s.items.some(i => i.id === launched.id) ? s.items.map(i => i.id === launched.id ? launched : i) : [...s.items, launched];
-        const next: FactoryState = { ...s, items, science: { ...s.science, [key]: s.science[key] + 1 }, trust: Math.min(1, s.trust + 0.05), autonomy: autonomyView(book, levels), brain: scoreShip(s.brain, launched.id) };
+        const next: FactoryState = { ...s, items, science: { ...s.science, [key]: s.science[key] + 1 }, trust: Math.min(1, s.trust + 0.05), autonomy: autonomyView(book, flags), brain: scoreShip(s.brain, launched.id) };
         next.stations = liveStations(next, now);
         await tx.put("state", next);
         await tx.put("permits", book);
@@ -2615,6 +2623,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const gate = nextGate(item)!;
     let advanced: Item | undefined;
     if (gate === "ai" && !sparkConfigured(this.env)) return; // waits for Spark power; the station shows the pile
+    // A planner timeout or 429 parks the planner briefly; review waits it out instead of retrying every tick.
+    if (gate === "ai" && plannerBusy(await this.plannerRest())) return;
     this.gauntletRunning = true;
     const pr = item.prNumber!;
     const inspection = item.inspection!;
@@ -2687,8 +2697,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (e instanceof BudgetError || e instanceof RateLimitError || e instanceof RepositoryReadUnavailable) {
         const limit = e instanceof RepositoryReadUnavailable ? e.cause : e;
         if (limit instanceof RateLimitError) this.githubRest(limit.retryAt);
-        this.log("warn", `Station paused: ${e.message}`, item.id);
+        this.log("warn", `Station is waiting (${e.message}). It picks up again on its own.`, item.id);
         return; // Keep pending proof; resource waiting is not a failed code review.
+      }
+      if (gate === "ai" && plannerBusy(await this.plannerRest()) && plannerBusy({ kind: planningFailureKind(e) })) {
+        this.log("info", PLANNER_BUSY_LINE, item.id);
+        return; // A slow or busy planner is not a failed code review; the same PR head is reviewed after the rest.
       }
       const latest = current();
       if (latest) {
@@ -2958,7 +2972,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
   private async savePermits(book: PermitBook): Promise<void> {
     await this.accountPut("permits", book);
-    await this.patch({ autonomy: autonomyView(book, await flagEnabled(this.env, "autonomy")) });
+    await this.patch({ autonomy: autonomyView(book, await this.autonomyFlags()) });
+  }
+
+  /** Permits and levels are parked (src/flags.ts): the player's one trust meter is learned cards. */
+  private async autonomyFlags(): Promise<{ levels: boolean; permits: boolean }> {
+    return { levels: await flagEnabled(this.env, "autonomy"), permits: await flagEnabled(this.env, "permits") };
   }
 
   /** A station sent work back. Its lane's streak resets and any permit there is revoked. */

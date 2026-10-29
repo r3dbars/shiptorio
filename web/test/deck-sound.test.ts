@@ -36,3 +36,16 @@ test("your swipes and the big moments each have a sound", () => {
   expect(cuesFor({ type: "launch" })[0]).toMatchObject({ sfx: "launch" });
   expect(cuesFor({ type: "automated", stop: "review" })[0]).toMatchObject({ sfx: "permit_grant" });
 });
+
+import { blipsFor, BLIP_GAP_S, MAX_BLIPS, pitchFor } from "../src/deck2d/sound/talk";
+
+test("Shippy murmurs one soft blip per word, a few per line at most, never crowded", () => {
+  expect(blipsFor("")).toEqual([]);
+  expect(blipsFor("Hi there.").length).toBe(2);
+  const long = blipsFor("This is a much longer line that Shippy says while you watch the factory run along", 2);
+  expect(long.length).toBe(MAX_BLIPS);
+  for (let i = 1; i < long.length; i++) expect(long[i].at - long[i - 1].at).toBeGreaterThanOrEqual(BLIP_GAP_S - 1e-9);
+  expect(long[long.length - 1].at).toBeLessThan(2);
+  // the same word always sounds the same
+  expect(pitchFor("Factory")).toBe(pitchFor("factory"));
+});

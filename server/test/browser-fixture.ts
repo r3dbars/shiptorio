@@ -16,6 +16,8 @@ export async function browserCookies() {
 }
 
 export const membershipCache = { get: async (key: string) => key.startsWith("access:v2:") ? { expiresAt: Date.now() + 59000 } : null, put: async () => {} };
+/** Launch permits are parked (src/flags.ts); tests of the permit path opt in through KV the way an operator would. */
+export const permitsCache = { ...membershipCache, get: async (key: string) => key === "flags:v1:global:permits" ? "true" : membershipCache.get(key) };
 export function authorizedDB(original: any) { return { ...original, prepare(sql: string) {
   if (sql.startsWith("SELECT r.archived_at, r.archive_reason, i.status")) return { bind: () => ({ first: async () => ({ archived_at: null, archive_reason: null, status: "active", token_version: 0 }) }) };
   if (sql.includes("github_authorization_revocations") || sql.includes("token_version") || sql.includes("SELECT archived_at") || sql.startsWith("SELECT permissions")) return { bind: () => ({ first: async () => null }) };
