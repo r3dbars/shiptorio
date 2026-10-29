@@ -3,6 +3,7 @@ import { createConnections } from "./data/connections";
 import "./deck.css";
 import { SPRITES, createBus, type CardView, type DeckView, type StopId, type AttachJuice, type CreateLayer, type CreateShippy, type DeckLayer, type DeckSource, type MountCard } from "./contract";
 import { createArt } from "./engine/art";
+import { pixelOn } from "../flags";
 import { createDemo, createOrbDemo, createLaunchDemo } from "./engine/demo";
 import { fallbackShippy } from "./engine/fallbacks";
 import { createShippyRehearsal } from "./shippy/rehearsal";
@@ -138,7 +139,9 @@ const seed = Number(params.get("seed")) || 0;
 
 
   const deckSound = await import("./sound");
-  const art = createArt(Object.values(SPRITES).flat());
+  // The pixel deck draws stations, Shippy, crates and the card in code, so the first frame only waits for the pictures
+  // it actually shows (~1 MB instead of ~3.5 MB on a phone). Anything else still loads the first time it's asked for.
+  const art = createArt(pixelOn() ? ["sky", "clouds", ...SPRITES.rocket, "plate", ...SPRITES.stations.filter((n) => n.endsWith("-idle"))] : Object.values(SPRITES).flat());
   const bus = createBus();
   const [story, data, shippyMod, cardMod, juiceMod] = await Promise.all([
     load("story", "createStory"), load("data", "createLiveSource"), load("shippy", "createShippy"), load("card", "mountCard"), load("juice", "attachJuice")]);

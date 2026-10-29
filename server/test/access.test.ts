@@ -142,6 +142,9 @@ describe("docs caching", () => {
     expect(browserCacheControl(new Request("https://shiptorio.com/docs/faq"), 200)).toBe("public, max-age=300");
     expect(browserCacheControl(new Request("https://shiptorio.com/docs/nope"), 404)).toBe("no-store");
     expect(browserCacheControl(new Request("https://shiptorio.com/"), 200)).toBe("no-store");
+    expect(browserCacheControl(new Request("https://shiptorio.com/deck/art/sky.webp"), 200)).toBe("private, max-age=300");
+    expect(browserCacheControl(new Request("https://shiptorio.com/deck/art/sky.webp"), 404)).toBe("no-store");
+    expect(browserCacheControl(new Request("https://shiptorio.com/deck.html"), 200)).toBe("no-store");
   });
 });
 
