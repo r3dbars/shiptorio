@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "provenance": "fixture",
+  "name": "Testing · all clear after PR #27 shipped",
+  "frames": [
+    {
+      "at": 0,
+      "message": {
+        "type": "snapshot",
+        "state": {
+          "repo": "r3dbars/Testing",
+          "baseBranch": "main",
+          "districts": [],
+          "machines": [],
+          "belts": [],
+          "items": [
+            {
+              "id": "gh-16",
+              "kind": "cleanup",
+              "source": "github_issue",
+              "title": "Explain the README checks",
+              "url": "https://github.com/r3dbars/Testing/issues/16",
+              "district": "/",
+              "state": "launched",
+              "prNumber": 27,
+              "prUrl": "https://github.com/r3dbars/Testing/pull/27",
+              "attempts": 0,
+              "updatedAt": 6,
+              "orbit": {
+                "since": 6,
+                "until": 7,
+                "state": "clear"
+              }
+            }
+          ],
+          "power": [],
+          "science": {
+            "red": 0,
+            "green": 0,
+            "grey": 0,
+            "blue": 0
+          },
+          "trust": 0,
+          "tick": 0,
+          "pipeline": [
+            {
+              "id": "planner",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "builder",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "checks",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "review",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "gate",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "launch",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            }
+          ],
+          "liveBottleneck": null,
+          "metrics": {
+            "rockets": 1,
+            "bitersKilled": 0,
+            "escapedDefects": 0,
+            "customersAnswered": 0,
+            "usersUnblocked": 0,
+            "shipScore": 10
+          },
+          "deck": [],
+          "move": null
+        }
+      }
+    }
+  ]
+}

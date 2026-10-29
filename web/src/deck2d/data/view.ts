@@ -22,6 +22,7 @@ export interface LiveDeckView extends AttentionView {
   intake?: (Item & { badge: string })[];
   work?: { id: string; title: string; stop: StopId; badge: string; status: string; auto?: boolean }; // auto: Shippy started it, no card
   followItem?: string;
+  allClear?: boolean; // nothing needs the player and nothing is moving: Shippy docks, one caption, no card
 }
 
 export interface DeckOpts {
@@ -37,6 +38,7 @@ export interface DeckOpts {
 const LEVER_MS = 1200;
 const HAPPY_MS = 4000;
 export const FIRST_LINE = "Approve it and it moves.";
+export const ALL_CLEAR = "All clear. Nothing needs you right now.";
 
 const STAGE_STOP: Record<Stage, StopId> = { intake: "repo", triage: "planner", build: "builder", resources: "builder", power: "builder", inspect: "checks", pad: "gate", release: "launch", impact: "launch" };
 const STATION_STOP: Partial<Record<StationKind, StopId>> = { ci: "checks", verify: "checks", custom: "checks", review: "review", merge: "gate", orbit: "launch", measure: "launch" };
@@ -179,8 +181,8 @@ export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckV
   const focus = flow && s.liveBottleneck && (!s.liveBottleneck.itemId || s.items.some(it => it.id === s.liveBottleneck!.itemId && it.state !== "launched")) ? s.liveBottleneck : null;
   const candidates = s.items.filter(it => workStop(s, it));
   const ongoing = candidates.filter(it => it.state !== 'launched');
-  const selectable = ongoing.length ? ongoing : candidates;
-  const active = flow ? candidates.find(it => it.id === opts.activeItemId) ?? candidates.find(it => it.id === focus?.itemId) ?? selectable.sort((a, b) => b.updatedAt - a.updatedAt)[0] : undefined;
+  // A launched crate stays in view only while it's the one being followed (its flight); after that the line is done with it.
+  const active = flow ? candidates.find(it => it.id === opts.activeItemId) ?? candidates.find(it => it.id === focus?.itemId) ?? ongoing.sort((a, b) => b.updatedAt - a.updatedAt)[0] : undefined;
   const activeStop = active && workStop(s, active);
   const relevant = focus?.itemId ? deck.filter(m => m.itemId === focus.itemId || isSetupCard(m)) : active ? deck.filter(m => m.itemId === active.id || isSetupCard(m)) : deck;
   const move = (opts.selectedStop && pickCard(relevant.filter(m => cardStop(s, m) === opts.selectedStop))) || pickCard(relevant);
@@ -234,11 +236,18 @@ export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckV
   const status = activeStop ? s.pipeline?.find(p => p.id === activeStop && p.itemIds.includes(active!.id))?.state ?? 'working' : '';
   const auto = !!active && (s.learned ?? []).some(l => l.items?.includes(active.id));
   const work = active && activeStop ? { id: active.id, title: active.title, stop: activeStop, badge: crate(active, false).badge, status, ...(auto ? { auto } : {}) } : undefined;
-  // The climax wins the one caption line: the next one of a learned kind started with no card.
-  const caption = flow && work?.auto && !card ? LEARN.ranItself(work.badge) : focus?.reason ?? (!flow ? (card ? null : handed.size ? "Shippy has this. Fix the next jam." : "Software is a factory.") : work ? `${work.badge} · ${work.title} · ${STOP_LABEL[work.stop]}${status === 'waiting_player' ? ' needs your approval' : ' is working'}` : `${intake.length} issues waiting in Repo. Choose one to start.`);
   // Keep the existing one-shot level-up celebration even while its first automatic crate starts work.
   const leveledUp = (s.learned ?? []).some(l => now >= l.since && now - l.since < HAPPY_MS);
-  return { stops, jam, focus: focus?.stop, attention: [...attention], card, intake, work, shippy: work && !card && !leveledUp ? { at: work.stop, pose: work.stop === 'builder' ? 'weld' : 'inspect' } : shippyOf(s, stops, jam, card, opts, now), shipped, caption };
+  // All clear: a built line with no card, no jam, nothing asking, nothing moving. Calm rule: say so once and rest.
+  const allClear = !card && !jam && !focus && !work && !intake.length && attention.size === 0
+    && (flow || stops.filter(x => x.built).length > 1) && !stops.some(x => x.state === "working" || x.items.length);
+  // The climax wins the one caption line: the next one of a learned kind started with no card.
+  const caption = flow && work?.auto && !card ? LEARN.ranItself(work.badge) : focus?.reason ?? (!flow
+    ? (card ? null : allClear && !leveledUp ? ALL_CLEAR : handed.size ? "Shippy has this. Fix the next jam." : "Software is a factory.")
+    : work ? `${work.badge} · ${work.title} · ${STOP_LABEL[work.stop]}${status === 'waiting_player' ? ' needs your approval' : ' is working'}`
+    : intake.length ? `${intake.length} ${intake.length === 1 ? "issue" : "issues"} waiting in Repo. Choose one to start.`
+    : allClear ? ALL_CLEAR : null);
+  return { stops, jam, focus: focus?.stop, attention: [...attention], card, intake, work, shippy: work && !card && !leveledUp ? { at: work.stop, pose: work.stop === 'builder' ? 'weld' : 'inspect' } : shippyOf(s, stops, jam, card, opts, now), shipped, caption, allClear };
 }
 
 function shippyOf(s: FactoryState, stops: Stop[], jam: StopId | null, card: CardView | null, opts: DeckOpts, now: number): ShippyView {
