@@ -967,3 +967,26 @@ it("retries AI review only on the same green head, preserving prior evidence and
     expect(await f.factory.retryAIReview("gh-1",head)).toBe(false);
   } finally {globalThis.fetch=original;}
 });
+
+
+it("paused factories retain queued deliveries without processing them, then resume once", async () => {
+  const f = fixture([], {SPARK_DISABLED:"1"});
+  const internal = f.factory as unknown as {env:{DB:{prepare(sql:string):any}};handleGitHub():Promise<void>;reconnectMines():Promise<void>;reconcileGitHub():Promise<void>};
+  const prepare=internal.env.DB.prepare.bind(internal.env.DB);
+  let paused=true, handled=0;
+  internal.env.DB.prepare=sql=>sql.includes("FROM admin_controls") ? {bind:()=>({first:async()=>paused?{scope:"r3dbars/demo"}:null})} : prepare(sql);
+  internal.handleGitHub=async()=>{handled++;};
+  internal.reconnectMines=internal.reconcileGitHub=async()=>{};
+  const pending={event:"issues",payload:{},attempts:0};
+  f.data.set("delivery:paused",pending);
+  await f.factory.alarm();
+  expect(handled).toBe(0);
+  expect(f.data.get("delivery:paused")).toEqual(pending);
+  expect(f.data.has("done:delivery:paused")).toBe(false);
+  expect(f.alarm()).toBeGreaterThan(Date.now());
+  paused=false;
+  await f.factory.alarm();
+  expect(handled).toBe(1);
+  expect(f.data.has("delivery:paused")).toBe(false);
+  expect(f.data.get("done:delivery:paused")).toBeGreaterThan(Date.now());
+});
