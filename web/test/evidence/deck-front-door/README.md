@@ -16,7 +16,7 @@ Browser plugin skill absent; used the repository's explicitly requested Playwrig
 - [Phone before](before/phone-390/01-settled.png) / [after](after/phone-390/01-settled.png)
 - [Desktop before](before/desktop-1280/01-settled.png) / [after](after/desktop-1280/01-settled.png)
 
-The real Chromium interaction check also completed `story-call-1`, `story-call-2`, and `story-call-3` at both viewport sizes, then found the existing Sign in card. Story/watch/signed-out-repo chips remained absent. No console or page errors. Extra screenshots wait for card-entry animations to finish:
+The real Chromium interaction check also completed `story-call-1`, `story-call-2`, and `story-call-3` at both viewport sizes, then found the existing Sign in card. Story/watch/signed-out-repo chips remained absent. Closing the sign-in card replays the story with new decision IDs. A stale click from the previous playthrough cannot answer the replay. No console or page errors. Extra screenshots wait for card-entry animations to finish:
 
 - [Phone first decision](after/phone-390/story-first-card.png) / [final sign-in](after/phone-390/story-sign-in.png)
 - [Desktop first decision](after/desktop-1280/story-first-card.png) / [final sign-in](after/desktop-1280/story-sign-in.png)

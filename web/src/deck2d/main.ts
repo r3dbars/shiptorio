@@ -84,12 +84,19 @@ export function showConnectionTools(search: string, signedIn: boolean): boolean 
 }
 
 /** Finish the sample loop with the existing connection card, not a second front door. */
-export function storyBeforeSignIn(story: DeckSource, connections: { open(target: "repo"): void }): DeckSource {
-  let finished = false;
-  return { ...story, view() {
+export function storyBeforeSignIn(story: DeckSource, connections: { open(target: "repo"): void; card(): CardView | null }): DeckSource {
+  let finished = false, replay = 0;
+  const originalId = (id: string) => !replay ? id : id.endsWith(`:replay-${replay}`) ? id.slice(0, -`:replay-${replay}`.length) : null;
+  return { ...story, approve(id) { const original = originalId(id); if (original) story.approve(original); },
+    later(id) { const original = originalId(id); if (original) story.later(original); }, view() {
     const view = story.view();
-    if (view.card?.id !== "story-connect") return view;
+    if (view.card?.id !== "story-connect") return replay && view.card ? { ...view, card: { ...view.card, id: `${view.card.id}:replay-${replay}` } } : view;
     if (!finished) { finished = true; connections.open("repo"); }
+    else if (!connections.card()) {
+      finished = false; replay++;
+      story.later("story-connect"); // Close replays with fresh ids, so the renderer can show the same decisions again.
+      return story.view();
+    }
     return { ...view, card: null };
   } };
 }

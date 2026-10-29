@@ -7,6 +7,7 @@
       "story-call-3"
     ],
     "existingSignIn": true,
+    "closeReplaysStory": true,
     "watchChips": 0,
     "signedOutRepoChips": 0,
     "consoleErrors": []
@@ -19,6 +20,7 @@
       "story-call-3"
     ],
     "existingSignIn": true,
+    "closeReplaysStory": true,
     "watchChips": 0,
     "signedOutRepoChips": 0,
     "consoleErrors": []

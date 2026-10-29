@@ -36,7 +36,8 @@ test('a stranger plays every story decision before the existing sign-in card ope
     requests.push(String(url)); return Response.json({guest:true, login:null, githubConfigured:true});
   }});
   let opens = 0;
-  const story = storyBeforeSignIn(createStory({seed:1}), {open(target) { opens++; connections.open(target); }});
+  const original = createStory({seed:1});
+  const story = storyBeforeSignIn(original, {open(target) { opens++; connections.open(target); }, card: connections.card});
   const approvals: string[] = [];
   for (let i = 0; i < 4000 && !opens; i++) {
     story.step?.(0.1);
@@ -53,4 +54,16 @@ test('a stranger plays every story decision before the existing sign-in card ope
   expect(requests).toEqual(['/api/me']);
   story.view(); story.view();
   expect(opens).toBe(1);
+  await connections.answer(final!.id, false);
+  story.view();
+  expect(original.phase()).toBe('build');
+  expect(connections.card()).toBeNull();
+  for (let i = 0; i < 1000 && !story.view().card; i++) story.step?.(0.1);
+  const replay = story.view().card!;
+  expect(approvals).not.toContain(replay.id);
+  expect(replay.id).toContain(':replay-1');
+  story.approve(approvals[0]);
+  expect(story.view().card?.id).toBe(replay.id);
+  story.approve(replay.id);
+  expect(story.view().card).toBeNull();
 });
