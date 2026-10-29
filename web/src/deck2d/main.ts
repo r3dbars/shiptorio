@@ -15,6 +15,7 @@ import { createConveyorDemo } from "./engine/conveyor-demo";
 import { createPayoff } from "./payoff";
 import { createFirstRun } from "./data/firstrun";
 import { createTour } from "./story/tour";
+import { shipFeel } from "./story/ship";
 import type { AttentionView } from "./stations/attention";
 
 /** Keyboard and screen-reader access for the existing card; it never invents an action. */
@@ -207,7 +208,7 @@ const seed = Number(params.get("seed")) || 0;
     // A guest at the live front door gets the short version: one swipe, it clears, then Shippy and sign-in.
     // A guest at the live front door meets Shippy: a small deck, the story told in the card at their pace, each
     // station built and named, then one fix shipped. /deck.html keeps the jam-and-swipe story for the video.
-    source = storyBeforeSignIn(want === "live" ? createTour() : (story.createStory as (o: { seed: number; speed: number }) => DeckSource)({ seed, speed }), connections);
+    source = storyBeforeSignIn(want === "live" ? shipFeel(createTour(), bus) : (story.createStory as (o: { seed: number; speed: number }) => DeckSource)({ seed, speed }), connections);
   }
   else source = createDemo();
 
@@ -327,7 +328,7 @@ const seed = Number(params.get("seed")) || 0;
     cv.dataset.workMoving = String(!!(view as import('./data/view').LiveDeckView).followItem);
     cv.dataset.allClear = String(!!(view as import('./data/view').LiveDeckView).allClear);
     engine.frame(view, dt);
-    card.show(view.card, { quiet: !!firstRun?.playing() });
+    card.show(view.card, { quiet: !!firstRun?.playing() || !!(source as DeckSource & { quiet?: () => boolean }).quiet?.() });
     accessibility.update(view.card, view.caption);
     if (view.caption !== caption) caption = view.caption;
     toast.classList.toggle("on", !!caption && !view.card); // the card owns the bottom of the screen
