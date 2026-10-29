@@ -220,7 +220,8 @@ app.use("*", async (c, next) => {
     return response;
   }
   const publicDocs = isPublicDocs(c.req.path) && ["GET", "HEAD"].includes(c.req.method);
-  const denied = publicDocs ? null : signupMode(c.env) === "password" ? await previewAccess(c.req.raw, c.env) : await signupGate(c.req.raw, c.env);
+  // The public deck (access.ts isPublicDeck) runs the normal app path: deckFrontDoor's redirect, then the static asset.
+  const denied = publicDocs || open === "deck" ? null : signupMode(c.env) === "password" ? await previewAccess(c.req.raw, c.env) : await signupGate(c.req.raw, c.env);
   if (denied) { c.set("gateResponse", true); return denied; }
   await next();
   // Docs are public static content; authenticated build assets retain their private immutable policy.

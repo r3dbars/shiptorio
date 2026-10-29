@@ -32,13 +32,15 @@ test('staging opens the live deck setup by default and preserves explicit routes
   }
 });
 
-test('staging deck default remains behind the preview password gate',async()=>{
+test('staging opens on the deck tutorial; its data stays behind the preview password gate',async()=>{
+  // Justin 2026-10-29: shiptorio.dev opens straight into the tutorial; the password comes at "create your own factory".
   const e={...env(),SIGNUP_GATE_MODE:'password',APP_PASSWORD:'private-preview'};
   const response=await app.fetch(new Request('https://shiptorio.dev/'),e as never);
-  expect(response.headers.get('location')).toBeNull();
+  expect(response.headers.get('location')).toBe('/deck?source=live');
   const deck=await app.fetch(new Request('https://shiptorio.dev/deck?source=sim&scenario=deck-watch&watch=1'),e as never);
-  expect(deck.status).toBe(401);
-  expect(await deck.text()).toContain('Enter the factory');
+  expect(deck.status).toBe(200);
+  const api=await app.fetch(new Request('https://shiptorio.dev/api/me'),e as never);
+  expect(api.status).toBe(401);
 });
 
 test('Justin approves pending user from /admin; pending cannot access assets, APIs or admin; revoke takes effect',async()=>{

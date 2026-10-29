@@ -14,6 +14,7 @@ import { createFirstVisitDemo } from "./stations/first-visit";
 import { createConveyorDemo } from "./engine/conveyor-demo";
 import { createPayoff } from "./payoff";
 import { createFirstRun } from "./data/firstrun";
+import { askPassword } from "./password";
 import type { AttentionView } from "./stations/attention";
 
 /** Keyboard and screen-reader access for the existing card; it never invents an action. */
@@ -172,6 +173,7 @@ const seed = Number(params.get("seed")) || 0;
   const connections = createConnections({
     repo: signedIn ? params.get("repo") || undefined : undefined, origin: location.origin, path: location.pathname + location.search,
     navigate: url => { location.href = url; }, copy: copyText,
+    askPassword: next => askPassword(document, next, url => { location.href = url; }),
     onStart: id => (source as DeckSource & { focusItem?: (id: string) => void }).focusItem?.(id),
   });
   let source: DeckSource;
