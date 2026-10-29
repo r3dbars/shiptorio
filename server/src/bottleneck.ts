@@ -91,3 +91,56 @@ export function deriveBottleneck(state: FactoryState, options: BottleneckOptions
   if (!winner) return { bottleneck: null, stages };
   return { bottleneck: { stage: wireStage(winner.stage), stationId: winner.stationId, wip: winner.wip, ageMs: winner.ageMs, throughputPerHour: winner.throughputPerHour, valueAtRisk: winner.valueAtRisk, summary: summary(winner) }, stages };
 }
+
+export interface LiveBottleneckCandidate {
+  id: string;
+  stop: import("@shiptorio/shared").LiveBottleneckPick["stop"];
+  itemId?: string;
+  reason: string;
+  priority: number;
+  since: number;
+  action: string;
+}
+
+/** Structured facts only. Issue text cannot supply a stop, action or instruction. */
+export function liveBottleneckCandidates(state: FactoryState, jobs: readonly BottleneckJob[] = []): LiveBottleneckCandidate[] {
+  const out: LiveBottleneckCandidate[] = [];
+  const seen = new Set<string>();
+  const label = (item: Item | undefined) => item?.prNumber ? `PR #${item.prNumber}` : item && /^gh-\d+$/.test(item.id) ? `#${item.id.slice(3)}` : "this change";
+  const add = (candidate: LiveBottleneckCandidate) => {
+    const key = `${candidate.stop}|${candidate.itemId ?? ""}`;
+    if (!seen.has(key)) { seen.add(key); out.push(candidate); }
+  };
+  const moves = state.deck?.length ? state.deck : state.move ? [state.move] : [];
+  for (const move of moves) {
+    const item = state.items.find(i => i.id === move.itemId);
+    if (move.itemId && (!item || item.state === "launched")) continue;
+    const action = move.options.find(o => o.recommended)?.actions[0];
+    if (!action) continue;
+    const choices: Record<string, { stop: LiveBottleneckCandidate["stop"]; reason: string }> = {
+      plan_runner_job: { stop: "repo", reason: `Waiting on your call: start issue ${label(item)}.` },
+      approve_runner_job: { stop: "builder", reason: `Waiting on your call: start the build for ${label(item)}.` },
+      request_merge: { stop: "gate", reason: `Waiting on your call: ship ${label(item)}.` },
+      request_rework: { stop: "builder", reason: `Waiting on your call: plan a fix for ${label(item)}.` },
+      run_missing_check: { stop: "checks", reason: `A required check needs attention for ${label(item)}.` },
+      connect_source: { stop: action.args.kind === "github" ? "repo" : "builder", reason: action.args.kind === "github" ? "Connect GitHub to bring issues into the workshop." : "Connect your coding engine to start building." },
+    };
+    const choice = choices[action.tool];
+    if (choice) add({ id: `decision:${move.id}`, ...choice, itemId: item?.id, priority: action.tool === "connect_source" ? 0 : 1, since: move.createdAt, action: action.tool });
+  }
+  for (const item of state.items) {
+    const stage = stageForItem(item, jobs);
+    if (!stage) continue;
+    const stop: LiveBottleneckCandidate["stop"] = stage === "intake" ? "repo" : stage === "triage" ? "planner" : stage === "build" ? "builder" : stage === "ci" || stage === "verify" ? "checks" : stage === "review" ? "review" : stage === "merge" ? "gate" : "launch";
+    const blocked = item.state === "rejected" || !!item.failure;
+    const reason = blocked ? `A fix is needed before ${label(item)} can continue.`
+      : stop === "repo" ? `An issue is ready to start: ${label(item)}.`
+      : stop === "planner" ? `The plan for ${label(item)} is being prepared.`
+      : stop === "builder" ? `The coding engine is working on ${label(item)}.`
+      : stop === "checks" ? `Waiting for checks on ${label(item)}.`
+      : stop === "review" ? `Waiting for review of ${label(item)}.`
+      : stop === "gate" ? `Waiting on your call: ship ${label(item)}.` : `${label(item)} is being shipped.`;
+    add({ id: `item:${item.id}:${stage}`, stop, itemId: item.id, reason, priority: blocked ? 0 : stop === "gate" ? 1 : 2, since: item.updatedAt, action: blocked ? "blocked" : "work" });
+  }
+  return out.sort((a, b) => a.priority - b.priority || a.since - b.since || a.id.localeCompare(b.id)).slice(0, 12);
+}

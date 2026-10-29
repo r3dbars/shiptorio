@@ -497,6 +497,15 @@ export const Experiment = z.object({
 });
 export type Experiment = z.infer<typeof Experiment>;
 
+/** The single live-deck focus. This is advice, never an authorization to execute work. */
+export const LiveBottleneckPick = z.object({
+  stop: z.enum(["repo", "planner", "builder", "checks", "review", "gate", "launch"]),
+  itemId: z.string().optional(),
+  reason: z.string().max(140),
+  source: z.enum(["spark", "fallback"]),
+});
+export type LiveBottleneckPick = z.infer<typeof LiveBottleneckPick>;
+
 export const FactoryState = z.object({
   repo: z.string(),
   baseBranch: z.string(),
@@ -512,7 +521,8 @@ export const FactoryState = z.object({
   goal: z.string().optional(), // goalText(goals): the sentence Spark's prompts read
   goals: Goals.optional(), // shared/src/goals.ts: what the player wants, picked on one earned card
   bottleneck: Bottleneck.nullable().optional(),
-  holdingBack: HoldingBack.nullable().optional(), // the bottleneck brain's pick (docs/BRAIN.md), behind the "brain" flag
+  holdingBack: HoldingBack.nullable().optional(),
+  liveBottleneck: LiveBottleneckPick.nullable().optional(), // the bottleneck brain's pick (docs/BRAIN.md), behind the "brain" flag
   move: Move.nullable().optional(), // the open Next Move card
   pipeline: z.array(PipelineStep).length(6).optional(), // derived presentation; actions still use exact move IDs
   deck: z.array(Move).max(12).optional(), // the check-in deck, ranked; deck[0] is the open card

@@ -6,6 +6,8 @@ PR #598 (`codex/dev-deck-default`) makes authorized bare visits to shiptorio.dev
 
 ## Deck visual iteration (Codex, 2026-10-28)
 
+2026-10-29 · Codex #57 (`codex/shippy-calm`): stable floor anchors, one-shot reactions and still waiting poses; preserve purposeful work and charging, with no new moves.
+
 PR #596 (`codex/deck-visuals`) adds a deeper foreground floor, grounded machines and Shippy, green/red conveyor flow, a pulsing blocked-state orb, persistent macOS pinch zoom, and detailed rocket launch/return effects. Justin approved the descent and fast side jets; later requests add a substantial fractured-rock underside and a short, braced engine cradle instead of the long exposed center pipe. Before/after phone and desktop shots are in `docs/evidence/deck-visuals/`. Targets `dev`; no deployment or merge is authorized by this visual PR.
 
 The final pass adds layered cascading cliffs, animated cyan seams and floating fragments, Shippy's walking/building rehearsal, real factory job-driven poses, and a simulator-only automatic build → failed check → repair → rocket loop (`/deck.html?source=sim&scenario=deck-watch&watch=1`). Justin selected this style as the baseline going forward. Live factory approvals remain manual.
@@ -60,6 +62,8 @@ Backend GitHub connection reliability: cancellation, missing setup, invalid prov
 
 ## Build the agent loop that picks the bottleneck (Claude, 2026-10-27)
 
+- 2026-10-29, Codex #47: project the existing Meta brain pick onto one live station/item with plain copy and honest fallback; preserve cargo while transferring and yellow human decisions. PR #623.
+
 - Loop core of the bottleneck brain (docs/BRAIN.md): `server/src/diagnose.ts` (one bottleneck + one unlock per pass, memory of Later/Continue/wins, throttle: main-signal change or 30 min, 24 a day, stops at half the model budget, rule fallback), `server/src/unlocks.ts` (playbook by signal kind; actions are only `inspect_bottleneck`, `connect_source`, `ask_goal`, everything else is a link), `server/src/signals/index.ts` (collector registry, `bind()` for collectors with their own ctx, plus the `factory:*` collector over bottleneck.ts).
 - Factory: `kickBrain` runs off the tick (one pass in flight, ≥30 s apart), stores `brainMemory`, `brainSignals`, `brainDiagnoses` (last 50, for the eval harness). Model calls go through `Factory.think("diagnose")`. Behind the `brain` flag, off by default.
 - Collector threads add one line to `COLLECTORS`. Eval entry point: `runDiagnose()` with an injectable `think`.
@@ -93,6 +97,8 @@ Launch. No factory PR was merged directly by this documentation run.
 Retains production-disabled negative-ID identities and scoped fixture delegation while preserving current administrator controls and request redaction. The bot workflow now pins existing reviewed action SHAs and disables persisted checkout credentials. No fixture resources or configuration were changed. Local proof and exact-head dev CI are required before merge.
 
 ## Stranger E2E: latest status (2026-10-26)
+
+2026-10-29 · Codex #62 (`codex/deck-keyboard-access`): named deck/card roles, polite live caption, keyboard Enter/Escape flow and preserved held-merge safety; DOM plus keyboard browser verification.
 
 | PR | State | Result |
 | --- | --- | --- |
@@ -260,6 +266,8 @@ Rule since 18:44 UTC: every agent merges its own PR once CI is green, then check
 Rebased the guest-only save routes onto dev without replacing administrator view, write guards or progress reset versions. Guest GET progress reports resetVersion zero; signed-in stale reset writes still fail. Guest schema is migration0019 after admin/index/taps0016–0018. Full checks and exact-head dev CI are pending; password gate retained.
 
 ## Codex: self-host runner origin and live pairing (2026-10-26)
+
+- 2026-10-29, Codex #59: staging installs and launchers keep their own directory, artifact downloads overlap before checksum validation, and missing tools fail clearly; clean-home and platform-shaped fixture tests cover repeats and quoted paths.
 
 - `codex/selfhost-runner-origin` fixes the Power panel install command to use the current origin and pass it to the shell side of the pipeline. The installer downloads that origin's bundle, saves its endpoint for later invocations, and rejects cross-server reuse of existing pairings. The CLI accepts self-hosted HTTPS origins and loopback-only HTTP.
 - Preserves the concurrently merged single-use join-code command: join arguments stay on the shell side of the same-origin installer pipeline; focused join-code and legacy device-pairing tests both pass.
