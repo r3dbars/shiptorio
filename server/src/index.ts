@@ -38,6 +38,7 @@ import { currentUser, MAX_PROGRESS_BYTES, readPrefs, readProgress, reposFor, wri
 
 import { isAllowed } from "./session";
 import { isJudgeAsset, isPublicDocs, previewAccess, publicRoute, secureTransport, selfhostSetupAccess } from "./access";
+import { deckFrontDoor } from "./redirect";
 import { joinWaitlist } from "./waitlist";
 import { judgePage, landingPage, publicFile } from "./landing";
 
@@ -1068,13 +1069,9 @@ app.all("/connect/*", (c) => c.notFound());
 
 // Everything else is the web app.
 app.all("*", async (c) => {
-  // The staging product starts inside the pixel deck, including sign-in and repo selection.
-  // Explicit factory/onboarding URLs keep their own route; the preview gate has already run.
-  const url = new URL(c.req.url);
-  if (["GET", "HEAD"].includes(c.req.method) && ["shiptorio.dev", "www.shiptorio.dev"].includes(url.hostname)
-    && url.pathname === "/" && !url.search) {
-    return c.redirect("/deck?source=live", 302);
-  }
+  // The staging product starts inside the pixel deck (redirect.ts deckFrontDoor); the preview gate has already run.
+  const deck = ["GET", "HEAD"].includes(c.req.method) ? deckFrontDoor(new URL(c.req.url)) : null;
+  if (deck) return c.redirect(deck, 302);
   const response = await c.env.ASSETS.fetch(c.req.raw);
   // Only trusted static art contains inline executable scripts. Never add nonces
   // to user-provided text or relax the application/API policy to allow them.
