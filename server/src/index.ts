@@ -1,3 +1,4 @@
+import { issueInbox } from "./issue-inbox";
 import { privateSocketTiming, measureSocket } from "./private-socket-timing";
 import { configuredAdmin } from "./admin-policy";
 import { auditAdmin } from "./admin-control";
@@ -688,6 +689,17 @@ app.on(["GET", "POST"], "/connect/:kind", async (c) => {
   await f.connectMine(kind);
 
   return c.html(connectPage({ kind, repo, connected: true, webhookUrl, saved: true }));
+});
+
+// Same repository authorization as the factory; fetching the inbox never starts a job.
+app.get("/api/repos/:owner/:repo/issues", async c => {
+  const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
+  const page = Number(c.req.query("page") ?? 1);
+  if (!Number.isInteger(page) || page < 1 || page > 1000) return c.json({ error: "invalid page" }, 400);
+  const installationId = await installationFor(c.env, repo);
+  if (!installationId) return c.json({ error: "GitHub App is not connected to this repository" }, 403);
+  const token = await installationToken(c.env, installationId, { repositories: [c.req.param("repo")], permissions: { issues: "read", metadata: "read" } });
+  return c.json(await issueInbox(repo, token, page));
 });
 
 app.get("/api/repos", async (c) => {
