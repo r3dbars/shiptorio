@@ -2,7 +2,7 @@ import { HULL, ART_PX } from "../contract";
 import { IDX, type Color } from "../stations/palette";
 import { Px, shift } from "../stations/px";
 import { BRASS, blotch, cylH, cylV, noise, tone, type Ramp } from "../stations/shade";
-import { CU } from "../../bakeoff/boiler2d";
+import { CU } from "./boiler2d";
 import { dressFloor } from "./clutter";
 import { coreFrame, crystals, engine, enginePos, ends, rim, rocks, type Under } from "./underside";
 

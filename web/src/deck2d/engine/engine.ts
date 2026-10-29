@@ -6,7 +6,7 @@ import { pixelOn } from "../../flags";
 import { createPixelCanvas } from "./pixel";
 import * as pd from "./pxdraw";
 import { FLIGHT } from "../launch/flight";
-import { BOILER_H, BOILER_W, boilerFrame } from "../../bakeoff/boiler2d";
+import { BOILER_H, BOILER_W, boilerFrame } from "../props/boiler2d";
 import { stationSize, type StationId } from "../stations";
 import { advanceBeltDistance, beltConnectionAt } from "./flow";
 import { needsAttention, type AttentionView } from "../stations/attention";
@@ -23,7 +23,7 @@ const drawStation = (Object.values(import.meta.glob("../stations/index.ts", { ea
 const PAD = { x: 1905 + DECK_DX, y: -50, s: 0.72 }; // bridge + rocket island sprite; its bridge meets the deck's right edge
 const BRIDGE_Y = PAD.y + PAD.s * 560;
 const ORB = HULL.orb;
-/** The twin boiler: in pixel mode it is drawn in code at full art size (bakeoff/boiler2d.ts), standing on the back
+/** The twin boiler: in pixel mode it is drawn in code at full art size (props/boiler2d.ts), standing on the back
  * edge of the floor behind Repo and Planner; ?px=0 keeps the small boiler-on picture. */
 const BOILER = { x: DECK_DX ? 280 : 240, base: 182 };
 const BOUNDS = { x0: -20, x1: PAD.x + 1533 * PAD.s + 20, y0: -30, y1: DECK_DX ? 800 : 670 }; // pixel mode: the whole underside, lanterns and all

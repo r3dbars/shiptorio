@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && vite build -c vite.deck.config.ts && vite build -c vite.arttest.config.ts && vite build -c vite.deck3d.config.ts && vite build -c vite.bakeoff.config.ts && bun ../scripts/bundle-budget.ts",
+    "build": "vite build && vite build -c vite.deck.config.ts && bun ../scripts/bundle-budget.ts",
     "typecheck": "tsc --noEmit",
     "a11y": "node test/a11y/audit.mjs && node test/a11y/keyboard.mjs",
     "test:chunks": "bun ../scripts/bundle-budget.ts --test"

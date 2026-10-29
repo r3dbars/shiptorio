@@ -97,7 +97,7 @@ the launch through `launch_pr` (the in-game Launch is the only merge path, never
 |---|---|---|
 | 1 | contract | `web/src/buildout/journey.ts`, this file, the four stubs (first version only), `web/src/flags.ts` (buildoutOn), `docs/VISION.md` / `docs/GAMEPLAY-PICKS.md` lines, `web/test/buildout-journey.test.ts` |
 | 2 | hide until built, wire it up | `web/src/map/shaft/buildout.ts`, `ShaftScene.ts`, `firstRun.ts`, `web/src/map/FactoryMap.tsx` |
-| 3 | construct animation | `web/src/map/shaft/construct.ts`, `web/construct.html`, `web/test/construct.test.ts` |
+| 3 | construct animation | `web/src/map/shaft/construct.ts`, `web/test/construct.test.ts` |
 | 4 | burst + ONLINE plate | `web/src/map/shaft/burst.ts`, `web/src/ui/BuildStamp.tsx`, `web/src/ui/buildstamp.css` |
 | 5 | camera director | `web/src/map/shaft/director.ts`, `web/test/director.test.ts` |
 | 6 | coach card | `web/src/ui/Buildout.tsx`, `web/src/ui/buildout.css`, `web/src/App.tsx` (the only edit: mount behind the flag) |

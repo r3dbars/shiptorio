@@ -1,12 +1,12 @@
 // props/ (thread "Push the 2D deck art further"): in pixel mode (?px=1) the deck itself is drawn in code: the hull
 // (hull.ts: floor, rails, lanterns; underside.ts: rim band, boulders, crystals, the engine at the middle) plus the
 // moving bits here: the engine core's light, slow light in the crystals, a few loose stones drifting under the rock
-// (same as the launch island's) and the twin boiler (bakeoff/boiler2d.ts) on the back of the floor. The platform's width follows
+// (same as the launch island's) and the twin boiler (props/boiler2d.ts) on the back of the floor. The platform's width follows
 // view.deck (small / medium / large); while it grows, the hull is re-rendered a column at a time out to the new edge.
 // ?px=0 keeps the old picture deck: this layer then replaces nothing and draws nothing.
 import { ART_PX, DECK_DX, HULL, PALETTE, snap, type CreateLayer, type DeckLayer, type DeckView, type LayerSlot } from "../contract";
 import { pixelOn } from "../../flags";
-import { BOILER_H, BOILER_W, boilerFrame } from "../../bakeoff/boiler2d";
+import { BOILER_H, BOILER_W, boilerFrame } from "./boiler2d";
 import { CORE, PAD, TOP, coreAt, coreLight, hullCanvas, hullHighlights, rockBottom } from "./hull";
 import { stone } from "./underside";
 
