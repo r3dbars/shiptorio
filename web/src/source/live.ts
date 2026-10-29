@@ -11,7 +11,7 @@ const DEAD_MS = 5_000;
 const NOTICE_MS = 3_000;
 
 export function connectLive(repo: string, onMessage: Listener, onStatus: StatusListener): Source {
-  const recorder = typeof location !== "undefined" && recordingAllowed(new URL(location.href)) ? createRecorder() : null;
+  const recorder = typeof location !== "undefined" && typeof location.href === "string" && recordingAllowed(new URL(location.href)) ? createRecorder() : null;
   const removeRecorder = recorder ? mountRecorder(recorder) : () => {};
   let ws: WebSocket | null = null;
   let closed = false, synced = false, attempt = 0, lastSeq = -1;
