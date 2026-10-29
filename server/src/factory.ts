@@ -1336,7 +1336,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.offerRunnerPlan();
     // Reconnected/idle runners may be the next event after a plan is ready. Honor earned
     // approvals here too, through the manual approval handler, before looking for a lease.
-    await this.runLearned();
+    if (this.state) await this.runLearned();
     await this.refreshDecisions();
     await this.scheduleTick();
     const job = await this.ctx.blockConcurrencyWhile(async () => {
