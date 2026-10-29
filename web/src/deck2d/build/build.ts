@@ -126,6 +126,7 @@ export function createBuild(art: ArtLoader, bus: DeckBus | null, opts: BuildOpti
   }
 
   function start(stop: StopId) {
+    if (stop === "launch") return; // The launch layer owns island/rocket construction, not the six station sprites.
     locked.delete(stop);
     jobs.set(stop, { stop, t: 0, fired: new Set() });
   }
@@ -321,6 +322,7 @@ export function createBuild(art: ArtLoader, bus: DeckBus | null, opts: BuildOpti
       clock += dt;
       shakeAmp *= Math.exp(-dt * 9);
       for (const s of view.stops) {
+        if (s.id === "launch") continue;
         const was = seen.get(s.id);
         if (!s.built) jobs.delete(s.id); // removal/replay cancels a construction already in progress
         if (s.locked && !s.built && !jobs.has(s.id)) locked.add(s.id); else if (!s.locked) locked.delete(s.id);
