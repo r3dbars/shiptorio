@@ -2,7 +2,7 @@ import { KeychainUnavailable, prepareAgentKeychain, unlockAgentKeychain } from "
 import { chmod, lstat, mkdir, realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 import { agentEnvironment } from "./policy";
-export type Subscription = "codex" | "claude_code";
+import type { Subscription } from "./health";
 export const subscriptionArgs = (h: Subscription, login = false): string[] =>
   h === "codex" ? ["login", ...(login ? [] : ["status"])] : ["auth", login ? "login" : "status", login ? "--claudeai" : "--json"];
 
