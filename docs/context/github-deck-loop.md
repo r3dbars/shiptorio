@@ -50,3 +50,19 @@ Player acceptance checklist:
 Validation distinguishes API/controller fixtures from real account acceptance. Authenticated GitHub and local Codex checks require the player's sign-in and selected repository; the guest demo alone cannot prove them.
 
 The default staging entry now opens `/deck?source=live` and performs setup within the pixel deck instead of entering the simulator. Its disconnected backdrop is idle and contains no fake work. The guest account response reports whether GitHub sign-in is configured, so a missing staging App stays an explanatory card rather than sending the player to a broken login page. Explicit demo URLs remain available for visual iteration.
+
+## Live Codex checkpoint — 2026-10-29
+
+The first execution target is GitHub + Codex. Meta remains Shippy's factory-wide brain; Claude is not required for this checkpoint. A local watcher can use `watch --codex-only` to advertise only Codex and avoid unrelated Claude sign-in cards.
+
+Verified on shiptorio.dev with the real `r3dbars/Testing` repository:
+- Muse Spark `muse-spark-1.3` read issue #16, README.md and package.json, then proposed a README-only plan.
+- The build approval in the live deck dispatched the local Codex subscription. The runner passed typecheck, tests and build, and opened [Testing PR #27](https://github.com/r3dbars/Testing/pull/27).
+- Commit `0338c1ed80a4af8c245913fdd6b2f50c6a8ca40c` changes only three explanation lines in the README Checks section. GitHub CI passed on that commit.
+- The factory received the same issue/PR identity and entered inspection. The PR remains open: this proves planning through PR creation and CI, not merge/rocket or the entire independent verification gauntlet.
+
+The live test exposed a case mismatch: GitHub's `r3dbars/Testing` assignment was rejected against the lowercase pairing. Assignments now normalize GitHub repository names while preserving exact branch, SHA, lease and cross-repository validation. Recovery and receipt replay use the same normalized identity.
+
+Staging still had 44 active factory records from the initial all-repositories installation after access was narrowed to Testing. Those records were paused using audited staging controls to stop background GitHub contention; Testing remained active. Durable installation reconciliation and smoother live card updates still need follow-up. No production runner or production factory was changed.
+
+Test issue #26 is a separate single-file smoke test and has not been built; #25 remains the inbox-only test. Do not describe either as a shipped change.

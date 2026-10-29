@@ -21,7 +21,7 @@ const blocked = new Set<Subscription>();
 const authFailures = new AuthFailures();
 const rejectedGrants = new Map<string, string>();
 class SignInExpired extends Error {}
-import { responseSchemas, type Job } from "./messages";
+import { assertJobAssignment, responseSchemas, type Job } from "./messages";
 import { detectLocalModel, localModelConfig, runLocalAssembler } from "./local-model";
 import { redactText } from "../../server/src/redact";
 const root = process.env.SHIPTORIO_RUNNER_ROOT ? runnerHome() : process.env.SHIPTORIO_REPO ? resolve(import.meta.dir, "..") : runnerHome();
@@ -45,9 +45,9 @@ const harnessPath = (h: Exclude<Job["harness"], "local">) => Bun.which(h === "co
 const localFile = Bun.file(resolve(root, "local-model.json"));
 const local = localModelConfig(process.env, await localFile.exists() ? await localFile.json() : null);
 const localStatus = local ? await detectLocalModel(local) : null;
-const installedSubscriptions = (["codex", "claude_code"] as const).filter(h => harnessPath(h));
+const installedSubscriptions = (["codex", "claude_code"] as const).filter(h => harnessPath(h) && (!process.argv.includes("--codex-only") || h === "codex"));
 const busySubscriptions = new Set<"codex" | "claude_code">();
-let available: Job["harness"][] = [...(["codex", "claude_code"] as const).filter(h => harnessPath(h)), ...(localStatus?.ok ? ["local" as const] : [])];
+let available: Job["harness"][] = [...installedSubscriptions, ...(localStatus?.ok && !process.argv.includes("--codex-only") ? ["local" as const] : [])];
 
 if (process.argv[2] === "paths") {
   console.log(JSON.stringify({ root, checkout, harnesses: available }));
@@ -187,7 +187,7 @@ async function renewPairing(pair: Pairing) {
 }
 async function execute(job: Job, pair: Pairing) {
   const repo = pair.repo;
-  if (job.repo !== repo || !/^[a-f0-9]{40}$/.test(job.baseSha) || (!job.reworkPr && job.branch !== `shiptorio/runner-${job.id}` || !!job.reworkPr && (!Number.isInteger(job.reworkPr) || job.reworkPr < 1 || !/^shiptorio\/runner-[a-f0-9-]{36}$/.test(job.branch))) || !/^[a-f0-9-]{36}$/.test(job.id) || job.deadline <= Date.now()) throw new Error("Invalid job assignment");
+  assertJobAssignment(job, repo);
   assemblerPrompt(job); // Validate before creating workspace or launching any child.
   const receiptFile = resolve(root, ".work", `${job.id}.receipt.json`);
   if (await Bun.file(receiptFile).exists()) {
