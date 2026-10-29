@@ -43,5 +43,20 @@ export function codexDoctorFailure(result: SandboxResult | undefined, failure: u
     }
     reason ??= category(cleanErr) ?? category(message);
   }
-  return `Codex edit probe failed (${result?.code ?? "setup"}): ${reason ?? "Codex failure details withheld; no verified edit"}`;
+  if (reason === "Codex authentication or authorization rejected") return "Codex needs you to sign in again.\nshiptorio-runner login codex";
+  if (reason === "Codex usage or rate limit reached") return "Codex has reached its usage limit; try again after it resets.";
+  const explanations: Record<string, string> = {
+    "Codex edit probe timed out": "Codex did not finish the test change in time.",
+    "Codex exited without the required verified file edit": "Codex finished without making the test change.",
+    "Codex failed approved-scope verification": "Codex changed files outside the approved test.",
+    "Codex diagnostics exceeded the safe output limit": "Codex returned too much diagnostic output.",
+    "Codex diagnostics exceeded the safe event limit": "Codex returned too many diagnostic events.",
+    "Codex rejected the working directory": "Codex could not open its work folder.",
+    "Codex rejected the response schema": "Codex could not read the test instructions.",
+    "Codex rejected its configuration or arguments": "Codex needs a configuration check.",
+    "Codex model unavailable or unsupported": "The selected Codex model is unavailable.",
+    "Codex sandbox or OS permission rejected": "Your computer blocked the Codex safety check.",
+    "Codex provider connection failed": "Codex could not connect.",
+  };
+  return `${reason?.startsWith("Codex provider request failed") ? "Codex could not finish the request." : explanations[reason ?? ""] ?? "Codex could not verify the test change."}\nshiptorio-runner doctor --edit codex`;
 }

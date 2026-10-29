@@ -41,6 +41,8 @@ Backend GitHub connection reliability: cancellation, missing setup, invalid prov
 
 ## Locked dedicated Keychain restart (Codex, 2026-10-27)
 
+- 2026-10-29, Codex #58: runner-owned terminal messages use short explanations and one next command; technical errors are redacted and verbose-only, with login, reconnect and diagnostics tests retained.
+
 - Existing dedicated Keychains must unlock before `set-keychain-settings`; a locked service restart otherwise fails before credential discovery. The real macOS regression now locks the isolated store and calls prepare directly, preserving the password, saved canary, sandbox boundary and personal default Keychain checks.
 
 
