@@ -16,6 +16,8 @@ Session cookies and preview-form proofs now reuse the existing bounded, isolate-
 
 ## Hosted tester playthrough fixes (Codex, 2026-10-28)
 
+- 2026-10-29 Codex (`codex/ci-demo-reliability`, #48): audit of promotion/nightly failures, current-deck player bot coverage, and a strict postdeploy guest-deck smoke. No product logic or production promotion changes; final same-head full-suite runs remain required before readiness.
+
 The hosted test-newbie run observed a real factory-socket launched transition and PR #7 merged inside the isolated fixture, but failed on the newly enabled overview's 403 and a stale button wait after Launch. Allow only the signed tester's read-only overview through the existing private fixture; production, mutations and repo overrides stay denied. The bot now ends an outstanding action when its authoritative Launch transition arrives; earlier action failures still fail. Focused boundary/action tests pass; full check, dev CI and a fresh hosted playthrough remain required. This is fixture proof, not a real GitHub/Codex ship.
 ## GitHub connection reliability (Codex, 2026-10-28)
 
@@ -791,4 +793,3 @@ Verified whole-App regressions: Hono response assignment replaced appended App t
 - 2026-10-29 Claude ("Plan what's next and load up Codex", `claude/project-thread-ry4a4x`): plan to Nov 3 in `docs/context/demo-plan.md` (where we are, five moves, demo line). Codex batch #43-#48 handed out: trust level-up on the real loop, stale factory cleanup, demo replay, first two minutes, Shippy's brain picks the bottleneck, green CI. Deck batch #36-#42 retired (Justin's Codex deck work #596-#611 superseded it).
 - 2026-10-29 · Codex #46 · `codex/deck-first-run`: new-account deck → GitHub → repo → Codex → first issue browser walk; fixture Worker/runner only, PR #617.
 
-- 2026-10-29 Codex (`codex/ci-demo-reliability`, #48): audit of promotion/nightly failures, current-deck player bot coverage, and a strict postdeploy guest-deck smoke. No product logic or production promotion changes; final same-head full-suite runs remain required before readiness.
