@@ -120,7 +120,7 @@ describe("the 2D deck's view of a factory", () => {
     expect(v.card).toMatchObject({ id: "plan", stop: "planner", dots: { have: 1, need: 3 }, line: "Approve 2 more like this and then it's automatic.", hold: false, waitingCards: 2, attention: "approve" });
     expect(v.jam).toBeNull();
     expect(v.attention).toContain("planner");
-    expect(stop(v, "planner")).toMatchObject({ state: "idle", items: [{ id: "a", look: "plain" }] });
+    expect(stop(v, "planner")).toMatchObject({ state: "idle", items: [{ id: "a", look: "wait" }] }); // yellow: waiting on your call
     expect(v.stops.some(x => x.state === "jammed")).toBe(false);
     expect(v.shippy).toEqual({ pose: "inspect", at: "planner" });
   });

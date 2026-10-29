@@ -11,11 +11,11 @@ import type { StationDef } from "./types";
 const WOOD: Ramp = ["soot", "plate-0", "plate-1", "plate-2", "plate-3", "plate-4"];
 const LIT: Record<StopState, Ramp> = {
   idle: ["soot", "iron-1", "iron-2", "iron-3", "iron-4"],
-  working: ["sun-1", "sun-3", "sun-4", "sun-5", "sun-6", "white"],
+  working: ["energy-0", "energy-0", "energy-1", "energy-2", "energy-3", "white"],
   jammed: ["jam-0", "jam-1", "jam-1", "jam-2", "jam-2", "haze-3"],
   auto: ["ok-0", "ok-1", "ok-1", "ok-2", "ok-2", "white"],
 };
-const GLOW: Record<StopState, Color | null> = { idle: null, working: "sun-6", jammed: "jam-2", auto: "ok-2" };
+const GLOW: Record<StopState, Color | null> = { idle: null, working: "energy-2", jammed: "jam-2", auto: "ok-2" };
 
 /** A round brass rod (3px thick) between two points, banded across its thickness, lit on the upper-right side. */
 function rod(g: Px, x0: number, y0: number, x1: number, y1: number) {

@@ -28,7 +28,7 @@ export function createMachineInteraction(repair?: (id: StopId) => void) {
           ? "Shippy: A simulated jam stopped this bay. Swipe right and I'll clear it."
           : "Shippy: This bay is stopped. There's no repair approval waiting here yet."
           : stop.state === "idle" ? "Shippy: Ready for the next job. Everything is quiet here."
-          : "Shippy: All good here. The green light means this machine is working.",
+          : "Shippy: All good here. The blue light means this machine is running.",
         yes: repair && attention ? "Approve job" : blocked && repair ? "Clear jam" : "Got it", no: "Later",
       };
       return { ...base, card: shown, shippy: { at: selected, pose: blocked ? "alarmed" : "inspect" } };

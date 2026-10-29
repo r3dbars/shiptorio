@@ -203,8 +203,9 @@ export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckV
     const jammed = jam === id;
     const automated = handed.has(id);
     const held = active && s.pipeline?.some(p => p.itemIds.includes(active.id) && p.state === "waiting_player");
+    const waits = !jammed && (attention.has(id) || !!(here.length && held)); // yellow crates: waiting on your call
     const state: StopState = jammed ? "jammed" : attention.has(id) || here.length && held ? "idle" : automated ? "auto" : here.length || busy.has(id) && (!flow || id === activeStop) ? "working" : "idle";
-    const stop: Stop = { id, built: built(s, id) || here.length > 0 || jammed, state, automated, items: here.map((it) => flow ? crate(it, jammed) : (({ badge, ...plain }) => plain)(crate(it, jammed))) };
+    const stop: Stop = { id, built: built(s, id) || here.length > 0 || jammed, state, automated, items: here.map((it) => flow ? crate(it, waits) : (({ badge, ...plain }) => plain)(crate(it, waits))) };
     if (jammed) stop.waiting = `${STOP_LABEL[id].toUpperCase()} WAITING`;
     return stop;
   });
