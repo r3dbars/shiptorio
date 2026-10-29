@@ -11,7 +11,7 @@ const until = (t: ReturnType<typeof createTour>, cond: () => boolean, limit = 60
 test("the tour opens on Shippy and a small, empty deck: no rocket, no machine lit, no work card", () => {
   const t = createTour(), v = t.view();
   expect(v.card?.title).toBe(TOUR[0].title);
-  expect(v.card?.guide).toBe("shippy");
+  expect(v.card?.shippy).toBe("wave");
   expect(v.stops.every((s) => !s.built && !s.items.length)).toBe(true);
   expect(v.deck).toMatchObject({ size: "small", island: "none", boiler: 0 });
   expect(v.attention).toEqual([]);
