@@ -17,7 +17,7 @@ const trace: DeckTrace = { version: 1, provenance: "fixture", name: "Testing #16
   { at: 9000, message: { type: "deck", deck: [] } },
   { at: 9000, message: { type: "patch", patch: { items: [{ ...item, state: "working", updatedAt: 3 }], pipeline: pipeline("builder", "working") } } },
   { at: 69000, message: { type: "patch", patch: { items: [{ ...item, state: "inspecting", prNumber: 27, prUrl: "https://github.com/r3dbars/Testing/pull/27", updatedAt: 4 }], pipeline: pipeline("checks", "working") } } },
-  { at: 129000, message: { type: "patch", patch: { pipeline: pipeline("review", "working") } } },
+  { at: 129000, message: { type: "patch", patch: { items: [{ ...item, state: "inspecting", prNumber: 27, prUrl: "https://github.com/r3dbars/Testing/pull/27", updatedAt: 4, inspection: { headSha: "0338c1ed80a4af8c245913fdd6b2f50c6a8ca40c", state: "pending", humanApproved: false, stages: [{ gate: "ai", state: "pending", reason: "Fixture review" }] } }], pipeline: pipeline("review", "working") } } },
   { at: 189000, message: { type: "patch", patch: { items: [{ ...item, state: "on_pad", prNumber: 27, prUrl: "https://github.com/r3dbars/Testing/pull/27", updatedAt: 5 }], pipeline: pipeline("gate", "waiting_player") } } },
   { at: 189000, message: { type: "deck", deck: [{ ...move("ship-27", "Ship PR #27?", "request_merge"), kind: "ship" }] } },
   { at: 195000, message: { type: "deck", deck: [] } },

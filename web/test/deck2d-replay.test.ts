@@ -87,3 +87,25 @@ test("recorder is opt-in and unavailable on production; it strips credentials an
   const cloned = recorder.trace(); cloned.frames.length = 0;
   expect(recorder.trace().frames).toHaveLength(2);
 });
+
+test("replay blocks page-owned connection buttons and removes that guard on close", async () => {
+  const { Window } = await import("happy-dom");
+  const win = new Window();
+  const saved = Object.getOwnPropertyDescriptor(globalThis, "document");
+  Object.defineProperty(globalThis, "document", { configurable: true, value: win.document });
+  try {
+    const button = win.document.createElement("button");
+    let activated = 0; button.onclick = () => { activated++; }; win.document.body.append(button);
+    const c = clock();
+    const replay = connectReplay(() => {}, () => {}, { search: "?trace=testing-16-sample", timers: c.timers, fetch: (async () => Response.json(fixture)) as typeof fetch });
+    await flush(); button.click();
+    expect(activated).toBe(0);
+    expect(win.document.querySelector('[role="status"]')?.textContent).toContain("fixture sample");
+    replay.close(); button.click();
+    expect(activated).toBe(1);
+    expect(win.document.querySelector('[role="status"]')).toBeNull();
+  } finally {
+    if (saved) Object.defineProperty(globalThis, "document", saved); else delete (globalThis as { document?: unknown }).document;
+    await win.happyDOM.close();
+  }
+});

@@ -89,7 +89,7 @@ export function mountRecorder(recorder: ReturnType<typeof createRecorder>): () =
     const a = document.createElement("a"); a.href = url; a.download = "shiptorio-live-trace.json"; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
-  document.body.append(button);
+  document.body.appendChild(button);
   return () => button.remove();
 }
 
@@ -109,12 +109,23 @@ export function connectReplay(onMessage: Listener, onStatus: StatusListener, opt
   let closed = false, generation = 0;
   const pending = new Set<unknown>();
   const clear = () => { generation++; for (const id of pending) timers.clear(id); pending.clear(); };
+  // The page also owns connection controls outside DeckSource. Block activation there too.
+  // Wheel zoom and file drop remain available; a replay never opens a live action flow.
+  const blockActivation = (event: Event) => { event.preventDefault(); event.stopImmediatePropagation(); };
+  const blockKey = (event: KeyboardEvent) => { if (["Enter", " "].includes(event.key)) blockActivation(event); };
+  const guarded = options.ui !== false && typeof document !== "undefined";
+  if (guarded) {
+    document.addEventListener("click", blockActivation, true);
+    document.addEventListener("pointerdown", blockActivation, true);
+    document.addEventListener("pointerup", blockActivation, true);
+    document.addEventListener("keydown", blockKey, true);
+  }
   const tag = options.ui === false || typeof document === "undefined" ? null : document.createElement("div");
   if (tag) {
     tag.setAttribute("role", "status");
     tag.style.cssText = "position:fixed;top:12px;left:12px;z-index:1100;padding:6px 10px;background:#142030;color:#fff;border:1px solid #c99b48;font:14px monospace;pointer-events:none";
     tag.textContent = "Replay · loading trace";
-    document.body.append(tag);
+    document.body.appendChild(tag);
   }
   const play = (raw: unknown) => {
     if (closed) return;
@@ -150,6 +161,13 @@ export function connectReplay(onMessage: Listener, onStatus: StatusListener, opt
   }
   return {
     send() { /* Replay can never dispatch, approve, defer, or merge anything. */ },
-    close() { closed = true; clear(); tag?.remove(); if (tag) { document.removeEventListener("dragover", drag); document.removeEventListener("drop", drop); } },
+    close() { closed = true; clear(); tag?.remove();
+      if (guarded) {
+        document.removeEventListener("click", blockActivation, true);
+        document.removeEventListener("pointerdown", blockActivation, true);
+        document.removeEventListener("pointerup", blockActivation, true);
+        document.removeEventListener("keydown", blockKey, true);
+      }
+      if (tag) { document.removeEventListener("dragover", drag); document.removeEventListener("drop", drop); } },
   };
 }

@@ -330,6 +330,33 @@
               "itemIds": [],
               "moveIds": []
             }
+          ],
+          "items": [
+            {
+              "id": "gh-16",
+              "kind": "cleanup",
+              "source": "github_issue",
+              "title": "Explain the README checks",
+              "url": "https://github.com/r3dbars/Testing/issues/16",
+              "district": "/",
+              "state": "inspecting",
+              "prNumber": 27,
+              "prUrl": "https://github.com/r3dbars/Testing/pull/27",
+              "attempts": 0,
+              "updatedAt": 4,
+              "inspection": {
+                "headSha": "0338c1ed80a4af8c245913fdd6b2f50c6a8ca40c",
+                "state": "pending",
+                "stages": [
+                  {
+                    "gate": "ai",
+                    "state": "pending",
+                    "reason": "Fixture review"
+                  }
+                ],
+                "humanApproved": false
+              }
+            }
           ]
         }
       }
