@@ -50,3 +50,10 @@ body:has(.connection-tools) .toast { bottom: calc(60px + env(safe-area-inset-bot
 /* Demo controls own the top-left row; "See all" tucks under it on the right instead of drifting over the clouds. */
 .machine-rehearsal .zoom { top: calc(62px + env(safe-area-inset-top, 0px)); bottom: auto; }
 body:has(.connection-tools) .toast { width: calc(100% - 24px); max-width: 560px; white-space: normal; text-align: center; }
+
+/* Desktop: the caption is the one line that tells the story, so it reads at a glance from across the room. Silkscreen
+   is drawn on an 8px grid, so 24px keeps it crisp (3x). Phones keep the 14px line above. */
+@media (min-width: 900px) and (min-height: 560px) {
+  .toast { font-size: 24px; text-shadow: 0 3px 0 #000; }
+  body:has(.connection-tools) .toast, .shippy-rehearsal .toast, .factory-watch .toast, .machine-rehearsal .toast { max-width: 960px; }
+}
