@@ -1,6 +1,7 @@
 import { DecisionOutbox, isDecision } from "./decision-outbox";
 import { socketDisconnected } from "../telemetry";
 import { parseLiveMessage } from "./schemas";
+import { createRecorder, mountRecorder, recordingAllowed } from "../deck2d/data/replay";
 import type { Listener, Source, StatusListener } from ".";
 
 const HEARTBEAT_MS = 15_000;
@@ -10,6 +11,8 @@ const DEAD_MS = 5_000;
 const NOTICE_MS = 3_000;
 
 export function connectLive(repo: string, onMessage: Listener, onStatus: StatusListener): Source {
+  const recorder = typeof location !== "undefined" && typeof location.href === "string" && recordingAllowed(new URL(location.href)) ? createRecorder() : null;
+  const removeRecorder = recorder ? mountRecorder(recorder) : () => {};
   let ws: WebSocket | null = null;
   let closed = false, synced = false, attempt = 0, lastSeq = -1;
   let openedAt = 0, openedOnline = true;
@@ -130,6 +133,8 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
       } else if (msg.type === "snapshot" || (typeof seq === "number" && seq <= lastSeq)) return;
       if (typeof seq === "number") lastSeq = seq;
       clearTimeout(deadline); clearTimeout(heartbeat);
+      // Record only validated, accepted messages, before local display substitutions.
+      recorder?.record(msg);
       const local = (m: { id: string; title: string; plan?: string[] } | null | undefined) => { if (m?.id === "planner-rest" && m.plan?.[0]) m.title = `Planner is resting until ${new Date(m.plan[0]).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}`; };
       if (msg.type === "snapshot") { msg.state.deck?.forEach(local); local(msg.state.move); }
       if (msg.type === "deck") msg.deck.forEach(local);
@@ -189,6 +194,7 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
       if (closed) return;
       closed = true;
       outbox.clear(); clearTimeout(decisionTimer);
+      removeRecorder();
       detach(); clearTimeout(retry); clearNotice();
       if (typeof window !== "undefined") {
         window.removeEventListener("online", resume);

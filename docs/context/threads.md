@@ -172,6 +172,8 @@ Staging fixtures/analytics and public judge/version recovery produced failed sup
 
 ## Codex: public judge replay (2026-10-26)
 
+- 2026-10-29 Codex (`codex/deck-real-replay`, #45): added opt-in sanitized live trace recording and read-only replay transport with an explicitly labeled Testing #16/PR #27 fixture sample. Public route uses the explicitly approved one-line main.ts source-selection hook; no renderer redesign or live factory mutation.
+
 - Landing-page follow-up: a Black Iron “Try the 90-second walkthrough” link below the tagline goes
   directly to `/judge`, labeled “No sign-in required · simulated factory”. Requested frontend-lane
   change, limited to `web/public/welcome/index.html`; no map, auth or simulator changes.
