@@ -35,6 +35,8 @@ Backend GitHub connection reliability: cancellation, missing setup, invalid prov
 
 ## Teach the factory to automate what you approve (Claude, 2026-10-28)
 
+- 2026-10-29, Codex #43: learned Start build permissions apply on runner polls, docs-only plans share a reviewed scope, and reset revokes the permission; real handler/lease and deck-level-up fixtures added. Live four-issue acceptance remains separate.
+
 - Justin's journey pick #11. 3 Continues in a row on one card class (`kind|scope`) and the factory does that class on its own: `server/src/learn.ts`, `runLearned()` in the Factory tick, dots meter `web/src/ui/LearnDots.tsx` from `Move.learn`, learned list + "Ask me again" in Make it yours. Only plans and plan approvals can be learned, never Launch. Dismiss "Just this one" leaves the planner a try-something-different note. Flag `learn` (default on). docs/LEARN.md. The simple tray (#477) swaps its `.tearn` line for `<LearnDots>`.
 
 ## Locked dedicated Keychain restart (Codex, 2026-10-27)

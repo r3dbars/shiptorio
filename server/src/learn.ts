@@ -41,6 +41,20 @@ export function learnKey(card: Move, scope: string): string {
   return `${card.kind ?? "unblock"}|${scope}|${tool}`;
 }
 
+/** Scope documentation-only build approvals by their reviewed file list, not a triage guess.
+ * A README at the repo root and docs/ prose belong to the same earned permission.
+ * Code/config/mixed plans keep their district scope. Planning remains a separate permission.
+ */
+export function learnScope(card: Move, scope: string, jobs: readonly { approvalMoveId?: string; allowedPaths?: readonly string[] }[]): string {
+  if (!card.options.find(o => o.recommended)?.actions.every(a => a.tool === "approve_runner_job")) return scope;
+  const files = jobs.find(j => j.approvalMoveId === card.id)?.allowedPaths;
+  if (!files?.length) return scope;
+  const doc = (path: string) => !path.split("/").some(part => part === ".." || part === "." || !part)
+    && (/^(?:README|CHANGELOG|CONTRIBUTING)(?:\.[^/]*)?\.(?:md|txt|rst|adoc)$/i.test(path)
+      || /^docs\/[^\\]*\.(?:md|txt|rst|adoc)$/i.test(path));
+  return files.every(doc) ? "district:docs" : scope;
+}
+
 const TOOL_WORD: Record<string, string> = { plan_runner_job: "Starting plans", approve_runner_job: "Approving plans" };
 
 /** "Approving plans in /web": what the player sees in the list of things the factory does on its own. */
@@ -77,7 +91,11 @@ export function learnFromYes(book: DeckBook, card: Move, scope: string, now: num
 
 /** Later, Edit or a dismiss on any card of this kind and place: the dots empty. */
 export function resetLearn(book: DeckBook, kind: string, scope: string): void {
-  for (const key of Object.keys(book.learnYes ?? {})) if (key.startsWith(`${kind}|${scope}|`)) delete book.learnYes![key];
+  const keys = new Set([...Object.keys(book.learnYes ?? {}), ...Object.keys(book.auto ?? {})]);
+  for (const key of keys) if (key.startsWith(`${kind}|${scope}|`)) {
+    forget(book, key);
+    if (book.learnYes) delete book.learnYes[key];
+  }
 }
 
 /** Ask the player again for this class. The streak starts over. */
