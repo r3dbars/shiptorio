@@ -5,7 +5,7 @@ import { connectSim } from "../src/sim/engine";
 import type { Source, SourceConfig } from "../src/source";
 import { createLiveSource } from "../src/deck2d/data/source";
 import { createWatchSource, isWatchMode } from "../src/deck2d/data/watch";
-import { deckView, FIRST_LINE, itemStop } from "../src/deck2d/data/view";
+import { ALL_CLEAR, deckView, FIRST_LINE, itemStop } from "../src/deck2d/data/view";
 import { createBuild } from "../src/deck2d/build/build";
 import { createBus } from "../src/deck2d/contract";
 
@@ -403,4 +403,34 @@ test("a new brain pick waits for cargo arrival before changing active item ident
   source.arrive(one.id, "checks");
   expect(source.view().work?.id).toBe(two.id);
   source.close();
+});
+
+test("all clear: nothing asks and nothing moves, so Shippy docks under one plain line and no card", () => {
+  const watched = item("gh-16", "launched", { prNumber: 27, orbit: { since: 0, until: 1e13, state: "watching" } });
+  for (const visualFlow of [true, false]) {
+    const v = deckView(base({ items: visualFlow ? [watched] : [] }), { visualFlow, now: 1e12 });
+    expect(v.allClear).toBe(true);
+    expect(v.caption).toBe(ALL_CLEAR);
+    expect(v.card).toBeNull();
+    expect(v.shippy).toEqual({ pose: "folded", at: "corner" });
+    expect(v.stops.every(x => x.state !== "working" && x.state !== "jammed")).toBe(true);
+  }
+});
+
+test("not all clear while anything needs you, is stuck, or is moving", () => {
+  const flow = { visualFlow: true, now: 1e12 };
+  expect(deckView(base({ deck: [card("a", "approve_runner_job")] }), flow).allClear).toBe(false);
+  expect(deckView(base({ items: [item("gh-16", "rejected")] }), flow).allClear).toBe(false);
+  expect(deckView(base({ items: [item("gh-16", "working")] }), flow).allClear).toBe(false);
+  const waiting = deckView(base({ items: [item("gh-16", "ore")] }), flow);
+  expect(waiting.allClear).toBe(false);
+  expect(waiting.caption).toBe("1 issue waiting in Repo. Choose one to start.");
+  // a fresh, empty factory isn't "clear", it hasn't started
+  expect(deckView(base({ machines: [], stations: [] }), { now: 1e12 }).allClear).toBe(false);
+});
+
+test("a launched crate is followed through its flight, then the deck rests", () => {
+  const launched = item("gh-16", "launched", { prNumber: 27, orbit: { since: 0, until: 1e13, state: "watching" } });
+  expect(deckView(base({ items: [launched] }), { visualFlow: true, activeItemId: "gh-16" }).work?.stop).toBe("launch");
+  expect(deckView(base({ items: [launched] }), { visualFlow: true, activeItemId: null }).work).toBeUndefined();
 });

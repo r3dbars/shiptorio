@@ -97,6 +97,9 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   function focusX(v: DeckView) {
     const pin = cam.pin ?? (v as AttentionView).focus ?? v.card?.stop ?? v.jam;
     if (pin) return STOP_X[pin] + (pin === "launch" ? -200 : 60);
+    // All clear: nothing to look at but Shippy resting on his dock, so a phone parks there.
+    const resting = (v as DeckView & { allClear?: boolean }).allClear && (shippy as ShippyModule & { readonly state?: { x: number } }).state;
+    if (resting) return resting.x + 80;
     if (v.shippy.at !== "corner") return STOP_X[v.shippy.at] + 120;
     if (rocket.mode === "count" || rocket.mode === "up") return STOP_X.launch - 200;
     const fresh = STOPS.find((s) => s !== "launch" && drop[s] > 0 && drop[s] < 1);

@@ -211,6 +211,7 @@ const seed = Number(params.get("seed")) || 0;
     cv.dataset.workId = work?.id ?? '';
     cv.dataset.workStop = work?.stop ?? '';
     cv.dataset.workMoving = String(!!(view as import('./data/view').LiveDeckView).followItem);
+    cv.dataset.allClear = String(!!(view as import('./data/view').LiveDeckView).allClear);
     engine.frame(view, dt);
     card.show(view.card);
     accessibility.update(view.card, view.caption);
