@@ -56,7 +56,7 @@ const seed = Number(params.get("seed")) || 0;
   }
   else if (want === "launch-demo") source = createLaunchDemo();
   else if (want === "orb-demo") source = createOrbDemo();
-  else if ((want === "sim" || want === "live" && params.has("repo")) && data?.createLiveSource) source = await (data.createLiveSource as (cfg: undefined, opts: { onPower: () => void }) => Promise<DeckSource> | DeckSource)(undefined, { onPower: () => connections.open("power") });
+  else if ((want === "replay" || want === "sim" || want === "live" && params.has("repo")) && data?.createLiveSource) source = await (data.createLiveSource as (cfg: undefined, opts: { onPower: () => void }) => Promise<DeckSource> | DeckSource)(undefined, { onPower: () => connections.open("power") });
   else if (want === "live") {
     const backdrop = createDemo().view();
     // Belief before setup: one sample crate waits at Review, so the bottleneck is visible before anything is connected.
