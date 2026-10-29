@@ -19,6 +19,8 @@ Session cookies and preview-form proofs now reuse the existing bounded, isolate-
 The hosted test-newbie run observed a real factory-socket launched transition and PR #7 merged inside the isolated fixture, but failed on the newly enabled overview's 403 and a stale button wait after Launch. Allow only the signed tester's read-only overview through the existing private fixture; production, mutations and repo overrides stay denied. The bot now ends an outstanding action when its authoritative Launch transition arrives; earlier action failures still fail. Focused boundary/action tests pass; full check, dev CI and a fresh hosted playthrough remain required. This is fixture proof, not a real GitHub/Codex ship.
 ## GitHub connection reliability (Codex, 2026-10-28)
 
+- 2026-10-29, Codex #44: missed GitHub access changes stop factories before work, delayed lifecycle events cannot revive them, and authenticated diagnostics counts access-paused factories. No live cleanup of the 44 staging records; PR #615.
+
 Backend GitHub connection reliability: cancellation, missing setup, invalid provider JSON and network/provider failures now have safe retry pages; the token exchange is bounded. No new session is issued after failed repository discovery. Guest merge and normal sign-in retain their checks. See `github-connect.md`; new 2D frontend paths remain untouched. Focused failure tests reproduce the previous unhandled errors; full check and exact-head dev CI govern release.
 
 ## Polished logo dev refresh (Codex, 2026-10-28)
@@ -33,9 +35,13 @@ Backend GitHub connection reliability: cancellation, missing setup, invalid prov
 
 ## Teach the factory to automate what you approve (Claude, 2026-10-28)
 
+- 2026-10-29, Codex #43: learned Start build permissions apply on runner polls, docs-only plans share a reviewed scope, and reset revokes the permission; real handler/lease and deck-level-up fixtures added. Live four-issue acceptance remains separate.
+
 - Justin's journey pick #11. 3 Continues in a row on one card class (`kind|scope`) and the factory does that class on its own: `server/src/learn.ts`, `runLearned()` in the Factory tick, dots meter `web/src/ui/LearnDots.tsx` from `Move.learn`, learned list + "Ask me again" in Make it yours. Only plans and plan approvals can be learned, never Launch. Dismiss "Just this one" leaves the planner a try-something-different note. Flag `learn` (default on). docs/LEARN.md. The simple tray (#477) swaps its `.tearn` line for `<LearnDots>`.
 
 ## Locked dedicated Keychain restart (Codex, 2026-10-27)
+
+- 2026-10-29, Codex #58: runner-owned terminal messages use short explanations and one next command; technical errors are redacted and verbose-only, with login, reconnect and diagnostics tests retained.
 
 - Existing dedicated Keychains must unlock before `set-keychain-settings`; a locked service restart otherwise fails before credential discovery. The real macOS regression now locks the isolated store and calls prepare directly, preserving the password, saved canary, sandbox boundary and personal default Keychain checks.
 
@@ -786,3 +792,4 @@ Verified whole-App regressions: Hono response assignment replaced appended App t
 
 - 2026-10-29 Claude ("Plan what's next and load up Codex", `claude/project-thread-ry4a4x`): plan to Nov 3 in `docs/context/demo-plan.md` (where we are, five moves, demo line). Codex batch #43-#48 handed out: trust level-up on the real loop, stale factory cleanup, demo replay, first two minutes, Shippy's brain picks the bottleneck, green CI. Deck batch #36-#42 retired (Justin's Codex deck work #596-#611 superseded it).
 - 2026-10-29 · Codex #46 · `codex/deck-first-run`: new-account deck → GitHub → repo → Codex → first issue browser walk; fixture Worker/runner only, PR #617.
+

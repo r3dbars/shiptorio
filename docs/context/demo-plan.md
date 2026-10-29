@@ -1,6 +1,7 @@
 # Plan to Nov 3 (demo video)
 
 Written 2026-10-29 by the "Plan what's next and load up Codex" thread. Every agent reads this before picking work.
+Shot list and voiceover: [demo-script.md](demo-script.md).
 Deadline: Meta hackathon cutoff Nov 4 8 PM CT, aim to be done Nov 3 evening. Feature freeze ~Nov 1 (after that:
 bugs, polish, reliability). Justin films the demo video himself on the real deck.
 
@@ -36,6 +37,14 @@ Waiting on Justin:
 - Tap Promote on #571 (dev → shiptorio.com, Testing hang fix).
 - Tap Launch on Testing #19, #20; the runner plugins-off paste.
 - Hold Ship it on Testing PR #27 in the live deck.
+
+## #43: which Testing issues teach the same build permission
+
+For the live level-up take, use first-time issues whose reviewed **Start build** plan writes only root README/CHANGELOG/CONTRIBUTING prose (`.md`, `.txt`, `.rst`, `.adoc`) and/or prose files under `docs/`. Those plans share `build|district:docs|approve_runner_job` inside the repository, even if triage calls the issue's district `/` or `docs`. Three accepted Start build cards teach this permission; the next matching plan can dispatch automatically to the already-paired runner. Starting a plan is a separate permission and still asks unless independently learned.
+
+A plan that also edits code/config (for example `package.json`) keeps its original district scope and does not use the docs permission. Rework, existing PRs, scars and base refreshes always require a fresh decision. Gate never learns auto-merge. “Ask me again” removes the permission and streak. The existing `learned` list and timestamp mark the Builder automatic; no new renderer contract is needed.
+
+Verification boundaries: fixture tests exercise the real approval and runner-claim methods, including lease/reconnect behavior. A new four-issue run on shiptorio.dev is still player acceptance; fixture success is not a claim that four live jobs ran.
 
 ## The five moves
 
@@ -81,4 +90,14 @@ Visual deck polish stays with Justin's local Codex (`codex/deck-visuals`) and Cl
 | 62 | Keyboard and screen reader basics | web/src/deck2d/main.ts (aria/keyboard only) |
 | 63 | Trim the admin page | server/src/{admin,admin-view,admin-god-page,admin-god,ops}.ts |
 
-Status 18:10: #43 → PR #618, #44 → #615, #45 → #616, #46 → #617. #47 and #48 not started yet.
+| 64 | Faster to the first frame on a cold visit | server/src/{browser-socket,session,accounts,account-data,private-socket-timing}.ts |
+| 65 | GitHub calls: fewer, calmer | server/src/{github,github-cache,github-concurrency}.ts |
+| 66 | Meta calls: fewer and cheaper | server/src/{spark,spark-tools,spark-support,budget,spend,quotas}.ts |
+| 67 | The runner keeps going | runner/src/{pairing,recovery,health,workspace,codex-assembler,subscriptions}.ts |
+| 68 | Security pass before the demo | server/src/{security,webhook-body,redact,injection-policy,rate-limit,auth,authorization}.ts |
+| 69 | Dead code sweep (server) | server/src/{ore,geothermal,orbit,growth,unlocks,levels,permits,taps,taps-admin,support,waitlist,map,iron-page,ironPage,engine,diagnose,starterIssue,test-delegation}.ts, signals/*, sources/* |
+| 70 | Dead code sweep (old web UI) | web/src/{ui,buildout,sim,sound,judge,map}/**, App.tsx, store.ts, old CSS |
+
+Claude threads (2026-10-29 18:26): "Polish the station and belt art" owns station drawing + belt art; "Write the 2-minute demo video script" owns docs/context/demo-script.md.
+
+Status 18:30: merged #46 (#617), #45 (#616). Open: #43 (#618), #44 (#615), #48 (#621 draft), #57 (#622 draft). Others in progress.

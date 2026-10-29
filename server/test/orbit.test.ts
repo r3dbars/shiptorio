@@ -74,7 +74,7 @@ describe("orbit rules", () => {
 
 describe("orbit watch in the Factory", () => {
   const fixture = (items: Item[], book: PermitBook) => {
-    const data = new Map<string, unknown>([["state", base(items)], ["meta", { repo: "r3dbars/demo", installationId: 1 }], ["permits", book]]);
+    const data = new Map<string, unknown>([["githubAccessCheckedAt", Date.now()], ["state", base(items)], ["meta", { repo: "r3dbars/demo", installationId: 1 }], ["permits", book]]);
     const events: { type: string; district?: string; text?: string }[] = [];
     let alarm: number | null = null;
     const storage = {

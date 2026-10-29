@@ -52,14 +52,14 @@ test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1")("doctor CLI reports eve
       cwd: resolve(import.meta.dir, "../.."), env: { PATH: "/usr/bin:/bin", SHIPTORIO_RUNNER_ROOT: root }, stdout: "pipe", stderr: "pipe",
     });
     const [out, err, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
-    expect(code).toBe(1); expect(out).toContain("FAIL auth:"); expect(out).toContain("sandbox:verification:"); expect(out).toContain("FAIL pairing:");
+    expect(code).toBe(1); expect(out).toContain("Codex is not installed"); expect(out).toContain("Your computer's safety checks passed"); expect(out).toContain("reconnect to your factory");
     expect(out + err).not.toContain("Waiting for your approval");
-    expect(out).toContain("SKIP edit:codex: Not checked");
+    expect(out).toContain("Codex has not tried a test change yet");
     const edit = Bun.spawn([process.execPath, "runner/src/cli.ts", "doctor", "--edit", "codex"], {
       cwd: resolve(import.meta.dir, "../.."), env: { PATH: "/usr/bin:/bin", SHIPTORIO_RUNNER_ROOT: root }, stdout: "pipe", stderr: "pipe",
     });
     const [editOut, editErr, editCode] = await Promise.all([new Response(edit.stdout).text(), new Response(edit.stderr).text(), edit.exited]);
-    expect(editCode).toBe(1); expect(editOut).toContain("FAIL edit:codex:");
+    expect(editCode).toBe(1); expect(editOut).toContain("Codex is not installed");
     expect(editOut + editErr).not.toContain("Waiting for your approval");
   } finally { await rm(root, { recursive: true, force: true }); }
 });

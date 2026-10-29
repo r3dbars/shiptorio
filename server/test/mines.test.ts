@@ -113,7 +113,7 @@ const { starterLine } = await import("../src/engine");
 
 function factoryFixture(env: Record<string, unknown>) {
   const state = FactoryState.parse({ repo: "example/shop", baseBranch: "main", districts: DISTRICTS.map((name, i) => ({ name, x: i * 6, y: 0, w: 4, h: 4, files: 3 })), ...starterLine(), items: [], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 });
-  const data = new Map<string, unknown>([["githubRepoId", 503], ["state", structuredClone(state)], ["meta", { repo: state.repo, installationId: 1 }]]);
+  const data = new Map<string, unknown>([["githubAccessCheckedAt", Date.now()], ["githubRepoId", 503], ["state", structuredClone(state)], ["meta", { repo: state.repo, installationId: 1 }]]);
   const kv = new Map<string, string>();
   let alarm: number | null = null;
   const events: { type: string; text?: string }[] = [];

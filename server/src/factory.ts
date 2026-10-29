@@ -77,7 +77,7 @@ import {
 import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, freshIssueInput, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, pullRequestReadiness, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
 import { layoutMap } from "./map";
-import { initialFactoryState } from "./factory-initialization";
+import { initialFactoryState, reconcileFactoryGitHubAccess } from "./factory-initialization";
 import { inventoryCommand } from "./factory-inventory";
 import { gameMaster, heuristicTriage, readGoals, judgeOrbit, judgePermit, pickPower, pickResearch, pickFiles, planLocalTask, proposeExperiment, sparkConfigured, sparkModel, triage, writeFix, type GameMasterBrief, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
 import { emptyBrain, recordThought, scoreShip } from "./brain";
@@ -96,7 +96,7 @@ import { closeGone, loadTaps, offerCards, offeredRow, openCards, purgeTaps, reco
 import { deriveBottleneck, stageForItem, type StageHistory, type StageMetrics } from "./bottleneck";
 import { emptyMemory as emptyBrainMemory, modelDiagnose, runDiagnose, tapBrain, type BrainMemory } from "./diagnose";
 import { collect, emptyCache as emptySignalCache, type SignalCache } from "./signals";
-import { dismissNote, resetLearn, forget, forgetOnComeback, freshWork, isLearned, learnedList, learnFromYes, learnKey, learnMeter, learnOption, noteAutoRun } from "./learn";
+import { dismissNote, resetLearn, forget, forgetOnComeback, freshWork, isLearned, learnedList, learnFromYes, learnKey, learnMeter, learnOption, learnScope, noteAutoRun } from "./learn";
 import { hasDeferReceipt, beginCheckin, deferCard, emptyDeckBook, moveKey, noteYes, plannerFeedback, resetYes, suppressed, thirdDefer, yesKey, type DeckBook, type DeckRule } from "./deck-decisions";
 import { normalizeSentry, sentryStatus, type SentryPayload } from "./sources/sentry";
 import { recordSentryPulse, SENTRY_PULSES_KEY, type SentryPulse } from "./signals/sentry";
@@ -437,7 +437,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const streak = yes?.[yesKey(m.kind ?? "unblock", moveScope(m, s))] ?? 0;
       const card = streak >= 2 && !m.because ? { ...m, because: `You said yes to the last ${streak} like this.` } : m;
       // docs/LEARN.md: the dots. How many more yeses until the factory does this kind on its own.
-      const learn = learning ? learnMeter(this.deckBook!, m, moveScope(m, s), freshWork(m, s.items.find(i => i.id === m.itemId), jobs)) : undefined;
+      const learn = learning ? learnMeter(this.deckBook!, m, learnScope(m, moveScope(m, s), jobs), freshWork(m, s.items.find(i => i.id === m.itemId), jobs)) : undefined;
       return learn ? { ...card, learn } : card;
     });
     const previous = s.move;
@@ -718,7 +718,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.decisionData();
     if (why !== "defer" && move.id.startsWith("unlock:")) await this.tapBrainCard(move.id.slice(7), "later");
     const book = this.deckBook!, key = moveKey(move), before = book.decisions[key] && structuredClone(book.decisions[key]);
-    const reset = () => { resetYes(book, move.kind ?? "unblock", moveScope(move, this.state!)); resetLearn(book, move.kind ?? "unblock", moveScope(move, this.state!)); };
+    const jobs = await this.runnerJobs();
+    const reset = () => { resetYes(book, move.kind ?? "unblock", moveScope(move, this.state!)); resetLearn(book, move.kind ?? "unblock", learnScope(move, moveScope(move, this.state!), jobs)); };
     if (why === "defer") {
       const counted = deferCard(book, move, intent);
       if (counted) { reset(); if (move.id.startsWith("unlock:")) await this.tapBrainCard(move.id.slice(7), "later"); }
@@ -1333,6 +1334,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (JSON.stringify(power) !== JSON.stringify(this.state.power)) await this.patch({ power });
     }
     await this.offerRunnerPlan();
+    // Reconnected/idle runners may be the next event after a plan is ready. Honor earned
+    // approvals here too, through the manual approval handler, before looking for a lease.
+    if (this.state) await this.runLearned();
     await this.refreshDecisions();
     await this.scheduleTick();
     const job = await this.ctx.blockConcurrencyWhile(async () => {
@@ -3065,7 +3069,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (await flagOptedOut(this.env, "autonomy")) return;
     for (const card of [...this.openMoves!]) {
       const optionId = learnOption(card);
-      const key = learnKey(card, moveScope(card, s));
+      const key = learnKey(card, learnScope(card, moveScope(card, s), await this.runnerJobs()));
       if (!optionId || !isLearned(book, key) || suppressed(book, card)) continue;
       // The player who taught it decides: their own opt-out of learning or autonomy stops it.
       const by = book.auto![key].by;
@@ -3451,12 +3455,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         if (consumed && option.recommended) {
           await this.recordApproval(card.kind ?? "unblock", moveScope(card, s));
           noteYes(this.deckBook!, card.kind ?? "unblock", moveScope(card, s));
-          if (await flagEnabled(this.env, "learn", playerLogin(auth)) && learnFromYes(this.deckBook!, card, moveScope(card, s), Date.now(), fresh, playerLogin(auth)))
+          if (await flagEnabled(this.env, "learn", playerLogin(auth)) && learnFromYes(this.deckBook!, card, learnScope(card, moveScope(card, s), jobsBefore), Date.now(), fresh, playerLogin(auth)))
             this.broadcast({ type: "log", level: "success", text: "Learned. The factory does these on its own now.", at: Date.now(), itemId: card.itemId, actor: "player", reason: "You said yes 3 times in a row. Turn it off in Make it yours." });
           await this.accountPut("deckBook", this.deckBook);
         } else if (consumed && learnOption(card)) {
           // Edit: the player changed the suggestion, so the streak starts over.
-          resetLearn(this.deckBook!, card.kind ?? "unblock", moveScope(card, s));
+          resetLearn(this.deckBook!, card.kind ?? "unblock", learnScope(card, moveScope(card, s), jobsBefore));
           await this.accountPut("deckBook", this.deckBook);
         }
       }
@@ -3694,6 +3698,15 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       return;
     }
     try { await this.load(); } catch (error) { if (this.accountErased) return; throw error; }
+    if (this.meta) {
+      const access = await reconcileFactoryGitHubAccess(this.env, this.meta, await this.ctx.storage.get<number>("githubAccessCheckedAt"));
+      if (access.stopped) {
+        if (access.archivedAt !== undefined) await this.archiveGitHub(access.reason, access.archivedAt);
+        else await this.pauseGitHub(access.reason);
+        return;
+      }
+      if (access.checkedAt !== undefined) await this.accountPut("githubAccessCheckedAt", access.checkedAt);
+    }
     return inTrace({ requestId: crypto.randomUUID(), repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), async () => {
       try { await this.tick(); } catch (error) { report(error, "factory.alarm_failed"); throw error; }
     });
