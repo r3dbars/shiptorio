@@ -76,3 +76,14 @@ test("duplicate issue-to-review notifications keep the same plan and verdict wit
   expect([before.usage.calls,after.usage.calls]).toEqual([10,5]);
   expect([before.usage.tokens,after.usage.tokens]).toEqual([1000,500]);
 });
+
+
+test("a transient account lookup retries before any paid request", async () => {
+  const env = sparkTestEnv(); let lookups = 0, calls = 0;
+  env.budgetAccount = async () => { if (++lookups === 1) throw new Error("Temporary account lookup failure"); return "owner"; };
+  globalThis.fetch = (async () => { calls++; return Response.json({ choices: [{ message: { content: "decision" } }], usage: {total_tokens: 100} }); }) as unknown as typeof fetch;
+  expect(await sparkChat(env, message)).toBe("decision");
+  expect(lookups).toBe(2);
+  expect(calls).toBe(1);
+  expect((await budgetUsage(env,"owner")).calls).toBe(1);
+});

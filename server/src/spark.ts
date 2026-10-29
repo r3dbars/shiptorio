@@ -54,7 +54,10 @@ export async function sparkChat(env: SparkEnv, messages: ChatMessage[], effort: 
   if (!env.DB || !env.budgetAccount) throw new BudgetError("Budget ledger/account unavailable; Planner paused");
   const base = (env.SPARK_BASE_URL || "https://api.meta.ai/v1").replace(/\/$/, "");
   env.planningSignal?.throwIfAborted();
-  const account = await env.budgetAccount();
+  const account = await retry("Spark account", async () => {
+    env.planningSignal?.throwIfAborted();
+    return env.budgetAccount!();
+  }, { shouldRetry: error => !(error instanceof BudgetError) && !(error instanceof SparkError) && !env.planningSignal?.aborted });
   let pending = pendingChats.get(env);
   if (!pending || pending.db !== env.DB || pending.account !== env.budgetAccount || pending.signal !== env.planningSignal) {
     pending = { db: env.DB, account: env.budgetAccount, signal: env.planningSignal, requests: new Map() };
