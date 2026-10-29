@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 import { test, expect, type Locator } from '@playwright/test';
 import { assertWire } from '../contract/assert-wire';
 
@@ -13,6 +14,13 @@ test('intro → sign in → repo → approve → PR → gauntlet → launch → 
     await page.clock.setFixedTime(fixedTime);
     await page.clock.pauseAt(new Date(fixedTime.getTime() + 1));
     try { await expect(target).toHaveScreenshot(name); }
+    catch (error) {
+      // CI's render is the baseline, and the artifact store isn't reachable from every
+      // agent sandbox. Print the actual image so a stale baseline can be refreshed from the log.
+      const actual = info.outputPath(name.replace(/\.png$/, '-actual.png'));
+      if (process.env.CI && existsSync(actual)) console.log(`BASELINE ${info.project.name}/${name} ${readFileSync(actual).toString('base64')}`);
+      throw error;
+    }
     finally { await page.clock.resume(); await page.clock.setFixedTime(fixedTime); }
   };
   const repo = `fixture/${info.project.name}`;
