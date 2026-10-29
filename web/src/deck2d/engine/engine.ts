@@ -300,13 +300,46 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     cx.fillStyle = g; cx.fillRect(x - r, y - r, r * 2, r * 2);
     cx.globalCompositeOperation = "source-over";
   }
+  // Justin (10-29): the sky, city and cloud sea were as bright as the deck, so the platform didn't pop. In pixel
+  // mode the background pictures are dimmed the pixel-art way: every pixel snaps to its nearest palette color, then
+  // steps darker on that color's own ramp (DIM shades, one more on the long sun ramp, whose steps are small),
+  // so hues and detail stay and only the brightness drops. Done once per picture and cached; ?px=0 keeps the old
+  // bright pictures.
+  const DIM = 1;
+  const SUN = Object.keys(PALETTE).indexOf("sun"), ramps = Object.values(PALETTE).map((r) => r.map((h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16))));
+  const darker = new Map<number, number[]>();
+  function stepDown(r: number, g: number, b: number) {
+    const key = (r << 16) | (g << 8) | b;
+    let c = darker.get(key);
+    if (!c) {
+      let best = Infinity, ri = 0, ci = 0;
+      ramps.forEach((ramp, a) => ramp.forEach(([pr, pg, pb], n) => {
+        const e = (pr - r) ** 2 + (pg - g) ** 2 + (pb - b) ** 2; if (e < best) { best = e; ri = a; ci = n; }
+      }));
+      c = ramps[ri][Math.max(0, ci - DIM - (ri === SUN ? 1 : 0))]; darker.set(key, c);
+    }
+    return c;
+  }
+  const dimmed = new Map<string, HTMLCanvasElement>();
+  function dimArt(name: string): HTMLCanvasElement | HTMLImageElement | null {
+    const im = img(name); if (!im || !px) return im;
+    let c = dimmed.get(name);
+    if (!c) {
+      c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = im.naturalHeight;
+      const g = c.getContext("2d")!; g.drawImage(im, 0, 0);
+      const data = g.getImageData(0, 0, c.width, c.height), d = data.data;
+      for (let i = 0; i < d.length; i += 4) if (d[i + 3]) [d[i], d[i + 1], d[i + 2]] = stepDown(d[i], d[i + 1], d[i + 2]);
+      g.putImageData(data, 0, 0); dimmed.set(name, c);
+    }
+    return c;
+  }
   // The sky picture has its cloud sea painted in from ~45% down (islands hang to ~57%), right where the deck hangs. In pixel mode we cut it
   // there and drop the sea below the deck (`floor` = screen y the sea must start under), with sunset haze in the gap,
   // so the deck floats in open air instead of sitting on the cloud tops.
   const SEA = 0.47, FADE = 0.05;
   let skyCut: { top: HTMLCanvasElement; sea: HTMLCanvasElement; haze: string } | null = null;
-  function cutSky(sk: HTMLImageElement) {
-    const nw = sk.naturalWidth, nh = sk.naturalHeight, cut = Math.round(nh * SEA), f = Math.round(nh * FADE);
+  function cutSky(sk: HTMLCanvasElement | HTMLImageElement) {
+    const nw = sk.width, nh = sk.height, cut = Math.round(nh * SEA), f = Math.round(nh * FADE);
     const part = (y0: number, y1: number, fadeTop: boolean) => {
       const c = document.createElement("canvas"); c.width = nw; c.height = y1 - y0;
       const g = c.getContext("2d")!; g.drawImage(sk, 0, y0, nw, y1 - y0, 0, 0, nw, y1 - y0);
@@ -324,7 +357,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   function hazeBand(W: number, H: number) {
     if (haze && haze.width === W && haze.height === H) return haze;
     haze = document.createElement("canvas"); haze.width = W; haze.height = H;
-    const g = haze.getContext("2d")!, band = [PALETTE.sun[4], PALETTE.sun[3], PALETTE.sun[2], PALETTE.copper[2]];
+    const g = haze.getContext("2d")!, band = [PALETTE.sun[3 - DIM], PALETTE.sun[2 - DIM], PALETTE.sun[1 - DIM], PALETTE.copper[2 - DIM]];
     const bh = H / band.length;
     band.forEach((c, i) => { g.fillStyle = c; g.fillRect(0, Math.round(i * bh), W, Math.ceil(bh) + 1); });
     for (let i = 1; i < band.length; i++) {
@@ -335,15 +368,15 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     const rnd = () => ((r = (r * 16807) % 2147483647) / 2147483647);
     for (let i = 0; i < 6; i++) { // a wisp: lit top row, wider body, shadowed belly
       const y = Math.round(bh * 0.8 + rnd() * (H - bh * 1.8)), x = Math.round(rnd() * W), w = Math.round(W * (0.03 + rnd() * 0.05));
-      g.fillStyle = PALETTE.sun[5]; g.fillRect(x + 3, y, w - 6, 1);
-      g.fillStyle = PALETTE.sun[4]; g.fillRect(x, y + 1, w, 2);
-      g.fillStyle = PALETTE.copper[3]; g.fillRect(x + 2, y + 3, w - 4, 1);
+      g.fillStyle = PALETTE.sun[4 - DIM]; g.fillRect(x + 3, y, w - 6, 1);
+      g.fillStyle = PALETTE.sun[3 - DIM]; g.fillRect(x, y + 1, w, 2);
+      g.fillStyle = PALETTE.copper[3 - DIM]; g.fillRect(x + 2, y + 3, w - 4, 1);
     }
     return haze;
   }
   function sky(W: number, H: number, camS: number, floor?: number) {
-    const sk = img("sky"); if (!sk) return;
-    const s = Math.max(W / sk.naturalWidth, H / sk.naturalHeight) * 1.1, w = sk.naturalWidth * s, h = sk.naturalHeight * s;
+    const sk = dimArt("sky"); if (!sk) return;
+    const s = Math.max(W / sk.width, H / sk.height) * 1.1, w = sk.width * s, h = sk.height * s;
     const ox = Math.max(-(w - W) / 2, Math.min((w - W) / 2, -(cam.x - 1400) * 0.04 * camS));
     const x = Math.round((W - w) / 2 + ox), y = Math.round((H - h) / 2);
     const drop = floor === undefined ? 0 : Math.round(Math.max(0, floor - (y + h * SEA)));
@@ -354,7 +387,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     cx.drawImage(hazeBand(W, hh), 0, hy);
     cx.drawImage(skyCut.top, x, y, Math.round(w), Math.round(h * (SEA + FADE)));
     cx.drawImage(skyCut.sea, x, Math.round(cut - fh + drop), Math.round(w), Math.round(h * (1 - SEA + FADE)));
-    if (y + drop + h < H) { cx.fillStyle = PALETTE.copper[1]; cx.fillRect(0, Math.floor(y + drop + h), W, H); }
+    if (y + drop + h < H) { cx.fillStyle = PALETTE.copper[1 - DIM]; cx.fillRect(0, Math.floor(y + drop + h), W, H); }
   }
   function clouds(y: number, scale: number, speed: number, alpha: number) {
     const c = img("clouds"); if (!c) return;
@@ -371,8 +404,8 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   // scale them with the deck; `par` is how much of the camera's pan they follow (far = small).
   const SEA_AT = 0.72;
   function farClouds(W: number, H: number, y: number, h: number, speed: number, par: number, alpha: number) {
-    const c = img("clouds"); if (!c) return;
-    const w = Math.round(c.naturalWidth * h / c.naturalHeight); h = Math.round(h);
+    const c = dimArt("clouds"); if (!c) return;
+    const w = Math.round(c.width * h / c.height); h = Math.round(h);
     const off = (((t * speed + cam.x * par) / ART_PX) % (2 * w) + 2 * w) % (2 * w);
     cx.globalAlpha = alpha;
     let i = 0;
