@@ -5,7 +5,7 @@ import { activeAdminView, readAdminView, viewCookieValue } from "./admin-view";
 import { pruneExpiredDeliveryMarkers } from "./delivery-retention";
 import { accountIdentity } from "./account-identity";
 import { runnerAuthMove, type AuthHarness } from "./runner-health";
-import { planningFailure, planningHold, planningCapacity, planningCapacityRaised, planningFailureKind, planningDeadline, plannerRestDeck, PLANNING_DEADLINE_MS, PLANNER_REST_KEY, type PlanningRetry } from "./planning-retry";
+import { planningFailure, planningHold, planningCapacity, planningCapacityRaised, planningFailureKind, planningDeadline, plannerRestDeck, plannerBusy, PLANNER_BUSY_LINE, PLANNING_DEADLINE_MS, PLANNER_REST_KEY, type PlanningRetry } from "./planning-retry";
 import { availableJobHarness, syncRunnerPower } from "./runner-power";
 import { factoryDeleted } from "./account-data";
 import { pollDelay, RateLimitError } from "./rate-limit";
@@ -1483,7 +1483,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (await this.ctx.storage.get("migratedTo")) throw new Error("Legacy factory migrated");
     if (!lifecycleEvents.includes(event) && await this.githubStopped()) return;
     if ((await this.ctx.storage.get<number>(`done:${key}`) ?? 0) > Date.now() || await this.ctx.storage.get(`failed:${key}`)) return;
-    if (!(await this.ctx.storage.get(key))) await this.accountPut(key, { event, payload, attempts: 0, trace: currentTrace() });
+    if (!(await this.ctx.storage.get(key))) await this.accountPut(key, { event, payload, attempts: 0, receivedAt: Date.now(), trace: currentTrace() });
 
     await this.scheduleTick();
   }
@@ -1494,13 +1494,15 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const key = `delivery:sentry-${deliveryId}`;
     await this.assertAccountActive(this.meta?.repo ?? "");
     if ((await this.ctx.storage.get<number>(`done:${key}`) ?? 0) > Date.now() || await this.ctx.storage.get(`failed:${key}`)) return;
-    if (!(await this.ctx.storage.get(key))) await this.accountPut(key, { source: "sentry", deliveryId, event: resource, payload, attempts: 0, trace: currentTrace() });
+    if (!(await this.ctx.storage.get(key))) await this.accountPut(key, { source: "sentry", deliveryId, event: resource, payload, attempts: 0, receivedAt: Date.now(), trace: currentTrace() });
 
     await this.scheduleTick();
   }
 
   private async processDeliveries(): Promise<void> {
-    const pending = await this.ctx.storage.list<{ trace?: Trace; source?: "sentry" | "support"; deliveryId?: string; event: string; payload: GitHubPayload; attempts: number; nextAt?: number }>({ prefix: "delivery:", limit: 100 });
+    const listed = await this.ctx.storage.list<{ trace?: Trace; source?: "sentry" | "support"; deliveryId?: string; event: string; payload: GitHubPayload; attempts: number; nextAt?: number; receivedAt?: number }>({ prefix: "delivery:", limit: 100 });
+    // Storage lists keys in delivery-GUID order; work through them in the order they arrived.
+    const pending = [...listed].sort(([, a], [, b]) => (a.receivedAt ?? 0) - (b.receivedAt ?? 0));
     let processed = 0;
 
     for (const [key, delivery] of pending) {
@@ -1542,8 +1544,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         }
         await this.accountPut(key, { ...delivery, attempts, nextAt: Date.now() + Math.min(600000, 5000 * 2 ** Math.min(attempts, 7)) * (0.5 + Math.random()) });
         this.log("error", `${delivery.source === "sentry" ? "Sentry" : delivery.source === "support" ? "Support" : "GitHub"} delivery deferred (attempt ${attempts}); check App configuration and API availability.`);
-        await this.accountAlarm(Date.now() + Math.min(600000, 5000 * 2 ** Math.min(attempts, 7)));
-        break;
+        // One bad delivery waits out its own backoff; the rest of the queue keeps moving.
+        continue;
       }
     }
     const remaining = await this.ctx.storage.list<{ nextAt?: number }>({ prefix: "delivery:" });
@@ -1895,7 +1897,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   async enqueueSupport(deliveryId: string, message: SupportMessage): Promise<void> {
     await this.assertAccountActive(this.meta?.repo);
     const key = `delivery:support-${deliveryId}`;
-    if (!(await this.ctx.storage.get(key))) await this.accountPut(key, { source: "support", deliveryId, event: message.channel, payload: message, attempts: 0 });
+    if (!(await this.ctx.storage.get(key))) await this.accountPut(key, { source: "support", deliveryId, event: message.channel, payload: message, attempts: 0, receivedAt: Date.now() });
     await this.scheduleTick();
   }
 
@@ -2615,6 +2617,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const gate = nextGate(item)!;
     let advanced: Item | undefined;
     if (gate === "ai" && !sparkConfigured(this.env)) return; // waits for Spark power; the station shows the pile
+    // A planner timeout or 429 parks the planner briefly; review waits it out instead of retrying every tick.
+    if (gate === "ai" && plannerBusy(await this.plannerRest())) return;
     this.gauntletRunning = true;
     const pr = item.prNumber!;
     const inspection = item.inspection!;
@@ -2687,8 +2691,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (e instanceof BudgetError || e instanceof RateLimitError || e instanceof RepositoryReadUnavailable) {
         const limit = e instanceof RepositoryReadUnavailable ? e.cause : e;
         if (limit instanceof RateLimitError) this.githubRest(limit.retryAt);
-        this.log("warn", `Station paused: ${e.message}`, item.id);
+        this.log("warn", `Station is waiting (${e.message}). It picks up again on its own.`, item.id);
         return; // Keep pending proof; resource waiting is not a failed code review.
+      }
+      if (gate === "ai" && plannerBusy(await this.plannerRest()) && plannerBusy({ kind: planningFailureKind(e) })) {
+        this.log("info", PLANNER_BUSY_LINE, item.id);
+        return; // A slow or busy planner is not a failed code review; the same PR head is reviewed after the rest.
       }
       const latest = current();
       if (latest) {
