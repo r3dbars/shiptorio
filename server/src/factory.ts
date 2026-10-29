@@ -3685,9 +3685,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     this.batchingDecisions = true;
     try {
     await this.load();
+    // Paused factories retain queued deliveries without spending provider calls.
+    if (await adminPaused(this.env.DB,this.meta?.repo)) { await this.accountAlarm(Date.now()+TICK_MS); return; }
     await this.processDeliveries();
     if (await this.githubStopped()) return;
-    if (await adminPaused(this.env.DB,this.meta?.repo)) { await this.accountAlarm(Date.now()+TICK_MS); return; }
     if (!(await this.load())) return;
     await this.githubGuard("runGauntlet", () => this.runGauntletBurst());
     await this.guard("pollPostHog", () => this.pollPostHog());
