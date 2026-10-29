@@ -84,11 +84,12 @@ try { for (const [index,view] of views.entries()) {
       else { assert.equal(await page.locator('.connection-tools').count(),0,'setup chips stay hidden before sign-in');assert.equal(await card().getByRole('button',{name:'Sign in',exact:true}).count(),0,'play the story before setup'); }
     });
     if(!baseline){
-      for(let n=1;n<=1;n++)await step(`story-decision-${n}`,async()=>{
-        const decision=page.locator(`.ic-card:not(.ic-ghost)[data-card="story-call-${n}"]`);
-        await decision.waitFor({timeout:30000});assert.equal(await page.locator('.connection-tools').count(),0);
-        assert.equal(await card().getByRole('button',{name:'Sign in',exact:true}).count(),0);
-        await decision.locator('.approve').click();await decision.waitFor({state:'detached'});
+      // The guest tour opens on Shippy's first card. This run takes its Skip, straight to sign-in (the staging smoke
+      // walks every card), so the two-minute budget measures setup, not reading.
+      await step('tour',async()=>{
+        const first=page.locator('.ic-card:not(.ic-ghost)[data-card^="tour-"]');
+        await first.waitFor({timeout:30000});assert.match(await first.innerText(),/Shippy/);
+        await first.locator('.later').click();
       });
       await step('story-sign-in',async()=>{await card().getByRole('button',{name:'Sign in',exact:true}).waitFor({timeout:45000});assert.equal(await page.locator('.connection-tools').count(),0);});
     }
