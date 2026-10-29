@@ -18,7 +18,7 @@ test("one issue physically arrives at each station before processing and only sh
   source.arrive(id, "checks"); source.step?.(2.5);
   source.arrive(id, "review"); expect(source.view().card).toBeNull(); // review is the factory's job, not a card
   source.step?.(2.5); expect(source.view().shipped).toBe(0);
-  source.arrive(id, "gate"); expect(source.view().card?.yes).toBe("Launch preview");
+  source.arrive(id, "gate"); expect(source.view().card?.yes).toBe("Ship it");
   source.approve(source.view().card!.id); expect(source.view().shipped).toBe(0);
   source.arrive(id, "launch"); expect(source.view().shipped).toBe(1);
   source.replay(); source.approve(source.view().card!.id); expect(cargo().id).not.toBe(id);
@@ -29,7 +29,7 @@ test("a blocked machine does not process time until the blockage clears", () => 
   const id = source.view().stops.flatMap(s => s.items)[0].id;
   source.arrive(id, "planner"); source.toggleBlock(); source.step?.(100);
   expect(source.view().jam).toBe("planner");
-  expect(source.view().card?.yes).toBe("Clear blockage");
+  expect(source.view().card?.yes).toBe("Resume");
   source.approve(source.view().card!.id); expect(source.view().jam).toBeNull();
   expect(source.view().stops[1].items[0].id).toBe(id);
   source.step?.(2.5); expect(source.view().stops[2].items[0].id).toBe(id);

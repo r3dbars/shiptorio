@@ -52,7 +52,7 @@ export function createWatchSource() {
           items: s.items.map(it => ({ ...it, look: it.look === "wait" && s.id !== jam ? "plain" as const : it.look })),
         })),
         shippy: broken ? { at: "builder" as const, pose: "alarmed" as const } : v.shippy,
-        caption: `SIMULATION · ${v.shipped ? "Shipped! Shippy heads home. Replaying shortly…" : broken ? "Inspection found a blockage. Sending it back for repair…" : item?.state === "working" ? item.attempts > 1 ? "Shippy is repairing the failed build." : "Shippy is building the checkout fix." : item?.state === "inspecting" ? "Running the verification gauntlet…" : item?.state === "on_pad" ? "All checks passed. Preparing to launch…" : "A new job is arriving. Shippy will take it from here."}`,
+        caption: `${v.shipped ? "Shipped! Shippy heads home. Replaying shortly…" : broken ? "A check failed. Sending the fix back for repair…" : item?.state === "working" ? item.attempts > 1 ? "Shippy is repairing the failed build." : "Shippy is building the checkout fix." : item?.state === "inspecting" ? "Checking the fix…" : item?.state === "on_pad" ? "All checks passed. Preparing to launch…" : "A new job is arriving. Shippy will take it from here."}`,
       };
     },
     approve() {}, later() {},
