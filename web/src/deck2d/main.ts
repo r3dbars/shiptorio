@@ -1,7 +1,7 @@
 import { createAway } from "./data/away";
 import { createConnections } from "./data/connections";
 import "./deck.css";
-import { SPRITES, createBus, type CardView, type StopId, type AttachJuice, type CreateLayer, type CreateShippy, type DeckLayer, type DeckSource, type MountCard } from "./contract";
+import { SPRITES, createBus, type CardView, type DeckView, type StopId, type AttachJuice, type CreateLayer, type CreateShippy, type DeckLayer, type DeckSource, type MountCard } from "./contract";
 import { createArt } from "./engine/art";
 import { createDemo, createOrbDemo, createLaunchDemo } from "./engine/demo";
 import { fallbackShippy } from "./engine/fallbacks";
@@ -13,6 +13,7 @@ import { createFirstVisitDemo } from "./stations/first-visit";
 import { createConveyorDemo } from "./engine/conveyor-demo";
 import { createPayoff } from "./payoff";
 import { createFirstRun } from "./data/firstrun";
+import type { AttentionView } from "./stations/attention";
 
 /** Keyboard and screen-reader access for the existing card; it never invents an action. */
 export function wireDeckAccessibility(canvas: HTMLCanvasElement, host: HTMLElement, caption: HTMLElement) {
@@ -88,10 +89,18 @@ export async function deckSignedIn(request: typeof fetch = fetch): Promise<boole
   } catch { return false; }
 }
 
-export function showConnectionTools(search: string, signedIn: boolean): boolean {
+/** Tapping Repo or the boilers opens setup only on a signed-in live repo. There are no separate setup buttons. */
+export function setupFromStations(search: string, signedIn: boolean): boolean {
   const q = new URLSearchParams(search), repo = q.get("repo") ?? "";
   return signedIn && q.get("source") === "live" && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)
     && !repo.split("/").some(part => part === "." || part === "..");
+}
+
+/** One question at a time: while a card asks, only its station glows. Everything else stays quiet background. */
+export function oneAsk<V extends DeckView>(view: V): V {
+  const card = view.card, attention = (view as AttentionView).attention;
+  if (!card || !attention?.length || attention.length === 1 && attention[0] === card.stop) return view;
+  return { ...view, attention: [card.stop] };
 }
 
 /** Finish the sample loop with the existing connection card, not a second front door. */
@@ -136,7 +145,7 @@ const seed = Number(params.get("seed")) || 0;
 
   const want = params.get("source");
   const signedIn = want === "live" && await deckSignedIn();
-  const connectionToolsVisible = showConnectionTools(location.search, signedIn);
+  const setupReachable = setupFromStations(location.search, signedIn);
 
   const connections = createConnections({
     repo: signedIn ? params.get("repo") || undefined : undefined, origin: location.origin, path: location.pathname + location.search,
@@ -200,12 +209,6 @@ const seed = Number(params.get("seed")) || 0;
   const layers: DeckLayer[] = [];
   for (const f of ["grow", "build", "launch", "juice", "props"]) { const m = await load(f, "createLayer"); if (m) layers.push((m.createLayer as CreateLayer)(art, bus)); }
   const inspector = createMachineInteraction(machines ? id => { if (id === machines.machine) machines.setMode("working"); } : undefined);
-  const connectionTools = document.createElement("div"); connectionTools.className = "shippy-tools connection-tools";
-  for (const [label, target] of [["Repo inbox", "repo"], ["Codex engine", "power"]] as const) {
-    const button = document.createElement("button"); button.type = "button"; button.textContent = label;
-    button.onclick = () => connections.open(target); connectionTools.append(button);
-  }
-  if (connectionToolsVisible) document.body.append(connectionTools);
   if (want === "live" && signedIn && !params.has("repo")) connections.open("repo");
   // The live first run: a guest feels one swipe on the sample, Shippy says hi, then sign in. After that, picking a
   // repo and connecting Codex each build the next stations, one at a time, with one plain line each.
@@ -217,8 +220,8 @@ const seed = Number(params.get("seed")) || 0;
     stage: () => !signedIn ? (guestStory?.phase() === "end" ? "intro" : null) : !repo ? "hello" : connections.engineReady() ? "engine" : "repo",
     established: () => !!(source.view() as import('./data/view').LiveDeckView).work,
   }) : null;
-  const engine = createEngine(cv, art, bus, shippy, layers, { onPowerSelect: () => { if (connectionToolsVisible) connections.open("power"); }, onMachineSelect: id => {
-    if (id === "repo" && connectionToolsVisible) { connections.open("repo"); return; }
+  const engine = createEngine(cv, art, bus, shippy, layers, { onPowerSelect: () => { if (setupReachable) connections.open("power"); }, onMachineSelect: id => {
+    if (id === "repo" && setupReachable) { connections.open("repo"); return; }
     if (machines) machines.cycling = false;
     (source as DeckSource & { selectStop?: (stop: typeof id) => void }).selectStop?.(id);
     inspector.select(id);
@@ -261,8 +264,9 @@ const seed = Number(params.get("seed")) || 0;
   (juiceMod?.attachJuice as AttachJuice | undefined)?.(bus, document.body, (s) => engine.where(s));
 
   const zoom = document.getElementById("zoom") as HTMLButtonElement;
-  let all = false;
-  const zoomLabel = () => { const label = all ? "Zoom in" : "Zoom out"; zoom.hidden = !engine.portrait; zoom.textContent = label; zoom.setAttribute("aria-label", label); };
+  let all = false, asking = false;
+  // Phone only, and only while nothing asks: a card on screen is the one thing to tap.
+  const zoomLabel = () => { const label = all ? "Zoom in" : "Zoom out"; zoom.hidden = !engine.portrait || asking; zoom.textContent = label; zoom.setAttribute("aria-label", label); };
   zoom.addEventListener("click", () => { all = !all; engine.seeAll(all); zoomLabel(); });
   addEventListener("resize", zoomLabel); zoomLabel();
 
@@ -285,8 +289,13 @@ const seed = Number(params.get("seed")) || 0;
     const base = inspector.view(source.view());
     firstRun?.step(dt);
     const shown = payoff.view(connections.view(away ? away.view(base) : base), dt);
-    const view = firstRun ? firstRun.view(shown) : shown;
+    const view = oneAsk(firstRun ? firstRun.view(shown) : shown);
     document.body.classList.toggle("first-run", !!firstRun?.playing());
+    if (!!view.card !== asking) {
+      asking = !!view.card;
+      if (asking && all) { all = false; engine.seeAll(false); } // a new question brings the camera back to it
+      zoomLabel();
+    }
     const work = (view as import('./data/view').LiveDeckView).work;
     cv.dataset.workId = work?.id ?? '';
     cv.dataset.workStop = work?.stop ?? '';
