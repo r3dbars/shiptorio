@@ -1,4 +1,43 @@
 import { STOPS, type DeckSource, type DeckView, type Item, type ShippyView, type StopId } from "../contract";
+import { FLIGHT_SECONDS } from "../launch/flight";
+
+/** Replays the full visual flight without creating or merging a real PR. */
+export function createLaunchDemo(): DeckSource {
+  let shipped = 0, age = Infinity, revision = 0;
+  return {
+    step: dt => { age += dt; },
+    view: () => ({
+      stops: STOPS.map(id => ({ id, built: true, state: "idle", automated: false, items: [] })),
+      jam: null, shippy: { at: "corner", pose: "idle" }, shipped, caption: null,
+      card: age > FLIGHT_SECONDS + 1 ? {
+        id: `flight-${revision}`, title: "Launch and return", line: "Ignition, liftoff, correction jets, soft touchdown.",
+        dots: null, stop: "launch", yes: "Launch rocket", no: "Keep parked",
+      } : null,
+    }),
+    approve: () => { shipped++; revision++; age = 0; },
+    later: () => { revision++; age = 0; },
+  };
+}
+
+/** Manual visual check on the same deck: ?source=orb-demo. No live actions. */
+export function createOrbDemo(): DeckSource {
+  let blocked = true;
+  let revision = 0;
+  return {
+    view: () => ({
+      stops: STOPS.map((id) => ({ id, built: true, state: blocked && id === "review" ? "jammed" : "idle", automated: false, items: [] })),
+      jam: blocked ? "review" : null,
+      card: {
+        id: `orb-demo-${revision}`, stop: "review", dots: null, title: blocked ? "Review is blocked" : "The line is clear",
+        line: blocked ? "The core flashes red. Clear the block to restore cyan." : "The core is cyan again. Block the line to replay.",
+        yes: blocked ? "Clear block" : "Block again", no: "Keep this state",
+      },
+      shippy: { at: "corner", pose: "idle" }, shipped: 0, caption: null,
+    }),
+    approve: () => { blocked = !blocked; revision++; },
+    later: () => { revision++; },
+  };
+}
 
 // A stand-in source so the engine has something to draw until story/ lands: the line builds itself, review
 // starts waiting on your call, three yeses make it automatic. story/ replaces this; keep it dumb.

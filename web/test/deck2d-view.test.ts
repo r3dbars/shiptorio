@@ -4,6 +4,7 @@ import { STOPS, type DeckView } from "../src/deck2d/contract";
 import { connectSim } from "../src/sim/engine";
 import type { Source, SourceConfig } from "../src/source";
 import { createLiveSource } from "../src/deck2d/data/source";
+import { createWatchSource, isWatchMode } from "../src/deck2d/data/watch";
 import { deckView, FIRST_LINE, itemStop } from "../src/deck2d/data/view";
 
 const base = (over: Partial<FactoryState> = {}): FactoryState => ({
@@ -19,6 +20,35 @@ const base = (over: Partial<FactoryState> = {}): FactoryState => ({
 const item = (id: string, state: Item["state"], over: Partial<Item> = {}): Item => ({ id, kind: "bug", source: "github_issue", title: id, district: "web", state, attempts: 0, updatedAt: 0, ...over });
 const card = (id: string, tool: string, over: Partial<Move> = {}): Move => ({ id, title: `Approve ${id}?`, why: "", createdAt: 0, options: [{ id: "go", label: "Go", recommended: true, actions: [{ tool, args: {}, reason: "" }] }, { id: "skip", label: "Not now", recommended: false, actions: [] }], ...over });
 const stop = (v: DeckView, id: string) => v.stops.find((x) => x.id === id)!;
+
+test("watch mode is explicitly simulator-only", () => {
+  expect(isWatchMode("?source=sim&watch=1")).toBe(true);
+  expect(isWatchMode("?source=live&watch=1")).toBe(false);
+  expect(isWatchMode("?source=sim")).toBe(false);
+});
+
+test("watch mode builds, fails, repairs, launches, and resets without a click", () => {
+  const src = createWatchSource();
+  const seen = new Set<string>();
+  let repaired = false, launched = false, reset = false;
+  for (let i = 0; i < 2000; i++) {
+    advance(100);
+    src.step?.(0.1);
+    const job = src.state()?.items[0];
+    if (job) seen.add(job.state);
+    if (job?.state === "rejected") expect(src.view().jam).toBe("builder");
+    if (job?.state === "working" && job.attempts > 1) repaired = true;
+    if (src.view().shipped > 0) launched = true;
+    if (launched && src.view().shipped === 0) { reset = true; break; }
+    expect(src.view().card).toBeNull();
+  }
+  src.close();
+  expect([...seen]).toEqual(expect.arrayContaining(["working", "rejected", "inspecting", "launched"]));
+  expect(repaired).toBe(true);
+  expect(launched).toBe(true);
+  expect(reset).toBe(true);
+  expect(timers.size).toBe(0);
+});
 
 describe("the 2D deck's view of a factory", () => {
   test("no state yet: seven dark stops, no card, Shippy folded", () => {
@@ -43,7 +73,7 @@ describe("the 2D deck's view of a factory", () => {
     const v = deckView(base({ items: [item("b", "ore", { updatedAt: 2 }), item("a", "ore", { updatedAt: 1 }), item("c", "working", { priority: "rush" })] }), { now: 1e12 });
     expect(stop(v, "repo").items).toEqual([{ id: "a", title: "a", look: "plain" }, { id: "b", title: "b", look: "plain" }]);
     expect(stop(v, "builder")).toMatchObject({ built: true, state: "working", items: [{ id: "c", look: "glow" }] });
-    expect(v.shippy).toEqual({ pose: "walking", at: "repo" });
+    expect(v.shippy).toEqual({ pose: "weld", at: "builder" });
   });
 
   test("the card waiting on you is the one jam, and Shippy is alarmed there", () => {
@@ -100,6 +130,24 @@ describe("the 2D deck's view of a factory", () => {
     const v = deckView(base({ machines: [], stations: [] }));
     expect(v.stops.filter((x) => x.built).map((x) => x.id)).toEqual(["repo"]);
     expect(v.caption).toBe("Software is a factory.");
+  });
+
+  test("Shippy works on the active job, follows the Foreman's active target, and ignores stale targets", () => {
+    const inspecting = item("verify", "inspecting", { updatedAt: 2, inspection: { headSha: "head", state: "pending", humanApproved: false, stages: [{ gate: "ci", state: "pending", reason: "" }] } });
+    const s = base({ items: [item("code", "working", { updatedAt: 1 }), inspecting] });
+    expect(deckView(s, { now: 1e12 }).shippy).toEqual({ at: "builder", pose: "weld" });
+    expect(deckView({ ...s, foreman: { thinking: false, targetId: "verify" } }, { now: 1e12 }).shippy).toEqual({ at: "checks", pose: "inspect" });
+    expect(deckView(base({ foreman: { thinking: false, targetId: "asm-1" } }), { now: 1e12 }).shippy).toEqual({ at: "corner", pose: "folded" });
+    expect(deckView(base({ foreman: { thinking: true, targetId: "asm-1" } }), { now: 1e12 }).shippy).toEqual({ at: "builder", pose: "inspect" });
+  });
+
+  test("rejected work waits for approval, an actual rework job welds, and human review stays manual", () => {
+    const s = base({ items: [item("fix", "rejected", { failure: "CI failed", attempts: 1 })] });
+    expect(deckView(s, { now: 1e12 }).shippy).toEqual({ at: "builder", pose: "alarmed" });
+    s.items[0].state = "working";
+    expect(deckView(s, { now: 1e12 }).shippy).toEqual({ at: "builder", pose: "weld" });
+    s.items[0] = item("human", "inspecting", { inspection: { headSha: "head", state: "pending", humanApproved: false, stages: [{ gate: "human", state: "pending", reason: "" }] } });
+    expect(deckView(s, { now: 1e12 }).shippy).toEqual({ at: "gate", pose: "alarmed" });
   });
 });
 
@@ -198,4 +246,36 @@ test("Later sends defer_move once and hides the card; Approve on a vanished card
   src.approve("b");
   expect(sent.at(-1)).toEqual({ type: "choose_move", moveId: "b", optionId: "go" });
   expect(src.view().card).toBeNull();
+});
+
+test("real protocol job updates drive work, completion, then home without sending actions", () => {
+  let receive!: (message: ServerToWeb) => void;
+  const sent: WebToServer[] = [];
+  const src = createLiveSource(undefined, {
+    connect: (cfg, onMessage) => {
+      expect(cfg.kind).toBe("sim");
+      receive = onMessage;
+      return { send: message => sent.push(message), close() {} };
+    },
+  });
+  const active = item("job", "working", { updatedAt: Date.now() });
+  receive({ type: "snapshot", state: base({ items: [active] }) });
+  expect(src.view().shippy).toEqual({ at: "builder", pose: "weld" });
+  receive({ type: "snapshot", state: base({ items: [{ ...active, state: "passed", updatedAt: Date.now() }] }) });
+  expect(src.view().shippy).toEqual({ at: "builder", pose: "happy" });
+  advance(1500);
+  expect(src.view().shippy).toEqual({ at: "corner", pose: "folded" });
+  expect(sent).toEqual([]);
+  src.close();
+});
+
+test("the deck page's no-argument source reads the selected live repository", () => {
+  Object.defineProperty(globalThis, "location", { configurable: true, value: { search: "?source=live&repo=owner/project" } });
+  const src = createLiveSource(undefined, {
+    connect: cfg => {
+      expect(cfg).toMatchObject({ kind: "live", repo: "owner/project" });
+      return { send() {}, close() {} };
+    },
+  });
+  src.close();
 });

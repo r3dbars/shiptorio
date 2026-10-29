@@ -26,9 +26,20 @@ only produces them.
   get the red `wait` look and the plate says `REVIEW WAITING`.
 - **The card** is setup first, then stuck, then parked, then ideas (same order as the task tray). `line` is the
   learning line ("Approve 2 more like this and then it's automatic.") or "Approve it and it moves." before the first yes.
-- **Shippy**: `lever` for 1.2 s after an Approve, `happy` for 4 s after a stop goes automatic or a rocket leaves,
-  `alarmed` at the jam while a card waits, `walking` to the planner's target or the busiest stop, else `folded` in the
-  corner.
+- **Shippy**: running build/rework jobs produce `weld`, active inspection produces `inspect`, and the animation
+  module walks him to that station before acting. The Foreman's target wins when work is still active there;
+  stale idle targets do not keep him away from home. Rejected jobs and human-review gates wait in `alarmed`
+  rather than implying an unapproved repair. Approvals retain their short lever beat. Real completion updates
+  produce a brief celebration, then he walks home if nothing else is running. New-machine construction keeps
+  the build layer's carry/weld animation. This only visualizes authoritative state; it never starts work.
+
+`createLiveSource()` defaults to `readConfig()`. `/deck.html?source=sim&scenario=deck2d` exercises this adapter
+with protocol-speaking simulated factory state; `?source=live&repo=owner/name` uses the authenticated backend.
 
 The sim scenario `?source=sim&scenario=deck2d` asks before every build, so the whole story plays: three yeses and the
 builder goes green. Tests: `web/test/deck2d-view.test.ts`.
+
+For hands-off viewing, `/deck.html?source=sim&scenario=deck-watch&watch=1` runs one simulated checkout fix:
+build, failed CI, repair, verification, launch, then an 18-second rest before replay. It automatically answers only
+that simulator's build and merge cards. `watch=1` has no effect on a live source. The caption labels the simulation;
+no backend, credentials, GitHub changes, or real merges are involved.

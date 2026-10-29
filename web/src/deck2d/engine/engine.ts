@@ -5,6 +5,7 @@ import {
 import { pixelOn } from "../../flags";
 import { createPixelCanvas } from "./pixel";
 import * as pd from "./pxdraw";
+import { FLIGHT } from "../launch/flight";
 import { BOILER_H, BOILER_W, boilerFrame } from "../../bakeoff/boiler2d";
 
 // stations/ (its own thread) draws each machine in pixel code; until it lands, pixel mode shows the snapped webp.
@@ -60,6 +61,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   // Pixel mode (contract: the pixel canvas): draw into a buffer at art resolution, blit at a whole-number scale,
   // snap every pixel to the 48 colors (?pq=0 skips the snap, for speed checks).
   const px = pixelOn() ? createPixelCanvas(cv, ART_PX, new URLSearchParams(location.search).get("pq") === "0" ? undefined : PALETTE_48) : null;
+  const rehearsingShippy = new URLSearchParams(location.search).get("source") === "shippy-demo";
   let W = 0, H = 0, DPR = 1, t = 0;
   const resize = () => { DPR = Math.min(2, devicePixelRatio || 1); W = innerWidth; H = innerHeight; cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); };
   addEventListener("resize", resize); resize();
@@ -68,6 +70,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   const drop: Record<StopId, number> = Object.fromEntries(STOPS.map((s) => [s, 0])) as never;
   const puffs: Puff[] = [];
   const rocket = { y: 0, v: 0, mode: "ready" as "ready" | "count" | "up" | "away" | "down", t: 0 };
+  let pendingLaunches = 0;
   let prev: DeckView | null = null, lever = 0;
 
   let deckW = DECK_END, islandUp = true, islandIn = true; // how much platform is built (deck.size / deck.island)
@@ -98,6 +101,13 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   function target(v: DeckView) {
     const all = fitAll();
     if (cam.all) return all;
+    if (rehearsingShippy) {
+      const actor = shippy as ShippyModule & { readonly state?: { x: number } };
+      return { x: (actor.state?.x ?? focusX(v)) + 80, y: 225, s: Math.max(all.s, W / 1150) };
+    }
+    if (px && rocket.mode !== "ready") {
+      return { x: STOP_X.launch - 70, y: 100, s: Math.max(all.s, W / 1100) };
+    }
     // Desktop fits everything, except it leans in on a station while it's being built (construction reads small otherwise).
     const site = !portrait() && !v.card ? v.stops.find((x) => x.id !== "launch" && (x.building !== undefined || (x.built && layers.some((l) => l.owns?.(x))))) : undefined;
     if (!portrait() && !site) {
@@ -107,7 +117,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
       if (!px) return all;
       const k = Math.max(1, Math.round(all.s * ART_PX * DPR)), vw = W / (k / (ART_PX * DPR));
       if (vw >= right() - BOUNDS.x0) return all;
-      const toIsland = (islandIn && !islandUp) || rocket.mode === "count" || rocket.mode === "up";
+      const toIsland = (islandIn && !islandUp) || rocket.mode !== "ready";
       return { ...all, x: toIsland ? right() - vw / 2 : BOUNDS.x0 - 40 + vw / 2 };
     }
     const s = Math.max(all.s, W / (site ? 1300 : 1050)), half = W / 2 / s;
@@ -125,7 +135,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     ptrs.set(e.pointerId, [e.clientX, e.clientY]);
     moved += Math.abs(e.clientX - p[0]) + Math.abs(e.clientY - p[1]);
     if (moved < 6) return;
-    cam.manual = performance.now() + 6000;
+    cam.manual = Infinity;
     if (ptrs.size === 1) { cam.x -= (e.clientX - p[0]) / cam.s; cam.y -= (e.clientY - p[1]) / cam.s; }
     else if (ptrs.size === 2) {
       const [a, b] = [...ptrs.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]);
@@ -138,11 +148,32 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     if (moved < 6 && e.clientX < 110 && e.clientY < 110) { cam.manual = 0; cam.pin = null; } // tap Shippy: fly to what he's looking at
   };
   cv.addEventListener("pointerup", up); cv.addEventListener("pointercancel", up);
-  cv.addEventListener("wheel", (e) => { e.preventDefault(); cam.manual = performance.now() + 6000; zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
+  cv.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    cam.manual = Infinity;
+    // Chromium exposes macOS trackpad pinches as small ctrl+wheel deltas.
+    const delta = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? H : 1);
+    zoomAt(e.clientX, e.clientY, Math.exp(-delta * (e.ctrlKey ? 0.012 : 0.004)));
+  }, { passive: false });
+  // Safari/WKWebView use gesture events instead of ctrl+wheel for a trackpad pinch.
+  let gestureScale = 1;
+  cv.addEventListener("gesturestart", (e) => { e.preventDefault(); gestureScale = 1; cam.manual = Infinity; }, { passive: false });
+  cv.addEventListener("gesturechange", (e) => {
+    e.preventDefault();
+    const gesture = e as Event & { scale: number; clientX?: number; clientY?: number };
+    if (!(gesture.scale > 0)) return;
+    zoomAt(gesture.clientX ?? W / 2, gesture.clientY ?? H / 2, gesture.scale / gestureScale);
+    gestureScale = gesture.scale;
+  }, { passive: false });
+  cv.addEventListener("gestureend", (e) => { e.preventDefault(); gestureScale = 1; }, { passive: false });
+  cv.addEventListener("dblclick", () => { cam.manual = 0; cam.pin = null; });
   function zoomAt(px: number, py: number, f: number) {
-    const wx = cam.x + (px - W / 2) / cam.s, wy = cam.y + (py - H / 2) / cam.s;
+    const visibleScale = () => pixelOn() ? Math.max(1, Math.round(cam.s * ART_PX * DPR)) / (ART_PX * DPR) : cam.s;
+    const before = visibleScale();
+    const wx = cam.x + (px - W / 2) / before, wy = cam.y + (py - H / 2) / before;
     cam.s = Math.max(fitAll().s * 0.8, Math.min(1.6, cam.s * f));
-    cam.x = wx - (px - W / 2) / cam.s; cam.y = wy - (py - H / 2) / cam.s;
+    const after = visibleScale();
+    cam.x = wx - (px - W / 2) / after; cam.y = wy - (py - H / 2) / after;
   }
 
   // ---------- views -> motion + events ----------
@@ -160,7 +191,10 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     }
     if (p && v.jam && v.jam !== p.jam) bus.emit({ type: "jam", stop: v.jam });
     if (p && v.shippy.pose !== p.shippy.pose) bus.emit({ type: "shippy", pose: v.shippy.pose });
-    if (p && islandUp && v.shipped > p.shipped && (rocket.mode === "ready" || rocket.mode === "down")) { rocket.mode = "count"; rocket.t = 0; }
+    if (px && owned.has("rocket")) {
+      if (p && v.shipped > p.shipped) pendingLaunches += v.shipped - p.shipped;
+      if (islandUp && pendingLaunches > 0 && rocket.mode === "ready") { pendingLaunches--; rocket.mode = "count"; rocket.t = 0; }
+    } else if (p && islandUp && v.shipped > p.shipped && (rocket.mode === "ready" || rocket.mode === "down")) { rocket.mode = "count"; rocket.t = 0; }
 
     // crates: every item has a spot (its stop, minus its place in the queue); crates only ever slide forward
     const seen = new Set<string>();
@@ -186,6 +220,12 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   function rocketStep(dt: number) {
     rocket.t += dt;
     if (rocket.mode === "count" && rocket.t > 0.6) { rocket.mode = "up"; rocket.t = 0; rocket.v = 0; bus.emit({ type: "launch" }); }
+    else if (px && owned.has("rocket")) {
+      // Keep camera/event ownership in sync with the pixel layer's full return flight.
+      if (rocket.mode === "up" && rocket.t >= FLIGHT.ignition + FLIGHT.ascent) { rocket.mode = "away"; rocket.t = 0; }
+      else if (rocket.mode === "away" && rocket.t >= FLIGHT.coast) { rocket.mode = "down"; rocket.t = 0; }
+      else if (rocket.mode === "down" && rocket.t >= FLIGHT.landing + FLIGHT.settle) { rocket.mode = "ready"; rocket.t = 0; }
+    }
     else if (rocket.mode === "up") {
       rocket.v += 820 * dt; rocket.y -= rocket.v * dt;
       if (rocket.y > -400) for (let i = 0; i < 2; i++) puffs.push({ x: STOP_X.launch + (Math.random() - 0.5) * 60, y: LAUNCH_Y - 4, vx: (Math.random() - 0.5) * 140, vy: -10 - Math.random() * 20, t: 0, life: 1.3, r: 14 + Math.random() * 14 });
@@ -291,10 +331,17 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     }
     cx.globalAlpha = 1;
   }
-  function belt() {
+  function belt(v: DeckView) {
     const segs = islandUp ? SEGS : SEGS.slice(0, 1);
     if (px) {
-      for (const g of segs) pd.beltRun(cx, g.ax, g.ay, g.bx, g.by, islandUp ? g.len : Math.min(g.len, deckEnd() - 100 - g.ax), t, SPEED * 0.35);
+      const blocked = v.stops.filter((s) => s.built && (s.state === "jammed" || s.id === v.jam)).map((s) => {
+        const i = STOPS.indexOf(s.id), x = STOP_X[s.id];
+        const left = i > 0 ? (STOP_X[STOPS[i - 1]] + x) / 2 : x - 200;
+        const right = i < STOPS.length - 1 ? (x + STOP_X[STOPS[i + 1]]) / 2 : x + 200;
+        return { left: Math.min(left, x - s.items.length * GAP - 60), right };
+      });
+      const blockedAt = (x: number) => blocked.some((zone) => x >= zone.left && x <= zone.right);
+      for (const g of segs) pd.beltRun(cx, g.ax, g.ay, g.bx, g.by, islandUp ? g.len : Math.min(g.len, deckEnd() - 100 - g.ax), t, SPEED * 0.35, blockedAt);
       return;
     }
     const b = img("belt"); if (!b) return;
@@ -423,7 +470,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     else if (px) cx.drawImage(boilerFrame(t), snap(BOILER.x - (BOILER_W * ART_PX) / 2), snap(BOILER.base - BOILER_H * ART_PX), BOILER_W * ART_PX, BOILER_H * ART_PX);
     else put("boiler-on", 112, 182, 168);
     if (!owned.has("orb")) glow(ORB.x, ORB.y, 100, "120,240,255", 0.32, true); // steady; nothing ambient pulses
-    belt();
+    belt(v);
     slot("line");
     rocketDraw();
     crates.forEach(crate);

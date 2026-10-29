@@ -8,7 +8,6 @@ function run(s: ReturnType<typeof createShippy>, view: ShippyView, seconds: numb
 }
 
 test("Shippy unfolds out of the corner, walks to the stop, works it, and folds back home", () => {
-  // The screen-corner box is the non-pixel look; pixel mode (now the default) has its own test below.
   const s = createShippy(noArt, { reducedMotion: true, pixel: false });
   run(s, { at: "corner", pose: "folded" }, 0.5);
   expect(s.state).toMatchObject({ corner: "home", world: "off" });
@@ -38,25 +37,27 @@ test("a call back to the deck mid-leap drops him straight back down", () => {
 });
 
 test("build poses: he carries the beam while he walks, then welds at the stop", () => {
-  const s = createShippy(noArt, { reducedMotion: true });
+  const s = createShippy(noArt, { reducedMotion: true, pixel: false });
   run(s, { at: "builder", pose: "carry" }, 1.4);
   expect(s.state).toMatchObject({ world: "walk", pose: "carry" });
   run(s, { at: "builder", pose: "weld" }, 8);
   expect(s.state).toMatchObject({ world: "stand", x: STOP_X.builder + 150, pose: "weld" });
 });
 
-test("pixel mode: home is on the deck floor, he never leaves the floor between home and a stop", () => {
+test("pixel Shippy rests on the deck and walks home instead of returning to the sky", () => {
   const s = createShippy(noArt, { reducedMotion: true, pixel: true });
-  const home = STOP_X.repo - 150;
-  const seen = new Set<string>();
-  const go = (view: ShippyView, seconds: number) => {
-    for (let t = 0; t < seconds; t += 1 / 60) { s.update(1 / 60, view); seen.add(s.state.world); }
-  };
-  go({ at: "review", pose: "lever" }, 10);
-  expect(s.state).toMatchObject({ world: "stand", x: STOP_X.review + 150 });
-  go({ at: "corner", pose: "folded" }, 10);
-  expect(s.state).toMatchObject({ corner: "home", world: "off", x: home });
-  expect(seen.has("drop") || seen.has("leave")).toBe(false);
+  const home = s.state.x;
+  expect(s.state).toMatchObject({ corner: "gone", world: "stand" });
+  // A corner render must not touch the screen-space canvas.
+  s.drawCorner(new Proxy({} as CanvasRenderingContext2D, {
+    get() { throw new Error("pixel Shippy must stay in world space"); },
+  }), 14, 14, 76);
+  run(s, { at: "review", pose: "lever" }, 10);
+  expect(s.state).toMatchObject({ corner: "gone", world: "stand", x: STOP_X.review + 150 });
+  s.update(1 / 60, { at: "corner", pose: "folded" });
+  expect(s.state.world).toBe("walk");
+  run(s, { at: "corner", pose: "folded" }, 10);
+  expect(s.state).toMatchObject({ corner: "gone", world: "stand", x: home });
 });
 
 test("pixel mode: called back mid-walk home, he turns around on the floor instead of folding", () => {
@@ -69,11 +70,11 @@ test("pixel mode: called back mid-walk home, he turns around on the floor instea
   expect(s.state).toMatchObject({ corner: "gone", world: "stand", x: STOP_X.review + 150 });
 });
 
-test("pixel mode: home poses (peek, alarm, happy) play in the box on the floor without leaving it", () => {
+test("pixel mode: home poses stay at the world-space home on the floor", () => {
   const s = createShippy(noArt, { reducedMotion: true, pixel: true });
   for (const pose of ["peek", "alarmed", "happy", "folded"] as const) {
     run(s, { at: "corner", pose }, 1);
-    expect(s.state).toMatchObject({ corner: "home", world: "off", pose });
+    expect(s.state).toMatchObject({ corner: "gone", world: "stand", x: STOP_X.repo - 150, pose });
   }
 });
 
@@ -88,5 +89,5 @@ test("pixel mode: never jumps or drops through a whole busy story", () => {
     expect(["drop", "leave"]).not.toContain(s.state.world);
   }
   run(s, { at: "corner", pose: "folded" }, 12);
-  expect(s.state).toMatchObject({ corner: "home", world: "off", x: STOP_X.repo - 150 });
+  expect(s.state).toMatchObject({ corner: "gone", world: "stand", x: STOP_X.repo - 150 });
 });
