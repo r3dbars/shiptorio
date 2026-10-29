@@ -153,7 +153,7 @@ describe("GitHub lifecycle fixture payloads", () => {
     const obj = f.objects.get("repo:501")!;
     await f.DB.prepare("DELETE FROM repos WHERE full_name = 'octo-org/demo'").run();
     const original = globalThis.fetch;
-    globalThis.fetch = (() => { throw new Error("orphan must not reach GitHub"); }) as typeof fetch;
+    globalThis.fetch = (() => { throw new Error("orphan must not reach GitHub"); }) as unknown as typeof fetch;
     try { await obj.factory.alarm(); await obj.factory.alarm(); } finally { globalThis.fetch = original; }
     expect(obj.data.get("githubLifecycle").reason).toBe("GitHub repository is not installed");
     expect(obj.data.get("state").tick).toBe(4);
