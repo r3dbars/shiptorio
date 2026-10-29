@@ -17,7 +17,15 @@ test('staging opens the live deck setup by default and preserves explicit routes
     expect(response.status).toBe(302);
     expect(response.headers.get('location')).toBe('/deck?source=live');
   }
-  for(const url of ['https://shiptorio.com/','https://shiptorio.dev/?source=live&repo=owner/repo','https://shiptorio.dev/?onboard=repo','https://shiptorio.dev/deck']) {
+  // Old entry points (the onboarding tour, the live map, sign-in returns to "/") land on the deck too.
+  for(const [path,target] of [['/?onboard=repo','/deck?source=live'],['/?source=live&repo=owner/repo','/deck?source=live&repo=owner%2Frepo'],['/deck?source=live&px=0','/deck?source=live']]) {
+    const response=await app.fetch(new Request(`https://shiptorio.dev${path}`,{headers:{cookie}}),e as never);
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe(target);
+  }
+  const install=await app.fetch(new Request('https://shiptorio.dev/github/installed',{headers:{cookie}}),e as never);
+  expect(install.headers.get('location')).toBe('/deck?source=live');
+  for(const url of ['https://shiptorio.com/','https://shiptorio.com/?onboard=repo','https://shiptorio.com/?source=live&repo=owner/repo','https://shiptorio.dev/deck','https://shiptorio.dev/?source=sim&scenario=first-run']) {
     const response=await app.fetch(new Request(url,{headers:{cookie}}),e as never);
     expect(response.status).toBe(200);
     expect(await response.text()).toBe('factory app');
