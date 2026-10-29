@@ -58,13 +58,18 @@ export function planningHold(retry: PlanningRetry | undefined, now = Date.now())
   }
   return retry.retryAt > now ? retry : null;
 }
+/** A timeout or 429 is the planner being busy for a moment, not a broken station. */
+export const plannerBusy = (retry: { kind?: PlanningFailureKind } | null | undefined) => retry?.kind === "rate_limit" || retry?.kind === "timeout";
+export const PLANNER_BUSY_LINE = "Planner is thinking, back in a moment.";
 /** One informational card, with an absolute reset carried as data for browser-local display. */
 export function plannerRestDeck(deck: Move[], retry: PlanningRetry | undefined, now = Date.now()): Move[] {
   const cards = deck.filter(m => m.id !== "planner-rest");
   const hold = planningHold(retry, now);
   if (!hold) return cards;
-  return [...cards.slice(0, 11), { id: "planner-rest", title: `Planner is resting until ${new Date(hold.retryAt).toISOString().slice(11, 16)} UTC`,
-    why: "Planning resumes automatically. You can keep reviewing existing work.", kind: "unblock", createdAt: now,
+  // Only a short rest reads as "a moment"; a long one keeps its reset time.
+  const busy = plannerBusy(hold) && hold.retryAt - now <= 15 * 60000;
+  return [...cards.slice(0, 11), { id: "planner-rest", title: busy ? PLANNER_BUSY_LINE : `Planner is resting until ${new Date(hold.retryAt).toISOString().slice(11, 16)} UTC`,
+    why: busy ? "It picks up on its own. You can keep reviewing existing work." : "Planning resumes automatically. You can keep reviewing existing work.", kind: "unblock", createdAt: now,
     options: [{ id: "later", label: "Continue", recommended: true, actions: [] }],
     plan: [new Date(hold.retryAt).toISOString()] }];
 }
