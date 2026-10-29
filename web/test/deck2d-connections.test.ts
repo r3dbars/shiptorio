@@ -182,3 +182,17 @@ test('opening a repo never leaves the site, even from a protocol-relative page p
   ui.open('repo'); await settle();
   expect(navigations).toEqual(['/deck?source=live&repo=alice%2Fonly&onboard=codex']);
 });
+test("Shippy's suggested issue comes first with one plain reason, and names Meta Muse Spark only for Spark's pick", async () => {
+  const rows = [{ id: 1, number: 101, title: 'Fix cart', body: 'Real issue' }, { id: 2, number: 102, title: 'Fix typo', body: '' }];
+  const f = setup([{ issues: rows, nextPage: null, suggested: { number: 102, because: "it's docs only, so nothing can break.", by: 'spark' } }]);
+  f.ui.open('repo'); await settle();
+  expect(f.ui.card()?.title).toBe('#102: Fix typo');
+  expect(f.ui.card()?.line).toBe("I'd start with #102, because it's docs only, so nothing can break. (Picked by Meta Muse Spark.) Review the plan before Codex starts.");
+  await f.no(); expect(f.ui.card()?.title).toBe('#101: Fix cart'); expect(f.ui.card()?.line).not.toContain("I'd start");
+  const g = setup([{ issues: rows, nextPage: null, suggested: { number: 101, because: "it's the smallest clear ask in your repo.", by: 'fallback' } }]);
+  g.ui.open('repo'); await settle();
+  expect(g.ui.card()?.line).toBe("I'd start with #101, because it's the smallest clear ask in your repo. Review the plan before Codex starts.");
+  const h = setup([{ issues: rows, nextPage: null, suggested: { number: 999, because: 'gone', by: 'spark' } }]);
+  h.ui.open('repo'); await settle();
+  expect(h.ui.card()?.title).toBe('#101: Fix cart'); expect(h.ui.card()?.line).not.toContain('Spark');
+});

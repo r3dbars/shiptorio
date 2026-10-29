@@ -4,6 +4,7 @@ import { runnerInstallCommand } from '../../runner-install';
 
 type Repo = { fullName: string };
 type Issue = { id: number; number: number; title: string; body: string };
+type Suggested = { number: number; because: string; by: 'spark' | 'fallback' };
 type Pane = 'repos' | 'issues' | 'power' | 'setup' | 'disconnect';
 type Options = { repo?: string; origin: string; path: string; fetch?: typeof fetch; navigate: (url: string) => void; copy: (text: string | Promise<string>) => Promise<void>; onStart?: (id: string) => void; now?: () => number };
 
@@ -14,7 +15,7 @@ export function createConnections(o: Options) {
   const request = o.fetch ?? fetch, now = o.now ?? Date.now;
   let accountChecked = false;
   let pane: Pane | null = null, revision = 0, displayRevision = 0, busy = false, refreshing = false, error = '', login = false;
-  let repos: Repo[] = [], issues: Issue[] = [], index = 0, page = 1, nextPage: number | null = null;
+  let repos: Repo[] = [], issues: Issue[] = [], suggested: Suggested | null = null, index = 0, page = 1, nextPage: number | null = null;
   let status: RunnerStatus | null = null, command = '', copied = false, copyFailed = false, expires = 0, nextPoll = 0;
   let leaving = '', onboarding = false; // leaving: the one repo we're opening. onboarding: go straight to the inbox once Codex is ready.
   const repo = o.repo && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(o.repo) && !o.repo.split('/').some(part => part === '.' || part === '..') ? o.repo : undefined;
@@ -64,8 +65,13 @@ export function createConnections(o: Options) {
         // Only one repo: there's nothing to choose, so open it.
         if (current === revision && repos.length === 1 && !nextPage && page === 1) { leaving = repos[0].fullName; o.navigate(liveUrl(leaving)); }
       } else if (target === 'issues') {
-        const data = await json<{ issues: Issue[]; nextPage: number | null }>(`${api}/issues?page=${page}`);
-        if (current === revision) { issues = data.issues; nextPage = data.nextPage; index = 0; }
+        const data = await json<{ issues: Issue[]; nextPage: number | null; suggested?: Suggested }>(`${api}/issues?page=${page}`);
+        if (current === revision) {
+          // Shippy's pick goes first, so the first issue card is the one he'd start with.
+          const pick = data.suggested && data.issues.find(issue => issue.number === data.suggested!.number);
+          suggested = pick ? data.suggested! : null;
+          issues = pick ? [pick, ...data.issues.filter(issue => issue !== pick)] : data.issues; nextPage = data.nextPage; index = 0;
+        }
       } else {
         const data = await json<RunnerStatus>(`${api}/runner/status`);
         if (current === revision) status = data;
@@ -95,7 +101,8 @@ export function createConnections(o: Options) {
       yes = r ? 'Use this repo' : nextPage ? 'More repos' : 'Connect GitHub'; no = r && (repos.length > 1 || nextPage || page > 1) ? 'Next repo' : 'Close';
     } else if (pane === 'issues') {
       const issue = issues[index]; title = issue ? `#${issue.number}: ${issue.title}` : 'No open issues on this page';
-      line = issue ? `${repo} · ${index + 1} of ${issues.length}. ${issue.body ? `${issue.body.slice(0, 120).trim()}${issue.body.length > 120 ? '…' : ''} ` : ''}Review the plan before Codex starts.` : `Issues are what the factory builds. Add one to ${repo} on GitHub, then refresh.`;
+      line = issue && suggested?.number === issue.number ? `I'd start with #${issue.number}, because ${suggested.because}${suggested.by === 'spark' ? ' (Picked by Meta Muse Spark.)' : ''} Review the plan before Codex starts.`
+        : issue ? `${repo} · ${index + 1} of ${issues.length}. ${issue.body ? `${issue.body.slice(0, 120).trim()}${issue.body.length > 120 ? '…' : ''} ` : ''}Review the plan before Codex starts.` : `Issues are what the factory builds. Add one to ${repo} on GitHub, then refresh.`;
       yes = issue ? 'Plan' : nextPage ? 'More issues' : 'Refresh'; no = issue ? 'Next issue' : 'Close';
     } else if (pane === 'setup') {
       title = copied ? 'Paste it into Terminal' : 'Copy the setup line';

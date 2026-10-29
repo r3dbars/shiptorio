@@ -30,7 +30,8 @@ import { testUserRoutes } from "./test-users";
 
 import { Hono, type Context, type Next } from "hono";
 import { ops } from "./ops";
-import { starterIssue } from "./starterIssue";
+import { plannerRoom, starterIssue } from "./starterIssue";
+import { askSpark, suggestFirstIssue } from "./first-issue";
 import { authCallback, login, logout, ownerSession, publicUrl, setupCallback, setupPage } from "./auth";
 import { Factory, type FactoryEnv } from "./factory";
 import { appJwt, gh, registerGithubCredential, repoInstallationId } from "./github";
@@ -715,7 +716,13 @@ app.get("/api/repos/:owner/:repo/issues", async c => {
   const installationId = await installationFor(c.env, repo);
   if (!installationId) return c.json({ error: "GitHub App is not connected to this repository" }, 403);
   const token = await installationToken(c.env, installationId, { repositories: [c.req.param("repo")], permissions: { issues: "read", metadata: "read" } });
-  return c.json(await issueInbox(repo, token, page));
+  // Shippy's first pick: fixed rules always answer; Meta Muse Spark may choose among the safe ones (cached per repo).
+  const suggest = (rows: Parameters<typeof suggestFirstIssue>[1]) => suggestFirstIssue(repo, rows, {
+    plannerRoom: () => plannerRoom(c.env, repo),
+    ask: askSpark({ ...c.env, budgetRepo: repo, budgetAccount: () => budgetAccount(c.env.DB, repo) }),
+    cache: c.env.CACHE,
+  });
+  return c.json(await issueInbox(repo, token, page, undefined, suggest));
 });
 
 app.get("/api/repos", async (c) => {

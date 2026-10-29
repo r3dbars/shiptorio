@@ -18,3 +18,12 @@ test('a full PR-only page still offers the next page', async () => {
 test('GitHub outages remain failures rather than empty inboxes', async () => {
   await expect(issueInbox('owner/repo', '', 1, async () => { throw Error('offline'); })).rejects.toThrow('offline');
 });
+test('page 1 carries Shippy\'s suggested first issue; later pages and failures do not', async () => {
+  const read = async <T>(): Promise<T> => [{ id: 1, number: 7, title: 'Fix typo', body: '', state: 'open', labels: [{ name: 'docs' }] }] as T;
+  let seen: number[] = [];
+  const suggest = async (rows: { number: number }[]) => { seen = rows.map(r => r.number); return { number: 7, because: 'it is small.', by: 'fallback' as const }; };
+  expect((await issueInbox('o/r', '', 1, read, suggest)).suggested).toEqual({ number: 7, because: 'it is small.', by: 'fallback' });
+  expect(seen).toEqual([7]);
+  expect((await issueInbox('o/r', '', 2, read, suggest)).suggested).toBeUndefined();
+  expect((await issueInbox('o/r', '', 1, read, async () => { throw Error('spark'); })).suggested).toBeUndefined();
+});
