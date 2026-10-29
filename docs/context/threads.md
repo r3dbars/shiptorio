@@ -5,6 +5,7 @@
 PR #598 (`codex/dev-deck-default`) makes authorized bare visits to shiptorio.dev open the approved pixel deck with the automatic Shippy watch loop. Explicit repo/onboarding links and production behavior stay unchanged; the existing access gate still runs first. Justin requested this as the staging default.
 
 - #66: exact duplicate Meta requests share only an in-flight result within the same run/account; later decisions are fresh. Duplicate triage/plan/review fixture: 10 → 5 calls, 1000 → 500 reported tokens, identical outputs; sequential happy-path savings are not claimed.
+- #60: retired the always-on remote intro flag; onboarding query/preferences and all safety kill switches remain. Other live/preview flags are inventoried in the PR and retained.
 
 ## Deck visual iteration (Codex, 2026-10-28)
 
