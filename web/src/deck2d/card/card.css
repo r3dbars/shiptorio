@@ -178,3 +178,27 @@
   pointer-events: none;
   image-rendering: pixelated;
 }
+
+/* A story card (CardView.shippy, story.ts): Shippy stands inside the plate on the left and says the line on the right.
+   His canvas is drawn at art resolution; 2 card px per art px keeps him on the card's grid (--p) and big enough to read. */
+.ic-story {
+  --sp: calc(var(--p, 2px) * 2); /* CSS px per art px for Shippy: 4 on a phone, 6 on a desktop */
+  display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: calc(var(--p, 2px) * 6);
+  align-items: center; text-align: left; cursor: pointer;
+}
+.ic-story > .ic-story-shippy {
+  grid-column: 1; grid-row: 1 / span 3; align-self: end;
+  width: calc(var(--sp) * 30); height: calc(var(--sp) * 24); image-rendering: pixelated; pointer-events: none;
+}
+.ic-story > .ic-title, .ic-story > .ic-line { grid-column: 2; text-wrap: pretty; }
+.ic-story > .ic-title { grid-row: 1; margin-left: 0; margin-right: 0; }
+.ic-story > .ic-line { grid-row: 2; margin-left: 0; margin-right: 0; min-height: 3.9em; align-self: start; }
+.ic-story > .ic-title[hidden] ~ .ic-line { grid-row: 1 / span 2; align-self: center; }
+.ic-story > .ic-title[hidden] { display: none; }
+.ic-story > .ic-actions { grid-column: 1 / -1; grid-row: 4; }
+.ic-story.solo > .ic-actions { grid-template-columns: minmax(0, 1fr); }
+.ic-story .ic-btn[hidden] { display: none; }
+.ironcard.px .ic-story > .ic-line { margin-bottom: calc(var(--p) * 6); min-height: calc(var(--p) * 30); }
+.ironcard.px .ic-story > .ic-title { margin-bottom: calc(var(--p) * 3); }
+/* the phone plate is narrow: tighten the gap so the words keep their room */
+@media (max-width: 420px) { .ic-story { column-gap: calc(var(--p, 2px) * 3); } }

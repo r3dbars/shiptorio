@@ -64,6 +64,9 @@ export interface CardView {
   hold?: boolean; // ships real code (a merge): needs a held press or a full swipe, never a flick
   guide?: "shippy"; // verified Meta-guided recommendation; ordinary setup/status cards stay plain
   setup?: boolean; // a "plug in an agent" / connect card rather than a decision on work
+  /** A story card: Shippy stands inside the card and says `line` (typed out). `yes` defaults to "Next"; Later only shows
+   *  when `no` is set. Tap the card, swipe right or press → to go on (onApprove). dots, hold and guide are ignored. */
+  shippy?: "talk" | "wave" | "point" | "happy";
 }
 
 export type ShippyPose = "folded" | "peek" | "unfold" | "walking" | "lever" | "happy" | "alarmed" | "weld" | "carry" | "inspect" | "poke" | "skid" | "idle";
