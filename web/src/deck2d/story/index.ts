@@ -245,12 +245,13 @@ export function createStory(opts: StoryOptions = {}): Story {
 
   // The short version (a guest at the front door): the one swipe clears the jam, the released crates ship, the line
   // goes still, and the story ends on its connect card so the page can hand over to setup.
+  let shippedAt = 0;
   function shortEnd() {
     S.caption = "Swipe, and it moves."; S.captionAt = S.t;
     after(0.9, () => { S.shippy = { pose: "folded", at: "corner" }; });
     S.script.push(
-      { run: () => { S.spawnEvery = 0; S.jam = null; S.budget = null; } }, // the whole pile goes, not just a batch
-      { until: () => !STOPS.some((id) => S.st[id].q.length) }, { rest: 0.8 },
+      { run: () => { S.spawnEvery = 0; S.jam = null; S.budget = null; shippedAt = S.shipped; } }, // the whole pile goes, not just a batch
+      { until: () => !S.st.review.q.length && S.shipped > shippedAt }, { rest: 0.8 }, // the jam is gone and one ships: enough
       { run: () => {
         setPhase("end");
         S.caption = null;

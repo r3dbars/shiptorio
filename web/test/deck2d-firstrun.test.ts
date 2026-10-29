@@ -18,14 +18,30 @@ function play(stage: () => FirstRunStage, store = memory()) {
   return { fr, seen, run, store };
 }
 
-test("hello: Shippy says hi on an empty deck, then the GitHub card comes up", () => {
+test("intro: a guest's sample stays up while Shippy says hi, then the sign-in card", () => {
+  const { fr, seen, run } = play(() => "intro");
+  run();
+  expect(fr.playing()).toBe(false);
+  expect([...new Set(seen.map(s => s.caption).filter(Boolean))]).toEqual([FIRST_RUN_LINES.hi, FIRST_RUN_LINES.yours]);
+  expect(seen.every(s => s.built.length === STOPS.length)).toBe(true); // nothing torn down under the guest
+  expect(seen.slice(0, -1).every(s => !s.card)).toBe(true);
+  expect(fr.view(base())).toEqual(base());
+});
+
+test("not yet: while a guest is still playing the sample, the page shows as it is", () => {
+  const fr = createFirstRun({ stage: () => null, store: memory() });
+  fr.step(1);
+  expect(fr.playing()).toBe(false);
+  expect(fr.view(base())).toEqual(base());
+});
+
+test("hello: signed in with no repo, an empty deck and one line, then the repo card", () => {
   const { fr, seen, run } = play(() => "hello");
   run();
   expect(fr.playing()).toBe(false);
-  const captions = [...new Set(seen.map(s => s.caption).filter(Boolean))];
-  expect(captions).toEqual([FIRST_RUN_LINES.hi, FIRST_RUN_LINES.pitch, FIRST_RUN_LINES.github]);
+  expect([...new Set(seen.map(s => s.caption).filter(Boolean))]).toEqual([FIRST_RUN_LINES.pick]);
   expect(seen.every(s => s.built.length === 0)).toBe(true); // nothing stands before you connect anything
-  expect(seen.slice(0, -1).every(s => !s.card)).toBe(true); // no card over Shippy's lines
+  expect(seen.slice(0, -1).every(s => !s.card)).toBe(true); // no card over Shippy's line
   expect(fr.view(base()).card).not.toBeNull();
   expect(fr.view(base()).stops.find(s => s.id === "review")!.items).toEqual([]); // no sample crates on an empty deck
 });

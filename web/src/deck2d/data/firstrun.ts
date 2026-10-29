@@ -130,7 +130,7 @@ export function createFirstRun(o: FirstRunOptions) {
   function view<V extends DeckView>(base: V): V {
     if (finished || !stage) return base;
     // The guest's sample factory stays as it is: Shippy only says hello over it before the sign-in card.
-    if (stage === "intro") return playing ? { ...base, card: null, caption, jam: null, shippy: shippy ?? base.shippy, attention: [] } : base;
+    if (stage === "intro") return playing ? { ...base, card: null, caption, jam: null, shippy: shippy ?? base.shippy, focus: shippy?.at === "corner" ? undefined : shippy?.at, attention: [] } : base;
     const stops = base.stops.map(s => built.has(s.id) ? s : { ...s, built: false, state: "idle" as const, automated: false, items: [], waiting: undefined });
     const v: V = { ...base, stops, jam: null, deck: { size, island, ...(islandProgress != null ? { islandProgress } : {}) } };
     if (playing) {
