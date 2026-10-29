@@ -141,6 +141,8 @@ describe("nothing is sent without a player tap", () => {
   it("Factory: mail becomes a ticket, Spark sorts and drafts it, every alarm and autonomy setting leaves it unsent, and one tap sends exactly that draft", async () => {
     const original = globalThis.fetch;
     const outbound: string[] = [];
+    // Exact host match; a substring check is what CodeQL flags as URL sanitization.
+    const host = (u: string) => new URL(u).host;
     let spark = 0;
     let providerWait: Promise<void> | undefined;
     let providerStarted: (() => void) | undefined;
@@ -156,7 +158,7 @@ describe("nothing is sent without a player tap", () => {
         return Response.json({ choices: [{ message: { content: JSON.stringify({ kind: "bug", district: "checkout", reason: "x" }) } }] });
       }
       outbound.push(url);
-      if (url.includes("api.intercom.io") && providerWait) { providerStarted?.(); await providerWait; }
+      if (host(url) === "api.intercom.io" && providerWait) { providerStarted?.(); await providerWait; }
       return Response.json({});
     }) as typeof fetch;
     try {
@@ -217,9 +219,9 @@ describe("nothing is sent without a player tap", () => {
       // The player taps Send on the card they're looking at: exactly one reply, that text, into the conversation.
       const fresh = saved().deck!.find((m) => m.id === `support:reply:${ticket.id}`)!;
       await factory.webSocketMessage(socket, JSON.stringify({ type: "choose_move", moveId: fresh.id, optionId: "review" }));
-      expect(outbound.filter((u) => u.includes("api.intercom.io"))).toHaveLength(0);
+      expect(outbound.filter((u) => host(u) === "api.intercom.io")).toHaveLength(0);
       await factory.webSocketMessage(socket, JSON.stringify({ type: "send_reply", ticketId: ticket.id, draftHash: saved().support![0].draft!.hash }));
-      expect(outbound.filter((u) => u.includes("api.intercom.io/conversations/1911/reply"))).toHaveLength(1);
+      expect(outbound.filter((u) => u === "https://api.intercom.io/conversations/1911/reply")).toHaveLength(1);
       const sent = saved().support![0];
       expect(sent.state).toBe("waiting_fix"); // a tracked bug: the "it's fixed" reply comes after the launch
       expect(sent.sent).toHaveLength(1);
@@ -230,10 +232,10 @@ describe("nothing is sent without a player tap", () => {
       const again = new Factory(ctx as never, env as never);
       for (let i = 0; i < 4; i++) await again.alarm();
       expect(saved().support![0]).toMatchObject({ state: "drafted", draft: { purpose: "fixed" } });
-      expect(outbound.filter((u) => u.includes("api.intercom.io"))).toHaveLength(1);
+      expect(outbound.filter((u) => host(u) === "api.intercom.io")).toHaveLength(1);
       const fixedCard = saved().deck!.find((m) => m.id === `support:reply:${ticket.id}`)!;
       await again.webSocketMessage(socket, JSON.stringify({ type: "send_reply", ticketId: ticket.id, draftHash: saved().support![0].draft!.hash }));
-      expect(outbound.filter((u) => u.includes("api.intercom.io"))).toHaveLength(2);
+      expect(outbound.filter((u) => host(u) === "api.intercom.io")).toHaveLength(2);
       expect(saved().support![0].state).toBe("answered");
       expect(saved().metrics?.customersAnswered).toBe(1);
       // A blocked provider cannot admit the same approved send twice or erase a newer edit.
@@ -248,7 +250,7 @@ describe("nothing is sent without a player tap", () => {
       await again.webSocketMessage(socket, JSON.stringify({ type: "send_reply", ticketId: ticket.id, draftHash: sendHash }));
       await again.webSocketMessage(socket, JSON.stringify({ type: "edit_reply", ticketId: ticket.id, text: "A newer draft that must survive" }));
       release(); await pending;
-      expect(outbound.filter(u => u.includes("api.intercom.io"))).toHaveLength(3);
+      expect(outbound.filter(u => host(u) === "api.intercom.io")).toHaveLength(3);
       expect(saved().support![0].draft!.text).toBe("A newer draft that must survive");
       expect(saved().support![0].sent).toHaveLength(3);
       expect(saved().support![0].state).toBe("drafted");
@@ -256,7 +258,7 @@ describe("nothing is sent without a player tap", () => {
       data.set("state", { ...saved(), support: saved().support!.map(t => t.id === ticket.id ? { ...t, draft: approvedDraft, state: "drafted" } : t) });
       const restarted = new Factory(ctx as never, env as never);
       await restarted.webSocketMessage(socket, JSON.stringify({ type: "send_reply", ticketId: ticket.id, draftHash: sendHash }));
-      expect(outbound.filter(u => u.includes("api.intercom.io"))).toHaveLength(3);
+      expect(outbound.filter(u => host(u) === "api.intercom.io")).toHaveLength(3);
       // Pause the final operator-identity lookup, then edit: the obsolete approved
       // draft must never reach the provider after that awaited read completes.
       await restarted.webSocketMessage(socket, JSON.stringify({ type: "edit_reply", ticketId: ticket.id, text: "Draft before identity lookup" }));
@@ -268,7 +270,7 @@ describe("nothing is sent without a player tap", () => {
       await identityReached;
       await restarted.webSocketMessage(socket, JSON.stringify({ type: "edit_reply", ticketId: ticket.id, text: "New draft during identity lookup" }));
       resumeIdentity(); await blocked;
-      expect(outbound.filter(u => u.includes("api.intercom.io"))).toHaveLength(3);
+      expect(outbound.filter(u => host(u) === "api.intercom.io")).toHaveLength(3);
       expect(saved().support![0].draft!.text).toBe("New draft during identity lookup");
       expect(saved().support![0].sent).toHaveLength(3);
       // A copy-only outbox record is useful, but no customer has received a message.
@@ -281,7 +283,7 @@ describe("nothing is sent without a player tap", () => {
       expect(saved().support!.find(t => t.id === outboxId)!.sent[0]).toMatchObject({ via: "outbox", text: "Copy-only answer" });
       expect(saved().metrics!.customersAnswered).toBe(answeredBefore);
       expect(saved().metrics!.shipScore).toBe(scoreBefore);
-      expect(outbound.filter(u => u.includes("api.intercom.io") || u.includes("api.resend.com"))).toHaveLength(3);
+      expect(outbound.filter(u => host(u) === "api.intercom.io" || host(u) === "api.resend.com")).toHaveLength(3);
     } finally { globalThis.fetch = original; }
   });
 
