@@ -98,6 +98,8 @@ Retains production-disabled negative-ID identities and scoped fixture delegation
 
 ## Stranger E2E: latest status (2026-10-26)
 
+2026-10-29 · Codex #62 (`codex/deck-keyboard-access`): named deck/card roles, polite live caption, keyboard Enter/Escape flow and preserved held-merge safety; DOM plus keyboard browser verification.
+
 | PR | State | Result |
 | --- | --- | --- |
 | #252 | merged after CI + Stranger passed | Fix Chromium runner approval submitting opaque Origin under no-referrer; retain exact-origin checks. |
