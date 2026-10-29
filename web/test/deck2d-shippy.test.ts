@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { STOP_X, type ShippyView } from "../src/deck2d/contract";
 import { createShippy } from "../src/deck2d/shippy/shippy";
+import { DOCK_HOME_X } from "../src/deck2d/shippy/dock";
 
 const noArt = { get: () => null, ready: async () => {} };
 function run(s: ReturnType<typeof createShippy>, view: ShippyView, seconds: number) {
@@ -74,7 +75,7 @@ test("pixel mode: home poses stay at the world-space home on the floor", () => {
   const s = createShippy(noArt, { reducedMotion: true, pixel: true });
   for (const pose of ["peek", "alarmed", "happy", "folded"] as const) {
     run(s, { at: "corner", pose }, 1);
-    expect(s.state).toMatchObject({ corner: "gone", world: "stand", x: STOP_X.repo - 150, pose });
+    expect(s.state).toMatchObject({ corner: "gone", world: "stand", x: DOCK_HOME_X, pose });
   }
 });
 
@@ -89,5 +90,5 @@ test("pixel mode: never jumps or drops through a whole busy story", () => {
     expect(["drop", "leave"]).not.toContain(s.state.world);
   }
   run(s, { at: "corner", pose: "folded" }, 12);
-  expect(s.state).toMatchObject({ corner: "gone", world: "stand", x: STOP_X.repo - 150 });
+  expect(s.state).toMatchObject({ corner: "gone", world: "stand", x: DOCK_HOME_X });
 });

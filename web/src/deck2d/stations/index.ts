@@ -7,6 +7,7 @@ import { Px } from "./px";
 import { repo } from "./repo";
 import { review } from "./review";
 import type { StationDef } from "./types";
+import { silhouetteOutline, statusLamp } from "./status";
 
 // The six stations, drawn in code into art-px grids (Black Iron 48, 1px soot outline, light from the upper right).
 // Calm: idle and auto hold still, working moves one small part, and only a jam pulses.
@@ -20,6 +21,26 @@ export const STATIONS: Record<StationId, StationDef> = { repo, planner, builder,
 export const STATION_STATES: readonly StopState[] = ["idle", "working", "jammed", "auto"];
 
 const cache = new Map<string, HTMLCanvasElement>();
+const outlines = new Map<string, HTMLCanvasElement>();
+
+function blockedOutline(id: StationId, attention = false) {
+  const key = `${id}:${attention}`, colors = attention ? [PALETTE.brass[4], PALETTE.brass[2]] : [PALETTE.jam[2], PALETTE.jam[1]];
+  let cv = outlines.get(key);
+  if (!cv) {
+    const def = STATIONS[id], shape = new Px(def.w, def.h);
+    // Trace structural pixels, not the transient smoke or light-layer halos.
+    def.draw(shape, "idle", 0);
+    const ring = silhouetteOutline(def.w, def.h, (x, y) => shape.d[y * def.w + x] !== 255);
+    cv = document.createElement("canvas"); cv.width = ring.width; cv.height = ring.height;
+    const ctx = cv.getContext("2d")!;
+    for (let y = 0; y < ring.height; y++) for (let x = 0; x < ring.width; x++) {
+      const distance = ring.pixels[y * ring.width + x];
+      if (distance) { ctx.fillStyle = colors[distance - 1]; ctx.fillRect(x, y, 1, 1); }
+    }
+    outlines.set(key, cv);
+  }
+  return cv;
+}
 
 /** Which frame of a state's loop is showing at time t (seconds). */
 export function frameAt(id: StationId, s: StopState, t: number) {
@@ -45,7 +66,7 @@ export function stationFrame(id: StationId, s: StopState, t = 0): HTMLCanvasElem
  * (scale = ART_PX world units per art px), feet at (STOP_X[id], BELT_Y + LOOK[id].drop), positions snapped to the
  * art grid. Pass scale 1 to draw straight into an art-px context.
  */
-export function drawStation(ctx: CanvasRenderingContext2D, id: StationId, s: StopState, t = 0, x = STOP_X[id], feetY = BELT_Y + LOOK[id].drop, scale = ART_PX) {
+export function drawStation(ctx: CanvasRenderingContext2D, id: StationId, s: StopState, t = 0, x = STOP_X[id], feetY = BELT_Y + LOOK[id].drop, scale = ART_PX, attention = false) {
   const cv = stationFrame(id, s, t), w = cv.width * scale, h = cv.height * scale;
   const at = (n: number) => (scale === ART_PX ? snap(n) : Math.round(n));
   const was = ctx.imageSmoothingEnabled;
@@ -66,7 +87,12 @@ export function drawStation(ctx: CanvasRenderingContext2D, id: StationId, s: Sto
   }
   ctx.fillStyle = PALETTE.soot[0];
   ctx.fillRect(at(x - footW * scale / 2), at(feetY), footW * scale, scale);
+  if (s === "jammed" || attention) {
+    const outline = blockedOutline(id, s !== "jammed" && attention);
+    ctx.drawImage(outline, at(x - w / 2) - 2 * scale, at(feetY - h) - 2 * scale, outline.width * scale, outline.height * scale);
+  }
   ctx.drawImage(cv, at(x - w / 2), at(feetY - h), w, h);
+  statusLamp(ctx, s, x, feetY, scale, attention);
   ctx.imageSmoothingEnabled = was;
 }
 

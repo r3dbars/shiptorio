@@ -7,9 +7,13 @@ import { createPixelCanvas } from "./pixel";
 import * as pd from "./pxdraw";
 import { FLIGHT } from "../launch/flight";
 import { BOILER_H, BOILER_W, boilerFrame } from "../../bakeoff/boiler2d";
+import { stationSize, type StationId } from "../stations";
+import { advanceBeltDistance, beltConnectionAt } from "./flow";
+import { needsAttention, type AttentionView } from "../stations/attention";
+import { anchoredCenter, pixelZoom, settleCamera } from "./camera";
 
 // stations/ (its own thread) draws each machine in pixel code; until it lands, pixel mode shows the snapped webp.
-type DrawStation = (cx: CanvasRenderingContext2D, id: StopId, state: string, t: number, x: number, feetY: number) => void;
+type DrawStation = (cx: CanvasRenderingContext2D, id: StopId, state: string, t: number, x: number, feetY: number, scale?: number, attention?: boolean) => void;
 const drawStation = (Object.values(import.meta.glob("../stations/index.ts", { eager: true }))[0] as { drawStation?: DrawStation } | undefined)?.drawStation;
 
 // The deck renderer: sky, clouds, deck, bridge + rocket island, belt, stations, crates, rocket, camera.
@@ -42,7 +46,7 @@ const at = (d: number): [number, number] => {
 };
 const stopD = (s: StopId) => (s === "launch" ? PATH_LEN : STOP_X[s] - PATH[0][0]);
 
-interface Crate { id: string; d: number; look: string; stop: StopId; fade: number }
+interface Crate { id: string; d: number; previousD: number; look: string; stop: StopId; fade: number; moving: boolean; badge?: string }
 interface Puff { x: number; y: number; vx: number; vy: number; t: number; life: number; r: number }
 
 export interface Engine {
@@ -53,7 +57,7 @@ export interface Engine {
   readonly portrait: boolean;
 }
 
-export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus, shippy: ShippyModule, layers: DeckLayer[] = []): Engine {
+export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus, shippy: ShippyModule, layers: DeckLayer[] = [], options: { onMachineSelect?: (id: StopId) => void } = {}): Engine {
   const owned = new Set(layers.flatMap((l) => l.replaces ?? []));
   const slot = (s: LayerSlot) => { for (const l of layers) l.draw(cx, s); };
   const screen = cv.getContext("2d")!;
@@ -62,11 +66,13 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   // snap every pixel to the 48 colors (?pq=0 skips the snap, for speed checks).
   const px = pixelOn() ? createPixelCanvas(cv, ART_PX, new URLSearchParams(location.search).get("pq") === "0" ? undefined : PALETTE_48) : null;
   const rehearsingShippy = new URLSearchParams(location.search).get("source") === "shippy-demo";
+  const rehearsingMachines = new URLSearchParams(location.search).get("source") === "machine-demo";
   let W = 0, H = 0, DPR = 1, t = 0;
   const resize = () => { DPR = Math.min(2, devicePixelRatio || 1); W = innerWidth; H = innerHeight; cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); };
   addEventListener("resize", resize); resize();
 
   const crates = new Map<string, Crate>();
+  const beltPhases = new Map<StopId, number>();
   const drop: Record<StopId, number> = Object.fromEntries(STOPS.map((s) => [s, 0])) as never;
   const puffs: Puff[] = [];
   const rocket = { y: 0, v: 0, mode: "ready" as "ready" | "count" | "up" | "away" | "down", t: 0 };
@@ -89,7 +95,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   // A tall phone would show the whole line tiny, so the camera parks on whatever matters (plan pick: left to right,
   // park on the bottleneck, one tap to see it all).
   function focusX(v: DeckView) {
-    const pin = cam.pin ?? v.card?.stop ?? v.jam;
+    const pin = cam.pin ?? (v as AttentionView).focus ?? v.card?.stop ?? v.jam;
     if (pin) return STOP_X[pin] + (pin === "launch" ? -200 : 60);
     if (v.shippy.at !== "corner") return STOP_X[v.shippy.at] + 120;
     if (rocket.mode === "count" || rocket.mode === "up") return STOP_X.launch - 200;
@@ -101,6 +107,13 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   function target(v: DeckView) {
     const all = fitAll();
     if (cam.all) return all;
+    const following = (v as DeckView & { followItem?: string }).followItem;
+    const cargo = following ? crates.get(following) : undefined;
+    if (cargo) return { x: at(cargo.d)[0], y: 225, s: Math.max(all.s, W / 1100) };
+    if ((v.card || (v as AttentionView).focus) && !rehearsingMachines) return { x: focusX(v), y: 225, s: Math.max(all.s, W / 1100) };
+    if (rehearsingMachines) {
+      return { x: focusX(v), y: 225, s: Math.max(all.s, W / 1000) };
+    }
     if (rehearsingShippy) {
       const actor = shippy as ShippyModule & { readonly state?: { x: number } };
       return { x: (actor.state?.x ?? focusX(v)) + 80, y: 225, s: Math.max(all.s, W / 1150) };
@@ -136,7 +149,10 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     moved += Math.abs(e.clientX - p[0]) + Math.abs(e.clientY - p[1]);
     if (moved < 6) return;
     cam.manual = Infinity;
-    if (ptrs.size === 1) { cam.x -= (e.clientX - p[0]) / cam.s; cam.y -= (e.clientY - p[1]) / cam.s; }
+    if (ptrs.size === 1) {
+      const visibleScale = px ? px.k / (ART_PX * DPR) : cam.s;
+      cam.x -= (e.clientX - p[0]) / visibleScale; cam.y -= (e.clientY - p[1]) / visibleScale;
+    }
     else if (ptrs.size === 2) {
       const [a, b] = [...ptrs.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]);
       if (pinch) zoomAt((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, d / pinch);
@@ -144,6 +160,15 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     }
   });
   const up = (e: PointerEvent) => {
+    if (e.type === "pointerup" && moved < 6 && ptrs.size === 1 && prev) {
+      const [x, y] = px ? px.toWorld(e.clientX, e.clientY) : [cam.x + (e.clientX - W / 2) / cam.s, cam.y + (e.clientY - H / 2) / cam.s];
+      const hit = prev.stops.find(s => {
+        if (!s.built || s.id === "launch" || layers.some(l => l.owns?.(s))) return false;
+        const size = stationSize(s.id as StationId), feet = BELT_Y + LOOK[s.id].drop;
+        return Math.abs(x - STOP_X[s.id]) <= size.w * ART_PX / 2 + 15 && y >= feet - size.h * ART_PX - 10 && y <= feet + 25;
+      });
+      if (hit) options.onMachineSelect?.(hit.id);
+    }
     ptrs.delete(e.pointerId); pinch = 0;
     if (moved < 6 && e.clientX < 110 && e.clientY < 110) { cam.manual = 0; cam.pin = null; } // tap Shippy: fly to what he's looking at
   };
@@ -167,18 +192,22 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   }, { passive: false });
   cv.addEventListener("gestureend", (e) => { e.preventDefault(); gestureScale = 1; }, { passive: false });
   cv.addEventListener("dblclick", () => { cam.manual = 0; cam.pin = null; });
-  function zoomAt(px: number, py: number, f: number) {
-    const visibleScale = () => pixelOn() ? Math.max(1, Math.round(cam.s * ART_PX * DPR)) / (ART_PX * DPR) : cam.s;
-    const before = visibleScale();
-    const wx = cam.x + (px - W / 2) / before, wy = cam.y + (py - H / 2) / before;
+  function zoomAt(screenX: number, screenY: number, f: number) {
+    const world = px ? px.toWorld(screenX, screenY) : [cam.x + (screenX - W / 2) / cam.s, cam.y + (screenY - H / 2) / cam.s];
     cam.s = Math.max(fitAll().s * 0.8, Math.min(1.6, cam.s * f));
-    const after = visibleScale();
-    cam.x = wx - (px - W / 2) / after; cam.y = wy - (py - H / 2) / after;
+    if (px) {
+      const zoom = pixelZoom(cam.s * ART_PX * DPR, px.k);
+      cam.x = anchoredCenter(world[0], screenX * DPR, cv.width, zoom, ART_PX);
+      cam.y = anchoredCenter(world[1], screenY * DPR, cv.height, zoom, ART_PX);
+    } else {
+      cam.x = world[0] - (screenX - W / 2) / cam.s; cam.y = world[1] - (screenY - H / 2) / cam.s;
+    }
   }
 
   // ---------- views -> motion + events ----------
   function take(v: DeckView, dt: number) {
     const p = prev;
+    if (v.card && v.card.id !== p?.card?.id) cam.manual = 0;
     for (const s of v.stops) {
       const was = p?.stops.find((x) => x.id === s.id);
       if (s.built && !was?.built) { if (p) bus.emit({ type: "station-built", stop: s.id }); else drop[s.id] = 1; }
@@ -197,16 +226,26 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     } else if (p && islandUp && v.shipped > p.shipped && (rocket.mode === "ready" || rocket.mode === "down")) { rocket.mode = "count"; rocket.t = 0; }
 
     // crates: every item has a spot (its stop, minus its place in the queue); crates only ever slide forward
+    const blocked = blockedZones(v);
+    const cargoBlocked = (distance: number) => blocked.some(zone => at(distance)[0] >= zone.left && at(distance)[0] <= zone.right);
     const seen = new Set<string>();
+    crates.forEach(c => { c.moving = false; });
     for (const s of v.stops) s.items.forEach((it, k) => {
       seen.add(it.id);
       let c = crates.get(it.id);
-      if (!c) { c = { id: it.id, d: 0, look: it.look, stop: s.id, fade: 1 }; crates.set(it.id, c); }
+      const item = it as Item & { badge?: string; spawnAt?: StopId };
+      if (!c) {
+        const start = stopD(item.spawnAt ?? s.id) - k * GAP;
+        c = { id: it.id, d: start, previousD: start, look: it.look, stop: s.id, fade: 1, moving: false }; crates.set(it.id, c);
+      }
       if (c.stop !== s.id) { c.stop = s.id; }
       c.look = it.look;
+      c.badge = item.badge;
       const want = stopD(s.id) - k * GAP;
       const before = c.d;
-      if (c.d < want) c.d = Math.min(want, c.d + SPEED * dt);
+      c.previousD = before;
+      if (c.d < want) c.d = advanceBeltDistance(c.d, want, SPEED * dt, cargoBlocked);
+      c.moving = c.d > before;
       if (before < want - 0.5 && c.d >= want - 0.5 && k === 0) bus.emit({ type: "crate-arrive", stop: s.id, id: it.id });
     });
     crates.forEach((c, id) => {
@@ -214,6 +253,8 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
       if (c.stop === "launch" || c.d >= PATH_LEN - 60) { crates.delete(id); return; } // it went up with the rocket
       c.fade -= dt * 3; if (c.fade <= 0) crates.delete(id);
     });
+    const activeBays = new Set([...crates.values()].filter(c => c.moving && !cargoBlocked(c.d)).map(c => beltConnectionAt(at((c.previousD + c.d) / 2)[0])));
+    for (const bay of activeBays) beltPhases.set(bay, (beltPhases.get(bay) ?? 0) + dt);
     prev = v;
   }
 
@@ -331,17 +372,20 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     }
     cx.globalAlpha = 1;
   }
+  function blockedZones(v: DeckView) {
+    return v.stops.filter((s) => s.built && (s.state === "jammed" || s.id === v.jam)).map((s) => {
+      const i = STOPS.indexOf(s.id), x = STOP_X[s.id];
+      const left = i > 0 ? STOP_X[STOPS[i - 1]] : x;
+      const right = i > 0 ? x : STOP_X[STOPS[1]];
+      return { left: Math.min(left, x - s.items.length * GAP - 60), right };
+    });
+  }
   function belt(v: DeckView) {
     const segs = islandUp ? SEGS : SEGS.slice(0, 1);
     if (px) {
-      const blocked = v.stops.filter((s) => s.built && (s.state === "jammed" || s.id === v.jam)).map((s) => {
-        const i = STOPS.indexOf(s.id), x = STOP_X[s.id];
-        const left = i > 0 ? (STOP_X[STOPS[i - 1]] + x) / 2 : x - 200;
-        const right = i < STOPS.length - 1 ? (x + STOP_X[STOPS[i + 1]]) / 2 : x + 200;
-        return { left: Math.min(left, x - s.items.length * GAP - 60), right };
-      });
+      const blocked = blockedZones(v);
       const blockedAt = (x: number) => blocked.some((zone) => x >= zone.left && x <= zone.right);
-      for (const g of segs) pd.beltRun(cx, g.ax, g.ay, g.bx, g.by, islandUp ? g.len : Math.min(g.len, deckEnd() - 100 - g.ax), t, SPEED * 0.35, blockedAt);
+      for (const g of segs) pd.beltRun(cx, g.ax, g.ay, g.bx, g.by, islandUp ? g.len : Math.min(g.len, deckEnd() - 100 - g.ax), t, SPEED, blockedAt, x => beltPhases.get(beltConnectionAt(x)) ?? 0);
       return;
     }
     const b = img("belt"); if (!b) return;
@@ -357,7 +401,10 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   }
   function crate(c: Crate) {
     const [x, y] = at(c.d);
-    if (px) { if (c.fade > 0.5) pd.crate(cx, x, y, c.look as Item["look"]); return; } // pixel art: no half-faded sprites
+    if (px) {
+      if (c.fade > 0.5) { pd.crate(cx, x, y, c.look as Item["look"]); if (c.badge) pd.crateBadge(cx, x, y, c.badge); }
+      return;
+    }
     if (c.look === "wait") glow(x, y - 18, 46, "255,70,50", 0.3);
     cx.globalAlpha = c.fade;
     put("crate-" + c.look, x, y + 12, CRATE);
@@ -371,7 +418,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     const bob = 0; // calm: working stations don't jitter; the belt and crates show the work
     const L = LOOK[id];
     cx.globalAlpha = Math.min(1, drop[id] * 3);
-    if (px && drawStation) drawStation(cx, id, s.state, t, STOP_X[id], BELT_Y + L.drop + fall);
+    if (px && drawStation) drawStation(cx, id, v.jam === id ? "jammed" : s.state, t, STOP_X[id], BELT_Y + L.drop + fall, ART_PX, needsAttention(v, id));
     else put(`${id}-${s.state}`, STOP_X[id], BELT_Y + L.drop + fall + bob, L.h);
     cx.globalAlpha = 1;
     if (s.state === "jammed") {
@@ -390,7 +437,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     const rv = v.stops.find((x) => x.id === "review")!;
     if (!rv.built) return;
     const e = 1 - drop.review, fall = -420 * e * e;
-    if (prev && v.shippy.pose === "lever") lever = 0.4;
+    if (prev && v.shippy.at === "review" && v.shippy.pose === "lever") lever = 0.4;
     const mode = lever > 0 ? "down" : rv.state === "jammed" ? "glow" : "up";
     if (px) pd.lever(cx, LEVER.x, LEVER.base + fall, mode);
     else put("lever-" + mode, LEVER.x, LEVER.base + fall, LEVER.h);
@@ -419,8 +466,14 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     t += dt; lever = Math.max(0, lever - dt);
     take(v, dt); rocketStep(dt);
     if (performance.now() >= cam.manual) {
-      const tg = target(v), k = first ? 1 : Math.min(1, dt * 1.8); first = false;
-      cam.x += (tg.x - cam.x) * k; cam.y += (tg.y - cam.y) * k; cam.s += (tg.s - cam.s) * k;
+      const tg = target(v);
+      if (first) Object.assign(cam, tg);
+      else {
+        cam.x = settleCamera(cam.x, tg.x, dt, ART_PX / 4);
+        cam.y = settleCamera(cam.y, tg.y, dt, ART_PX / 4);
+        cam.s = settleCamera(cam.s, tg.s, dt, 0.0001);
+      }
+      first = false;
     }
     for (const l of layers) l.update(dt, v);
     const act = builder?.shippyAct?.(); // a running build calls Shippy over to weld

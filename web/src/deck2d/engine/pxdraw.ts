@@ -14,10 +14,10 @@ const BELT_H = 12;
 const SEG = 14; // one belt plate, art px
 /** One belt run from (ax, ay) to (bx, by) in world units, plates moving right. Slopes become 1-px stairs.
  * 3/4 view like Justin's mockups, top to bottom: soot, lit brass back rail, a 6-row dark track of riveted plates with
- * green running chevrons (red in a blocked bay), status-lit lips, iron front face, soot. */
-export function beltRun(cx: CanvasRenderingContext2D, ax: number, ay: number, bx: number, by: number, len: number, t: number, speed: number, blockedAt: (worldX: number) => boolean = () => false) {
+ * green chevrons (red in a blocked bay), status-lit lips, iron front face, soot.
+ * Each bay supplies its own accumulated movement phase; no cargo means a stationary green belt. */
+export function beltRun(cx: CanvasRenderingContext2D, ax: number, ay: number, bx: number, by: number, len: number, t: number, speed: number, blockedAt: (worldX: number) => boolean = () => false, phaseAt: (worldX: number) => number = () => 0) {
   const x0 = g(ax), x1 = g(ax + (bx - ax) * Math.min(1, len / Math.hypot(bx - ax, by - ay)));
-  const shift = Math.floor((t * speed) / P);
   // cast shadow on the floor first (light layer, sun from the upper right: it falls down-left)
   cx.save(); cx.globalAlpha = 0.5;
   for (let x = x0; x < x1; x++) { const f = (x - x0) / Math.max(1, g(bx) - x0), y = g(ay + (by - ay) * f) - Math.floor(BELT_H / 2); px(cx, x - 1, y + BELT_H, 1, 2, C.soot[0]); }
@@ -30,12 +30,13 @@ export function beltRun(cx: CanvasRenderingContext2D, ax: number, ay: number, bx
     // back rail: brass, lit on top, with a post every 28 px
     px(cx, x, y + 1, 1, 1, end || post ? signal[2] : signal[1]);
     // the track: 6 rows of dark iron plate, lighter at the back (it faces the sun), darker at the front
-    const k = ((x - shift) % SEG + SEG) % SEG; // position inside the moving plate
+    const shift = Math.floor(phaseAt(x * P) * speed / P);
+    const k = ((x - shift) % SEG + SEG) % SEG;
     const tr = blocked ? [C.jam[0], C.jam[0], C.iron[1], C.iron[1], C.jam[0], C.iron[0]] : [C.iron[2], C.iron[2], C.iron[1], C.iron[1], C.iron[1], C.iron[0]];
     for (let r = 0; r < 6; r++) px(cx, x, y + 2 + r, 1, 1, tr[r]);
     if (k === 0) { px(cx, x, y + 2, 1, 6, C.soot[0]); } // plate seam
     if (k === 1) { px(cx, x, y + 2, 1, 6, C.iron[3]); px(cx, x, y + 3, 1, 1, C.brass[4]); px(cx, x, y + 6, 1, 1, C.brass[2]); } // lit plate edge + rivets
-    // Two moving status arrows per plate: both states keep flowing to the right.
+    // Healthy plates travel right; a red blocked bay holds its entire pattern still.
     for (const c0 of [4, 9]) {
       const d = k - c0;
       if (d === 0 || d === 1) { px(cx, x, y + 3, 1, 1, signal[2]); px(cx, x, y + 6, 1, 1, signal[1]); }
@@ -48,6 +49,20 @@ export function beltRun(cx: CanvasRenderingContext2D, ax: number, ay: number, bx
     px(cx, x, y + 10, 1, 1, rv && x % 21 === 3 ? C.copper[0] : C.iron[0]);
     px(cx, x, y + 11, 1, 1, C.soot[0]);
   }
+}
+
+const BADGE_FONT: Record<string, string[]> = {
+  "#": ["101", "111", "101", "111", "101"], P: ["110", "101", "110", "100", "100"], R: ["110", "101", "110", "101", "101"],
+  "0": ["111", "101", "101", "101", "111"], "1": ["010", "110", "010", "010", "111"], "2": ["110", "001", "010", "100", "111"],
+  "3": ["110", "001", "010", "001", "110"], "4": ["101", "101", "111", "001", "001"], "5": ["111", "100", "110", "001", "110"],
+  "6": ["011", "100", "111", "101", "111"], "7": ["111", "001", "010", "010", "010"], "8": ["111", "101", "111", "101", "111"], "9": ["111", "101", "111", "001", "110"],
+};
+export function crateBadge(ctx: CanvasRenderingContext2D, x: number, y: number, label: string) {
+  const text = label.slice(0, 6), width = text.length * 4 + 1, left = g(x) - Math.floor(width / 2), top = g(y) - 21;
+  px(ctx, left - 1, top - 1, width + 2, 9, C.soot[0]); px(ctx, left, top, width, 7, C.steel[0]);
+  [...text].forEach((c, n) => BADGE_FONT[c]?.forEach((row, yy) => [...row].forEach((bit, xx) => {
+    if (bit === "1") px(ctx, left + 1 + n * 4 + xx, top + 1 + yy, 1, 1, C.white[0]);
+  })));
 }
 
 const LAMP: Record<Item["look"], { mark: "check" | "cross" | "dot" | null; c: readonly [string, string, string] }> = {

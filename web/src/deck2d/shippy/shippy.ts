@@ -11,6 +11,7 @@ import { ART_PX, FLOOR_Y, STOP_X, type ArtLoader, type ShippyModule, type Shippy
 import { pixelOn } from "../../flags";
 import { ANCHOR, STRIP_H, UNFOLD, type ShippyFrame } from "./frames";
 import { PX_INK, drawPx, pxFrame, type PxFrame } from "./pixel";
+import { chargeLevel, DOCK_HOME_X, drawChargingDock } from "./dock";
 
 /** The contract's poses plus the build poses: weld (torch + sparks) and carry (a steel beam, also while walking). */
 export type ShippyActPose = ShippyPose | "weld" | "carry";
@@ -39,6 +40,8 @@ type Draw = { frame: ShippyFrame; x: number; y: number; sx: number; sy: number; 
 type Puff = { x: number; y: number; vx: number; vy: number; age: number; life: number; r: number; color: string };
 type CornerMode = "home" | "unfold" | "gone" | "fold";
 type WorldMode = "off" | "drop" | "walk" | "stand" | "leave";
+type DockPhase = "compact" | "waking" | "awake" | "folding";
+const DOCK_FOLD_SECONDS = 0.72;
 
 const STEP = 0.06; // seconds per unfold frame
 const ANTICIPATE = 0.12;
@@ -59,7 +62,7 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
   /** Same as the contract's update, also taking the build poses. */
   update(dt: number, view: ShippyActView): void;
   /** For previews and tests: what he's doing right now. */
-  readonly state: { corner: CornerMode; world: WorldMode; x: number; pose: ShippyActPose };
+  readonly state: { corner: CornerMode; world: WorldMode; x: number; pose: ShippyActPose; docked: boolean; battery: number; dockPhase: DockPhase };
 } {
   const o = {
     size: 90, speed: 380, standDx: 150, entryX: STOP_X.repo - 150,
@@ -69,7 +72,12 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
     ...options,
   };
   const still = o.reducedMotion;
+  if (o.pixel && options.entryX === undefined) o.entryX = DOCK_HOME_X;
   let clock = 0;
+  let battery = 0.25;
+  let dockPhase: DockPhase = o.pixel ? "compact" : "awake", dockAge = 0;
+  const atDock = () => o.pixel && world.mode === "stand" && Math.abs(world.x - o.entryX) < 0.5;
+  const docked = () => atDock() && view.at === "corner" && dockPhase === "compact";
   let view: ShippyActView = { pose: "folded", at: "corner" };
   const corner = { mode: (o.pixel ? "gone" : "home") as CornerMode, t: 9, poseT: 9, pose: "folded" as ShippyActPose };
   const world = { mode: (o.pixel ? "stand" : "off") as WorldMode, t: 0, x: o.entryX, tx: o.entryX, facing: 1 as 1 | -1, poseT: 0, pose: "walking" as ShippyActPose };
@@ -93,6 +101,7 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
   function update(dt: number, next: ShippyActView) {
     dt = Math.min(dt, 0.1);
     clock += dt;
+    battery = chargeLevel(battery, dt, docked());
     landed += dt;
     if (next.pose !== view.pose) { world.poseT = 0; corner.poseT = 0; }
     view = next;
@@ -117,6 +126,19 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
     // On the pixel deck, "corner" means resting on the floor by the repo.
     // Keep him in world space: no floating HUD copy or leaps into the sky.
     const target = view.at === "corner" ? (o.pixel ? o.entryX : null) : spot(view.at);
+    if (atDock()) {
+      if (view.at === "corner") {
+        if (dockPhase === "awake") { dockPhase = "folding"; dockAge = 0; }
+        else if (dockPhase === "waking") { dockPhase = "folding"; dockAge = DOCK_FOLD_SECONDS - dockAge; }
+      } else {
+        if (dockPhase === "compact") { dockPhase = "waking"; dockAge = 0; }
+        else if (dockPhase === "folding") { dockPhase = "waking"; dockAge = DOCK_FOLD_SECONDS - dockAge; }
+      }
+      if (dockPhase === "waking" || dockPhase === "folding") {
+        dockAge += dt;
+        if (dockAge >= DOCK_FOLD_SECONDS) { dockPhase = dockPhase === "waking" ? "awake" : "compact"; dockAge = 0; }
+      }
+    }
     switch (world.mode) {
       case "drop":
         if (crossed(world.t, dt, DROP_S)) feet(8);
@@ -138,6 +160,7 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
       }
       case "stand":
         if (target === null) { world.mode = "leave"; world.t = 0; feet(5); }
+        else if (atDock() && dockPhase !== "awake") break;
         else if (Math.abs(target - world.x) > 0.5) startWalk(target);
         else standEffects(dt);
         break;
@@ -285,6 +308,12 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
   function worldDraw(): Draw | null {
     const u = o.size, floor = o.floorAt(world.x), t = world.t;
     const base: Draw = { frame: "shippy-3", x: world.x, y: floor, sx: 1, sy: 1, rot: 0, flip: world.facing < 0, glow: 0.5, color: CYAN, alpha: 1 };
+    if (atDock() && dockPhase !== "awake") {
+      const frames: PxFrame[] = ["box1", "unfold2", "unfold3", "stand"];
+      const progress = Math.min(1, dockAge / DOCK_FOLD_SECONDS);
+      const index = dockPhase === "compact" ? 0 : Math.min(3, Math.floor((dockPhase === "waking" ? progress : 1 - progress) * 4));
+      return { ...base, frame: "shippy-1", px: frames[index], flip: false };
+    }
     switch (world.mode) {
       case "off": return null;
       case "drop": {
@@ -404,6 +433,7 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
     drawWorld(ctx) {
       const d = worldDraw();
       if (o.pixel) {
+        drawChargingDock(ctx, o.entryX, o.floorAt(o.entryX), battery, docked(), clock, still);
         if (d) paintPx(ctx, d, ART_PX, o.floorAt(world.x), true);
         paintPuffsPx(ctx, worldPuffs, (x, y) => [x, y], ART_PX);
         return;
@@ -417,6 +447,7 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
       if (d) paint(ctx, d, (size * 0.8) / 282, size * 0.8, y + size * 0.9);
       paintPuffs(ctx, cornerPuffs, (px, py) => [x + px * size, y + py * size], size);
     },
-    get state() { return { corner: corner.mode, world: world.mode, x: world.x, pose: view.pose }; },
+    busy() { return world.mode === "walk" || dockPhase === "waking" || dockPhase === "folding"; },
+    get state() { return { corner: corner.mode, world: world.mode, x: world.x, pose: view.pose, docked: docked(), battery, dockPhase }; },
   };
 }

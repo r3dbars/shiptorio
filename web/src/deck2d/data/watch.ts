@@ -1,6 +1,7 @@
 import { continueOption } from "@shiptorio/shared";
 import type { DeckSource, StopId } from "../contract";
 import { createLiveSource } from "./source";
+import { FLIGHT_SECONDS } from "../launch/flight";
 
 /** Explicitly opt in; a live URL can never acquire automatic approvals. */
 export function isWatchMode(search: string): boolean {
@@ -29,13 +30,13 @@ export function createWatchSource() {
           waiting = 0;
         }
       }
-      if (source.view().shipped > 0) { finished += dt; if (finished >= 18) watch.reset(); }
+      if (source.view().shipped > 0) { finished += dt; if (finished >= FLIGHT_SECONDS + 4) watch.reset(); }
     },
     view() {
       const v = source.view();
       const item = source.state()?.items[0];
       const broken = item?.state === "rejected";
-      const jam: StopId | null = broken ? "builder" : v.card?.stop ?? null;
+      const jam: StopId | null = broken ? "builder" : null;
       return { ...v, card: null, jam,
         stops: v.stops.map(s => ({ ...s,
           state: s.id === jam ? "jammed" as const : s.state === "jammed" ? "working" as const : s.state,

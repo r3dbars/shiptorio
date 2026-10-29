@@ -76,13 +76,14 @@ describe("the 2D deck's view of a factory", () => {
     expect(v.shippy).toEqual({ pose: "weld", at: "builder" });
   });
 
-  test("the card waiting on you is the one jam, and Shippy is alarmed there", () => {
+  test("human approvals request attention without marking the machine as broken", () => {
     const v = deckView(base({ items: [item("a", "queued")], deck: [card("idea", "research"), card("plan", "plan_runner_job", { learn: { have: 1, need: 3 } })] }), { now: 1e12 });
     expect(v.card).toMatchObject({ id: "plan", stop: "planner", dots: { have: 1, need: 3 }, line: "Approve 2 more like this and then it's automatic.", hold: false, waitingCards: 2, attention: "approve" });
-    expect(v.jam).toBe("planner");
-    expect(stop(v, "planner")).toMatchObject({ waiting: "PLANNER WAITING", items: [{ id: "a", look: "wait" }] });
-    expect(v.stops.filter((x) => x.state === "jammed").map((x) => x.id)).toEqual(["planner"]);
-    expect(v.shippy).toEqual({ pose: "alarmed", at: "planner" });
+    expect(v.jam).toBeNull();
+    expect(v.attention).toContain("planner");
+    expect(stop(v, "planner")).toMatchObject({ state: "idle", items: [{ id: "a", look: "plain" }] });
+    expect(v.stops.some(x => x.state === "jammed")).toBe(false);
+    expect(v.shippy).toEqual({ pose: "inspect", at: "planner" });
   });
 
   test("a merge card sits at the gate and asks for a held press", () => {
@@ -90,12 +91,25 @@ describe("the 2D deck's view of a factory", () => {
     expect(v.card).toMatchObject({ stop: "gate", hold: true, dots: null, line: FIRST_LINE });
   });
 
-  test("with no card, the bottleneck engine's pick is the jam", () => {
+  test("clicking an attention station selects its own real decision", () => {
+    const s = base({ deck: [card("build", "start_job"), card("merge", "request_merge")] });
+    const v = deckView(s, { selectedStop: "gate" });
+    expect(v.card?.id).toBe("merge");
+    expect(v.card?.hold).toBe(true);
+    expect(v.attention).toEqual(expect.arrayContaining(["builder", "gate"]));
+    expect(v.jam).toBeNull();
+  });
+
+  test("a busy bottleneck is not an error, but reported failures are red", () => {
     const v = deckView(base({ items: [item("a", "on_pad")], bottleneck: { stage: "inspect", stationId: "review-1", wip: 2, ageMs: 1, throughputPerHour: 0, valueAtRisk: 1, summary: "" } }), { now: 1e12 });
-    expect(v.jam).toBe("review");
+    expect(v.jam).toBeNull();
     expect(v.card).toBeNull();
     // a slow stop Shippy already runs is just busy, not a jam
     expect(deckView(base({ learned: [{ key: "build|sim|start_job", label: "", since: 0 }], bottleneck: { stage: "build", stationId: "asm-1", wip: 2, ageMs: 1, throughputPerHour: 0, valueAtRisk: 1, summary: "" } })).jam).toBeNull();
+    expect(deckView(base({ items: [item("failed", "rejected", { failure: "CI failed" })] })).jam).toBe("builder");
+    const error = deckView(base({ sources: [{ kind: "github", state: "error", detail: "GitHub unavailable", eventsToday: 0, setup: { steps: [] } }] }));
+    expect(error.jam).toBe("repo");
+    expect(error.attention).not.toContain("repo");
   });
 
   test("a card the UI already answered is skipped", () => {
@@ -207,8 +221,9 @@ test("on the simulator: it waits on your call, swipe and it moves, three yeses a
     if (v.card.stop === "builder") {
       builds.push(v.card.line);
       // beat 2: the line is waiting on you, right where the card points
-      expect(v.jam).toBe("builder");
-      expect(v.shippy).toEqual({ pose: "alarmed", at: "builder" });
+      expect(v.jam).toBeNull();
+      expect(v.attention).toContain("builder");
+      expect(v.shippy).toEqual({ pose: "inspect", at: "builder" });
     }
     src.approve(v.card.id);
     advance(0);
@@ -217,7 +232,7 @@ test("on the simulator: it waits on your call, swipe and it moves, three yeses a
     expect(after.card?.id).not.toBe(v.card.id);
     if (!after.stops.find((x) => x.id === "builder")!.automated) expect(after.shippy).toEqual({ pose: "lever", at: v.card.stop });
   }
-  expect(builds.slice(0, 3)).toEqual([FIRST_LINE, "Approve 2 more like this and then it's automatic.", "Approve 1 more like this and then it's automatic."]);
+  expect(builds.slice(0, 3)).toEqual(["Build the fix: await the payment intent before enabling the button.", "Approve 2 more like this and then it's automatic.", "Approve 1 more like this and then it's automatic."]);
   // beat 4: the builder runs on its own now, and Shippy is happy about it
   advance(1300);
   const v = src.view();

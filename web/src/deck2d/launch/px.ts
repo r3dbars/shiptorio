@@ -351,7 +351,6 @@ export function createPixelLaunch(_art: ArtLoader, bus: DeckBus, preview: Previe
     } else if (fly.active) {
       const flight = flightPose(fly.t);
       y = top + flight.y;
-      if (flight.stage === "coast") return;
     }
     if (line) rect(RING.x, y - 200, 1, 200, P.soot[0]);
     const flight = fly.active ? flightPose(fly.t) : null;

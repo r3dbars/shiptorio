@@ -8,6 +8,7 @@
 import { attentionOf, continueOption, type FactoryState, type Item as FactoryItem, type Move, type Stage, type StationKind } from "@shiptorio/shared";
 import { LEARN } from "../../copy";
 import { STOP_LABEL, STOPS, type CardView, type DeckView, type Item, type ShippyView, type Stop, type StopId, type StopState } from "../contract";
+import type { AttentionView } from "../stations/attention";
 
 /** CardView plus what the card UI must know to stay safe. hold = merges real code: a held press, never a flick. */
 export interface LiveCardView extends CardView {
@@ -16,7 +17,7 @@ export interface LiveCardView extends CardView {
   attention: "approve" | "steer" | "suggest";
   waitingCards: number; // cards in the deck, this one included
 }
-export interface LiveDeckView extends DeckView {
+export interface LiveDeckView extends AttentionView {
   card: LiveCardView | null;
 }
 
@@ -25,6 +26,7 @@ export interface DeckOpts {
   pulled?: { stop: StopId; at: number } | null; // the last Approve, so Shippy pulls the lever there
   completed?: { stop: StopId; at: number } | null; // a real job completed at the station he was attending
   hidden?: ReadonlySet<string>; // cards answered here that the server hasn't dropped yet
+  selectedStop?: StopId | null; // clicking a yellow machine selects its real pending decision
 }
 
 const LEVER_MS = 1200;
@@ -117,13 +119,12 @@ function handedStops(s: FactoryState): Set<StopId> {
   return out;
 }
 
-function jamStop(s: FactoryState, card: Move | null, handed: Set<StopId>): StopId | null {
-  // the card waiting on you is the jam the story points at; with no card, the bottleneck engine's pick, unless Shippy
-  // already runs that stop (a busy automatic stop is just working, so beat 4 never lights up red)
-  if (card && attentionOf(card) !== "suggest") return cardStop(s, card);
-  const b = s.bottleneck;
-  const stop = b && b.wip > 0 ? placeStop(s, b.stationId) ?? STAGE_STOP[b.stage] : null;
-  return stop && !handed.has(stop) ? stop : null;
+function jamStop(s: FactoryState, attention: ReadonlySet<StopId>): StopId | null {
+  // A queue or approval is not a fault. Red requires an actual reported failure.
+  if (s.sources?.some(source => source.state === "error")) return "repo";
+  if (s.items.some(item => item.state === "rejected")) return "builder";
+  const machine = s.machines.find(m => m.state === "blocked" && MACHINE_STOP[m.type] && !attention.has(MACHINE_STOP[m.type]));
+  return machine ? MACHINE_STOP[machine.type] : null;
 }
 
 function crate(it: FactoryItem, jammed: boolean): Item {
@@ -136,10 +137,14 @@ export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckV
   if (!s) return { stops: STOPS.map((id) => ({ id, built: false, state: "idle", automated: false, items: [] })), jam: null, card: null, shippy: { pose: "folded", at: "corner" }, shipped: 0, caption: null };
 
   const deck = (s.deck?.length ? s.deck : s.move ? [s.move] : []).filter((m) => !opts.hidden?.has(m.id));
-  const move = pickCard(deck);
+  const move = (opts.selectedStop && pickCard(deck.filter(m => cardStop(s, m) === opts.selectedStop))) || pickCard(deck);
   // green means you handed it over (beat 4), so CI and AI review, which never asked you, stay plain working / idle
   const handed = handedStops(s);
-  const jam = jamStop(s, move, handed);
+  const attention = new Set<StopId>(deck.map(m => cardStop(s, m)));
+  if (s.sources?.some(source => source.state === "needs_action")) attention.add("repo");
+  if (s.items.some(it => it.state === "inspecting" && itemStop(it) === "gate" && !it.inspection?.humanApproved)) attention.add("gate");
+  const jam = jamStop(s, attention);
+  if (jam) attention.delete(jam);
   const busy = new Set(s.machines.filter((m) => m.state === "working").map((m) => MACHINE_STOP[m.type]));
   const at = new Map<StopId, FactoryItem[]>(STOPS.map((id) => [id, []]));
   // front of the line first: the oldest crate at a stop is the next one out
@@ -152,7 +157,7 @@ export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckV
     const here = at.get(id)!;
     const jammed = jam === id;
     const automated = handed.has(id);
-    const state: StopState = jammed ? "jammed" : automated ? "auto" : here.length || busy.has(id) ? "working" : "idle";
+    const state: StopState = jammed ? "jammed" : attention.has(id) ? "idle" : automated ? "auto" : here.length || busy.has(id) ? "working" : "idle";
     const stop: Stop = { id, built: built(s, id) || here.length > 0 || jammed, state, automated, items: here.map((it) => crate(it, jammed)) };
     if (jammed) stop.waiting = `${STOP_LABEL[id].toUpperCase()} WAITING`;
     return stop;
@@ -166,7 +171,7 @@ export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckV
       title: move.title,
       stop: cardStop(s, move),
       dots: learn ? { have: learn.have, need: learn.need } : null,
-      line: learn ? LEARN.line(Math.max(1, learn.need - learn.have)) : FIRST_LINE,
+      line: learn ? LEARN.line(Math.max(1, learn.need - learn.have)) : move.why || FIRST_LINE,
       hold: isLaunchCard(move),
       setup: isSetupCard(move),
       attention: attentionOf(move),
@@ -176,7 +181,7 @@ export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckV
 
   const shipped = s.metrics?.rockets ?? s.items.filter((it) => it.state === "launched").length;
   const caption = card ? null : handed.size ? "Shippy has this. Fix the next jam." : "Software is a factory.";
-  return { stops, jam, card, shippy: shippyOf(s, stops, jam, card, opts, now), shipped, caption };
+  return { stops, jam, attention: [...attention], card, shippy: shippyOf(s, stops, jam, card, opts, now), shipped, caption };
 }
 
 function shippyOf(s: FactoryState, stops: Stop[], jam: StopId | null, card: CardView | null, opts: DeckOpts, now: number): ShippyView {
@@ -186,6 +191,7 @@ function shippyOf(s: FactoryState, stops: Stop[], jam: StopId | null, card: Card
   if (fresh) return { pose: "happy", at: learnedStop(fresh.key) ?? "corner" };
   if (s.items.some((it) => it.state === "launched" && now - it.updatedAt < HAPPY_MS)) return { pose: "happy", at: "gate" };
   if (jam && card) return { pose: "alarmed", at: jam };
+  if (card) return { pose: "inspect", at: card.stop };
   if (opts.completed && now - opts.completed.at < LEVER_MS) return { pose: "happy", at: opts.completed.stop };
 
   // These are animations of work the factory has already started, not new work

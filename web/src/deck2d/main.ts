@@ -6,6 +6,10 @@ import { createEngine } from "./engine/engine";
 import { fallbackCard, fallbackShippy } from "./engine/fallbacks";
 import { createShippyRehearsal } from "./shippy/rehearsal";
 import { createWatchSource, isWatchMode } from "./data/watch";
+import { createMachineRehearsal, mountMachineControls } from "./stations/rehearsal";
+import { createMachineInteraction } from "./stations/inspector";
+import { createFirstVisitDemo } from "./stations/first-visit";
+import { createConveyorDemo } from "./engine/conveyor-demo";
 
 // The 2D deck page (web/deck.html). Wires the engine to a source, the card, Shippy and juice.
 // Each module lives in its own folder and is picked up here when it exists, so threads can land independently.
@@ -30,7 +34,16 @@ const seed = Number(params.get("seed")) || 0;
   let source: DeckSource;
   const want = params.get("source");
   const rehearsal = want === "shippy-demo" ? createShippyRehearsal() : null;
+  const machines = want === "machine-demo" ? createMachineRehearsal() : null;
+  const conveyor = want === "conveyor-demo" ? createConveyorDemo() : null;
+  const updateMachineControls = machines ? mountMachineControls(machines) : null;
   if (rehearsal) source = rehearsal;
+  else if (conveyor) { source = conveyor; document.body.classList.add("machine-rehearsal"); }
+  else if (machines) { source = machines; document.body.classList.add("machine-rehearsal"); }
+  else if (want === "attention-demo") source = createFirstVisitDemo({ ready: () => {
+    const actor = shippy as typeof shippy & { state?: { world: string; dockPhase?: string } };
+    return !actor.state || (actor.state.world === "stand" && (!actor.state.dockPhase || actor.state.dockPhase === "awake"));
+  } });
   else if (isWatchMode(location.search)) {
     source = createWatchSource();
     document.body.classList.add("factory-watch");
@@ -45,7 +58,28 @@ const seed = Number(params.get("seed")) || 0;
   const cv = document.getElementById("world") as HTMLCanvasElement;
   const layers: DeckLayer[] = [];
   for (const f of ["grow", "build", "launch", "juice", "props"]) { const m = await load(f, "createLayer"); if (m) layers.push((m.createLayer as CreateLayer)(art, bus)); }
-  const engine = createEngine(cv, art, bus, shippy, layers);
+  const inspector = createMachineInteraction(machines ? id => { if (id === machines.machine) machines.setMode("working"); } : undefined);
+  const engine = createEngine(cv, art, bus, shippy, layers, { onMachineSelect: id => {
+    if (machines) machines.cycling = false;
+    (source as DeckSource & { selectStop?: (stop: typeof id) => void }).selectStop?.(id);
+    inspector.select(id);
+  } });
+  let updateConveyorControls: (() => void) | undefined;
+  if (conveyor) {
+    bus.on(event => { if (event.type === "crate-arrive") conveyor.arrive(event.id, event.stop); });
+    const controls = document.createElement("div"); controls.className = "shippy-tools";
+    const pause = document.createElement("button"), block = document.createElement("button"), replay = document.createElement("button");
+    pause.type = block.type = replay.type = "button";
+    pause.onclick = () => { conveyor.paused = !conveyor.paused; };
+    block.onclick = () => conveyor.toggleBlock(); replay.onclick = () => conveyor.replay(); replay.textContent = "Replay issue";
+    controls.append(pause, block, replay); document.body.append(controls);
+    updateConveyorControls = () => {
+      pause.textContent = conveyor.paused ? "Resume" : "Pause";
+      block.textContent = conveyor.view().jam ? "Clear blockage" : "Block line";
+      block.disabled = !conveyor.canBlock;
+    };
+    updateConveyorControls();
+  }
   if (rehearsal) {
     document.body.classList.add("shippy-rehearsal");
     const controls = document.createElement("div"); controls.className = "shippy-tools";
@@ -53,6 +87,7 @@ const seed = Number(params.get("seed")) || 0;
       ["Pause", (button: HTMLButtonElement) => { rehearsal.paused = !rehearsal.paused; button.textContent = rehearsal.paused ? "Play" : "Pause"; }],
       ["Next job", () => rehearsal.next()],
       ["Replay", () => rehearsal.reset()],
+      ["Charge", () => { rehearsal.rest(); engine.focus(null); }],
     ] as const) {
       const button = document.createElement("button"); button.type = "button"; button.textContent = label;
       button.onclick = () => run(button); controls.append(button);
@@ -62,8 +97,8 @@ const seed = Number(params.get("seed")) || 0;
 
   const mountCard = (cardMod?.mountCard as MountCard | undefined) ?? fallbackCard;
   const card = mountCard(document.getElementById("card-host")!, {
-    onApprove(id) { bus.emit({ type: "approve", cardId: id }); source.approve(id); },
-    onLater(id) { bus.emit({ type: "later", cardId: id }); source.later(id); },
+    onApprove(id) { bus.emit({ type: "approve", cardId: id }); if (!inspector.answer(id, true)) source.approve(id); },
+    onLater(id) { bus.emit({ type: "later", cardId: id }); if (!inspector.answer(id, false)) source.later(id); },
   });
   (juiceMod?.attachJuice as AttachJuice | undefined)?.(bus, document.body, (s) => engine.where(s));
 
@@ -78,10 +113,16 @@ const seed = Number(params.get("seed")) || 0;
 
   await art.ready();
   let last = 0;
+  let focusedMachine: string | null = null;
   const frame = (now: number) => {
-    const dt = rehearsal?.paused ? 0 : Math.min(0.05, (now - (last || now)) / 1000) * speed; last = now;
+    const dt = rehearsal?.paused || machines?.frozen || conveyor?.paused ? 0 : Math.min(0.05, (now - (last || now)) / 1000) * speed; last = now;
     source.step?.(dt);
-    const view = source.view();
+    updateConveyorControls?.();
+    if (machines) {
+      if (machines.machine !== focusedMachine) { engine.focus(machines.machine); focusedMachine = machines.machine; }
+      updateMachineControls?.();
+    }
+    const view = inspector.view(source.view());
     engine.frame(view, dt);
     card.show(view.card);
     if (view.caption !== caption) { caption = view.caption; if (caption) toast.textContent = caption; }
