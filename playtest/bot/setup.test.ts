@@ -11,13 +11,13 @@ function harness(options: { gated?: boolean; wrongPassword?: boolean; loginStatu
   };
   const navigate = (url: string) => {
     current = new URL(url);
-    if (!gated && current.pathname === "/test/login") { mounts++; events.push("game-mounted"); current = new URL("https://shiptorio.dev/?source=live&onboard=repo"); }
+    if (!gated && current.pathname === "/test/login") { mounts++; events.push("game-mounted"); current = new URL("https://shiptorio.dev/deck?source=live&onboard=repo"); }
   };
   const page = {
     goto: async (url: string) => { events.push(`page:${new URL(url).pathname}`); navigate(url); return { status: () => gated ? 401 : 200 }; },
     getByLabel: () => passwordField,
     getByRole: () => ({ click: async () => { events.push("password-submitted"); if (!options.wrongPassword) { gated = false; navigate(current.href); } } }),
-    waitForURL: async (_predicate: unknown) => {},
+    waitForURL: async (predicate: (url: URL) => boolean) => { await Promise.resolve(); if (!options.wrongPassword) expect(predicate(current)).toBe(true); },
     waitForTimeout: async (ms: number) => { expect(ms).toBe(2000); events.push("reset-wait"); },
   };
   const context = { request: {
