@@ -3,7 +3,7 @@ import "./deck.css";
 import { SPRITES, createBus, type CardView, type StopId, type AttachJuice, type CreateLayer, type CreateShippy, type DeckLayer, type DeckSource, type MountCard } from "./contract";
 import { createArt } from "./engine/art";
 import { createDemo, createOrbDemo, createLaunchDemo } from "./engine/demo";
-import { fallbackCard, fallbackShippy } from "./engine/fallbacks";
+import { fallbackShippy } from "./engine/fallbacks";
 import { createShippyRehearsal } from "./shippy/rehearsal";
 import { createWatchSource, isWatchMode } from "./data/watch";
 import { createMachineRehearsal, mountMachineControls } from "./stations/rehearsal";
@@ -183,7 +183,7 @@ const seed = Number(params.get("seed")) || 0;
     document.body.append(controls);
   }
 
-  const mountCard = (cardMod?.mountCard as MountCard | undefined) ?? fallbackCard;
+  const mountCard = cardMod?.mountCard as MountCard; // the one card (card/card.ts); there is no second style to fall back to
   const card = mountCard(document.getElementById("card-host")!, {
     onApprove(id) { if (id.startsWith("connection-")) { void connections.answer(id, true); return; } bus.emit({ type: "approve", cardId: id }); if (!inspector.answer(id, true)) source.approve(id); },
     onLater(id) { if (id.startsWith("connection-")) { void connections.answer(id, false); return; } bus.emit({ type: "later", cardId: id }); if (!inspector.answer(id, false)) source.later(id); },
