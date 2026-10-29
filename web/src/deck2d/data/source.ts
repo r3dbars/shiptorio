@@ -17,6 +17,7 @@ export interface LiveDeckSource extends DeckSource {
   state(): FactoryState | null;
   status(): "connecting" | "live" | "offline";
   close(): void;
+  selectStop(stop: StopId): void;
 }
 
 export function fold(s: FactoryState | null, msg: ServerToWeb): FactoryState | null {
@@ -35,6 +36,7 @@ export function createLiveSource(cfg: SourceConfig = readConfig(), opts: { onPow
   let status: "connecting" | "live" | "offline" = "connecting";
   let pulled: { stop: StopId; at: number } | null = null;
   let completed: { stop: StopId; at: number } | null = null;
+  let selectedStop: StopId | null = null;
   const hidden = new Set<string>(); // answered here, gone before the server agrees
   const fns = new Set<() => void>();
   const changed = () => fns.forEach((fn) => fn());
@@ -57,7 +59,8 @@ export function createLiveSource(cfg: SourceConfig = readConfig(), opts: { onPow
   const send = (msg: WebToServer) => src.send(msg);
 
   return {
-    view: () => deckView(state, { now: now(), pulled, completed, hidden }),
+    view: () => deckView(state, { now: now(), pulled, completed, hidden, selectedStop }),
+    selectStop(stop) { selectedStop = stop; changed(); },
     state: () => state,
     status: () => status,
     approve(id) {

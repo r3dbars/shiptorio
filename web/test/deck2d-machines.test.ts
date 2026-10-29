@@ -22,7 +22,8 @@ test("the sequence demonstrates a block and recovery on every machine, one at a 
   for (const id of MACHINE_ORDER) {
     expect(src.machine).toBe(id);
     expect(src.mode).toBe("idle");
-    src.step?.(3); expect(src.mode).toBe("working");
+    src.step?.(3); expect(src.mode).toBe("attention");
+    src.step?.(4); expect(src.mode).toBe("working");
     src.step?.(6); expect(src.view().jam).toBe(id);
     src.frozen = true; src.step?.(100); expect(src.view().jam).toBe(id);
     src.frozen = false; src.step?.(4); expect(src.mode).toBe("working"); expect(src.view().jam).toBeNull();

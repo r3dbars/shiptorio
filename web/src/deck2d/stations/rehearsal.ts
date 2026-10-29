@@ -1,5 +1,7 @@
 import { STOPS, STOP_LABEL, type DeckSource, type DeckView, type StopState } from "../contract";
 import type { StationId } from "./index";
+import type { AttentionView } from "./attention";
+export type PreviewMode = StopState | "attention";
 
 export const MACHINE_ORDER: readonly StationId[] = ["repo", "planner", "builder", "checks", "review", "gate"];
 export const MACHINE_WORK: Record<StationId, string> = {
@@ -10,18 +12,18 @@ export const MACHINE_WORK: Record<StationId, string> = {
   review: "Reviewing the change. Watch the scan travel over the crate.",
   gate: "Preparing the release. Watch the vertical status bar advance.",
 };
-const BEATS: readonly { state: StopState; seconds: number }[] = [
-  { state: "idle", seconds: 3 }, { state: "working", seconds: 6 },
+const BEATS: readonly { state: PreviewMode; seconds: number }[] = [
+  { state: "idle", seconds: 3 }, { state: "attention", seconds: 4 }, { state: "working", seconds: 6 },
   { state: "jammed", seconds: 4 }, { state: "working", seconds: 3 },
 ];
 
 /** Visual-only state inspection, with no factory connection or approvals. */
 export function createMachineRehearsal() {
-  let machine: StationId = "repo", state: StopState = "idle", age = 0, beat = 0;
+  let machine: StationId = "repo", state: PreviewMode = "idle", age = 0, beat = 0;
   const source: DeckSource & {
-    readonly machine: StationId; readonly mode: StopState;
+    readonly machine: StationId; readonly mode: PreviewMode;
     cycling: boolean; frozen: boolean;
-    select(id: StationId): void; setMode(mode: "idle" | "working" | "jammed"): void;
+    select(id: StationId): void; setMode(mode: "idle" | "working" | "jammed" | "attention"): void;
   } = {
     get machine() { return machine; }, get mode() { return state; },
     cycling: false, frozen: false,
@@ -39,14 +41,15 @@ export function createMachineRehearsal() {
         state = BEATS[beat].state;
       }
     },
-    view(): DeckView {
+    view(): AttentionView {
       return {
         stops: STOPS.map(id => ({ id, built: true, automated: false,
-          state: id === machine ? state : "idle", items: [],
+          state: id === machine && state !== "attention" ? state : "idle", items: [],
         })),
         jam: state === "jammed" ? machine : null,
+        attention: state === "attention" ? [machine] : [],
         shippy: { at: "corner", pose: "folded" }, card: null, shipped: 0,
-        caption: `${STOP_LABEL[machine]} · ${state === "working" ? MACHINE_WORK[machine] : state === "jammed" ? "Blocked. Work stops; red identifies the machine and its belt section." : "Idle. The mechanism rests, ready for the next job."}`,
+        caption: `${STOP_LABEL[machine]} · ${state === "attention" ? "Needs your review. Click the yellow machine to decide." : state === "working" ? MACHINE_WORK[machine] : state === "jammed" ? "Blocked. Work stops; red identifies the machine and its belt section." : "Idle. The mechanism rests, ready for the next job."}`,
       };
     },
     approve() {}, later() {},
@@ -68,11 +71,12 @@ export function mountMachineControls(source: ReturnType<typeof createMachineRehe
   const button = (text: string, run: () => void) => {
     const b = document.createElement("button"); b.type = "button"; b.textContent = text; b.onclick = run; controls.append(b); return b;
   };
-  for (const [text, mode] of [["Idle", "idle"], ["Working", "working"], ["Blocked", "jammed"]] as const) {
+  for (const [text, mode] of [["Idle", "idle"], ["Working", "working"], ["Needs you", "attention"], ["Blocked", "jammed"]] as const) {
     const b = button(text, () => source.setMode(mode)); b.dataset.mode = mode; modes.push(b);
   }
   const cycle = button("Cycle all six", () => { source.cycling = !source.cycling; source.frozen = false; source.select(source.machine); });
   const freeze = button("Freeze", () => { source.frozen = !source.frozen; });
+  button("First visit", () => { location.href = "/deck.html?source=attention-demo"; });
   document.body.append(controls);
   return () => {
     select.value = source.machine;

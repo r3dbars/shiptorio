@@ -9,6 +9,8 @@ test("one consistent status language: healthy green, blocked red, idle unlit", (
   expect(machineSignal("auto")).toBe(PALETTE.ok);
   expect(machineSignal("jammed")).toBe(PALETTE.jam);
   expect(machineSignal("idle")).toBe(PALETTE.steel);
+  expect(machineSignal("idle", true)).toBe(PALETTE.brass);
+  expect(machineSignal("jammed", true)).toBe(PALETTE.jam); // faults always win
 });
 
 test("status lamps remain palette-only and aligned to the art grid", () => {

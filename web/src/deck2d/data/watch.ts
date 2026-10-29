@@ -35,7 +35,7 @@ export function createWatchSource() {
       const v = source.view();
       const item = source.state()?.items[0];
       const broken = item?.state === "rejected";
-      const jam: StopId | null = broken ? "builder" : v.card?.stop ?? null;
+      const jam: StopId | null = broken ? "builder" : null;
       return { ...v, card: null, jam,
         stops: v.stops.map(s => ({ ...s,
           state: s.id === jam ? "jammed" as const : s.state === "jammed" ? "working" as const : s.state,

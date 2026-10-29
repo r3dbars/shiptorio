@@ -21,9 +21,10 @@ only produces them.
 | gate | `inspecting` with the human gate pending, `passed`, `on_pad` | any launch permit, or `lights_out` |
 | launch | `launched` while orbit watch is on | same as gate |
 
-- **The jam** is where the card waiting on you points (its suggested tool, then kind, item, focus, stage). With no
-  card it's the bottleneck engine's stop, unless you already handed that stop to Shippy. One jam at most; its crates
-  get the red `wait` look and the plate says `REVIEW WAITING`.
+- **Human attention** is yellow: pending approvals and human review mark their stations through local presentation
+  metadata. Clicking a marked station selects its actual pending card, preserving its action and any hold requirement.
+- **A jam** is red: a source error, rejected job, or a blocked machine without a pending human setup decision.
+  A busy queue by itself is not a fault. Its affected conveyor bay stops; other bays keep moving.
 - **The card** is setup first, then stuck, then parked, then ideas (same order as the task tray). `line` is the
   learning line ("Approve 2 more like this and then it's automatic.") or "Approve it and it moves." before the first yes.
 - **Shippy**: running build/rework jobs produce `weld`, active inspection produces `inspect`, and the animation

@@ -8,6 +8,7 @@ import { createShippyRehearsal } from "./shippy/rehearsal";
 import { createWatchSource, isWatchMode } from "./data/watch";
 import { createMachineRehearsal, mountMachineControls } from "./stations/rehearsal";
 import { createMachineInteraction } from "./stations/inspector";
+import { createFirstVisitDemo } from "./stations/first-visit";
 
 // The 2D deck page (web/deck.html). Wires the engine to a source, the card, Shippy and juice.
 // Each module lives in its own folder and is picked up here when it exists, so threads can land independently.
@@ -36,6 +37,7 @@ const seed = Number(params.get("seed")) || 0;
   const updateMachineControls = machines ? mountMachineControls(machines) : null;
   if (rehearsal) source = rehearsal;
   else if (machines) { source = machines; document.body.classList.add("machine-rehearsal"); }
+  else if (want === "attention-demo") source = createFirstVisitDemo();
   else if (isWatchMode(location.search)) {
     source = createWatchSource();
     document.body.classList.add("factory-watch");
@@ -53,6 +55,7 @@ const seed = Number(params.get("seed")) || 0;
   const inspector = createMachineInteraction(machines ? id => { if (id === machines.machine) machines.setMode("working"); } : undefined);
   const engine = createEngine(cv, art, bus, shippy, layers, { onMachineSelect: id => {
     if (machines) machines.cycling = false;
+    (source as DeckSource & { selectStop?: (stop: typeof id) => void }).selectStop?.(id);
     inspector.select(id);
   } });
   if (rehearsal) {

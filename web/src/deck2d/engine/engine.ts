@@ -9,9 +9,10 @@ import { FLIGHT } from "../launch/flight";
 import { BOILER_H, BOILER_W, boilerFrame } from "../../bakeoff/boiler2d";
 import { stationSize, type StationId } from "../stations";
 import { advanceBeltDistance } from "./flow";
+import { needsAttention } from "../stations/attention";
 
 // stations/ (its own thread) draws each machine in pixel code; until it lands, pixel mode shows the snapped webp.
-type DrawStation = (cx: CanvasRenderingContext2D, id: StopId, state: string, t: number, x: number, feetY: number) => void;
+type DrawStation = (cx: CanvasRenderingContext2D, id: StopId, state: string, t: number, x: number, feetY: number, scale?: number, attention?: boolean) => void;
 const drawStation = (Object.values(import.meta.glob("../stations/index.ts", { eager: true }))[0] as { drawStation?: DrawStation } | undefined)?.drawStation;
 
 // The deck renderer: sky, clouds, deck, bridge + rocket island, belt, stations, crates, rocket, camera.
@@ -104,6 +105,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   function target(v: DeckView) {
     const all = fitAll();
     if (cam.all) return all;
+    if (v.card && !rehearsingMachines) return { x: focusX(v), y: 225, s: Math.max(all.s, W / 1100) };
     if (rehearsingMachines) {
       return { x: focusX(v), y: 225, s: Math.max(all.s, W / 1000) };
     }
@@ -195,6 +197,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   // ---------- views -> motion + events ----------
   function take(v: DeckView, dt: number) {
     const p = prev;
+    if (v.card && v.card.id !== p?.card?.id) cam.manual = 0;
     for (const s of v.stops) {
       const was = p?.stops.find((x) => x.id === s.id);
       if (s.built && !was?.built) { if (p) bus.emit({ type: "station-built", stop: s.id }); else drop[s.id] = 1; }
@@ -392,7 +395,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     const bob = 0; // calm: working stations don't jitter; the belt and crates show the work
     const L = LOOK[id];
     cx.globalAlpha = Math.min(1, drop[id] * 3);
-    if (px && drawStation) drawStation(cx, id, v.jam === id ? "jammed" : s.state, t, STOP_X[id], BELT_Y + L.drop + fall);
+    if (px && drawStation) drawStation(cx, id, v.jam === id ? "jammed" : s.state, t, STOP_X[id], BELT_Y + L.drop + fall, ART_PX, needsAttention(v, id));
     else put(`${id}-${s.state}`, STOP_X[id], BELT_Y + L.drop + fall + bob, L.h);
     cx.globalAlpha = 1;
     if (s.state === "jammed") {

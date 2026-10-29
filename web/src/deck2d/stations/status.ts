@@ -1,16 +1,17 @@
 import { PALETTE as C, type StopState } from "../contract";
 
-export const machineSignal = (state: StopState) => state === "jammed" ? C.jam : state === "working" || state === "auto" ? C.ok : C.steel;
+export const machineSignal = (state: StopState, attention = false) => state === "jammed" ? C.jam : attention ? C.brass : state === "working" || state === "auto" ? C.ok : C.steel;
 
 /** A steady shared status light, mounted in the same front-foot position on every machine. */
-export function statusLamp(ctx: CanvasRenderingContext2D, state: StopState, x: number, feet: number, scale: number) {
-  const c = machineSignal(state), left = Math.round(x / scale) - 5, top = Math.round(feet / scale) - 5;
+export function statusLamp(ctx: CanvasRenderingContext2D, state: StopState, x: number, feet: number, scale: number, attention = false) {
+  const c = machineSignal(state, attention), left = Math.round(x / scale) - 5, top = Math.round(feet / scale) - 5;
   const rect = (dx: number, dy: number, w: number, h: number, color: string) => {
     ctx.fillStyle = color; ctx.fillRect((left + dx) * scale, (top + dy) * scale, w * scale, h * scale);
   };
   rect(0, 0, 11, 5, C.soot[0]); rect(1, 1, 9, 3, C.steel[0]);
-  rect(1, 1, 3, 3, c[0]); rect(2, 1, 2, 2, c[1]); rect(3, 1, 1, 1, state === "idle" ? c[1] : c[2]);
-  rect(6, 2, 3, 1, state === "idle" ? c[1] : c[2]);
+  const bright = attention ? C.brass[4] : state === "idle" ? c[1] : c[2];
+  rect(1, 1, 3, 3, c[0]); rect(2, 1, 2, 2, attention ? C.brass[3] : c[1]); rect(3, 1, 1, 1, bright);
+  rect(6, 2, 3, 1, bright);
 }
 
 /** Two-pixel exterior contour. Enclosed holes stay clear; the outline follows every outer pixel step. */

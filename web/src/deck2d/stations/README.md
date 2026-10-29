@@ -2,7 +2,8 @@
 
 Open `/deck.html?source=machine-demo` to inspect the existing machines on the real deck.
 Choose a machine, then Idle, Working, or Blocked. Freeze holds the animation frame.
-Cycle all six visits each machine in order: idle (3s), working (6s), blocked (4s), recovery (3s).
+Needs you adds a yellow attention outline. Cycle all six visits each machine in order:
+idle (3s), attention (4s), working (6s), blocked (4s), recovery (3s).
 Only the selected machine changes state. This preview has no factory connection or approvals.
 
 | Machine | Job | Current working motion |
@@ -25,6 +26,11 @@ bay holds the red plates and arrows still; cargo stops at that bay and resumes w
 healthy bays keep moving. Click a machine to open the existing swipe card with Shippy's explanation.
 In the rehearsal, swiping right on a blocked machine clears the simulated jam. Actual factory approvals
 reuse their authoritative card and action; status-only cards never invent a live repair action.
+
+Yellow means a human decision is waiting, not an operational failure. Red is reserved for reported
+source errors, failed work and blocked machines. A busy queue alone is not a red fault.
+`/deck.html?source=attention-demo` previews a first visit with two sample GitHub issues, agent work,
+and human review through the existing swipe card. Each decision zooms to its station.
 
 `/stations.html?only=code` still provides the original sprite comparison sheet. The in-deck preview is
 for focused motion review with the actual floor, shadows, spacing, conveyor and orb.
