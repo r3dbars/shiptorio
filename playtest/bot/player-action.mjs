@@ -16,6 +16,7 @@ export function fixtureCardIntent(label, title, actionTools = []) {
   if (!text) return "wait";
   assertSafePrimaryAction(text);
   if (/^(Please wait|Loading|Checking)/i.test(text)) return "wait";
+  if (text === "Copy setup" && title === "Connect your Codex engine") return "wait";
   if (text === "Plan" || text === "Start issue") {
     if (/^#\d+:|^Plan #\d+:/i.test(title)) return "plan-issue";
   } else if (text === "Start build") {

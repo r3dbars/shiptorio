@@ -81,6 +81,8 @@ try {
     await capture("signed-in");
     const deadline = Date.now() + Number(option("--duration", "180")) * 1000;
     while (Date.now() < deadline) {
+      // Onboarding may enter the selected repository directly, without a picker click.
+      if (fixture && inFactory()) await fixture.startRunner((await context.cookies()).map(c => `${c.name}=${c.value}`).join("; "));
       const text = await page.locator("body").innerText();
       if (viewportLaunch.confirmed && inFactory()) { await capture("launch-confirmed-over-socket"); break; }
       const fingerprint = createHash("sha256").update(text).digest("hex");

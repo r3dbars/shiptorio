@@ -43,7 +43,7 @@ export async function localFactory(persona, origin) {
         fulfill: async options => {
           const headers = new Headers(options.headers);
           if (options.contentType) headers.set("content-type", options.contentType);
-          if (headers.has("location")) headers.set("location", `${origin}/?source=live&onboard=repo`);
+          if (headers.has("location")) headers.set("location", `${origin}/deck?source=live&onboard=repo`);
           const body = options.body?.replaceAll('/apps/shiptorio-stub/installations/confirm', '/test/install?confirm=1');
           response = new Response(body ?? null, { status: options.status ?? 200, headers });
         } });
