@@ -62,6 +62,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   // snap every pixel to the 48 colors (?pq=0 skips the snap, for speed checks).
   const px = pixelOn() ? createPixelCanvas(cv, ART_PX, new URLSearchParams(location.search).get("pq") === "0" ? undefined : PALETTE_48) : null;
   const rehearsingShippy = new URLSearchParams(location.search).get("source") === "shippy-demo";
+  const rehearsingMachines = new URLSearchParams(location.search).get("source") === "machine-demo";
   let W = 0, H = 0, DPR = 1, t = 0;
   const resize = () => { DPR = Math.min(2, devicePixelRatio || 1); W = innerWidth; H = innerHeight; cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); };
   addEventListener("resize", resize); resize();
@@ -101,6 +102,9 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   function target(v: DeckView) {
     const all = fitAll();
     if (cam.all) return all;
+    if (rehearsingMachines) {
+      return { x: focusX(v), y: 225, s: Math.max(all.s, W / 1000) };
+    }
     if (rehearsingShippy) {
       const actor = shippy as ShippyModule & { readonly state?: { x: number } };
       return { x: (actor.state?.x ?? focusX(v)) + 80, y: 225, s: Math.max(all.s, W / 1150) };

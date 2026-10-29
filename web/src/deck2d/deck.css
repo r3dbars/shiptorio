@@ -55,5 +55,11 @@ body { -webkit-tap-highlight-color: transparent; overscroll-behavior: none; user
   margin: 0; font-size: 14px; color: var(--ink); text-shadow: 0 2px 0 #000; opacity: 0; transition: opacity .4s; pointer-events: none; white-space: nowrap;
 }
 .toast.on { opacity: 1; }
-.shippy-rehearsal .toast, .factory-watch .toast { width: calc(100% - 24px); max-width: 560px; white-space: normal; text-align: center; }
+.shippy-rehearsal .toast, .factory-watch .toast, .machine-rehearsal .toast { width: calc(100% - 24px); max-width: 560px; white-space: normal; text-align: center; }
+.machine-tools { position: fixed; top: 12px; left: 12px; right: 12px; z-index: 20; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.machine-tools button, .machine-tools select { font: inherit; font-size: 11px; padding: 8px; color: #fdec9a; background: #121e2b; border: 2px solid #a36915; cursor: pointer; }
+.machine-tools label { font-size: 11px; color: #eed3c5; }
+.machine-tools button[aria-pressed="true"] { background: #422616; border-color: #fdc727; }
+.machine-tools button:focus-visible, .machine-tools select:focus-visible { outline: 2px solid #bcf6f6; outline-offset: 2px; }
+.machine-rehearsal .zoom { top: auto; bottom: 100px; }
 @media (prefers-reduced-motion: reduce) { .card, .card.gone { animation: none; } }

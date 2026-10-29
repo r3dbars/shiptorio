@@ -6,6 +6,7 @@ import { createEngine } from "./engine/engine";
 import { fallbackCard, fallbackShippy } from "./engine/fallbacks";
 import { createShippyRehearsal } from "./shippy/rehearsal";
 import { createWatchSource, isWatchMode } from "./data/watch";
+import { createMachineRehearsal, mountMachineControls } from "./stations/rehearsal";
 
 // The 2D deck page (web/deck.html). Wires the engine to a source, the card, Shippy and juice.
 // Each module lives in its own folder and is picked up here when it exists, so threads can land independently.
@@ -30,7 +31,10 @@ const seed = Number(params.get("seed")) || 0;
   let source: DeckSource;
   const want = params.get("source");
   const rehearsal = want === "shippy-demo" ? createShippyRehearsal() : null;
+  const machines = want === "machine-demo" ? createMachineRehearsal() : null;
+  const updateMachineControls = machines ? mountMachineControls(machines) : null;
   if (rehearsal) source = rehearsal;
+  else if (machines) { source = machines; document.body.classList.add("machine-rehearsal"); }
   else if (isWatchMode(location.search)) {
     source = createWatchSource();
     document.body.classList.add("factory-watch");
@@ -78,9 +82,14 @@ const seed = Number(params.get("seed")) || 0;
 
   await art.ready();
   let last = 0;
+  let focusedMachine: string | null = null;
   const frame = (now: number) => {
-    const dt = rehearsal?.paused ? 0 : Math.min(0.05, (now - (last || now)) / 1000) * speed; last = now;
+    const dt = rehearsal?.paused || machines?.frozen ? 0 : Math.min(0.05, (now - (last || now)) / 1000) * speed; last = now;
     source.step?.(dt);
+    if (machines) {
+      if (machines.machine !== focusedMachine) { engine.focus(machines.machine); focusedMachine = machines.machine; }
+      updateMachineControls?.();
+    }
     const view = source.view();
     engine.frame(view, dt);
     card.show(view.card);
