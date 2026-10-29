@@ -10,7 +10,7 @@ There are two ways in. The **sandbox** is a full factory running on sample data 
 
 ## Play the sandbox first
 
-Open [shiptorio.com/?source=sim](/?source=sim). Nothing touches GitHub. Everything you see (ore, machines, the gauntlet, rockets) is simulated, but it's the same UI the live game uses.
+Open [shiptorio.com/?source=sim](/?source=sim). It needs no GitHub sign-in, but during the private preview the whole app, sandbox included, is behind the preview gate (password or waitlist). Nothing touches GitHub. Everything you see (ore, machines, the gauntlet, rockets) is simulated, but it's the same UI the live game uses.
 
 ![The sandbox factory](/docs/img/map.png)
 

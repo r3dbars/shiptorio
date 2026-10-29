@@ -29,11 +29,11 @@ There's always a bottleneck, always a next move. That's the game.
 
 ## Where to start
 
-- New here? Start with [Getting started](/docs/getting-started). You can play the sandbox in your browser with no sign-in.
+- New here? Start with [Getting started](/docs/getting-started). The sandbox runs in your browser on sample data, with no GitHub sign-in.
 - Ready to hook up a real repo? [Install the GitHub App](/docs/github-app), then [connect your machine](/docs/runner).
 - Curious how the brain works? Read [How Spark decides](/docs/spark), or the judge page [How Meta Muse Spark runs Shiptorio](/art/spark.html).
 - Want to run your own instance? [Self-host with your own keys](/docs/self-host).
 - Wondering what happens to your code? [Security and privacy](/docs/security).
 - Testing a change? [Test players and the player bot](/docs/testing).
 
-> **Heads up** Shiptorio is in private preview while we build it during the Meta AI Developer Hackathon (Oct 26 to Nov 4, 2026). The app at shiptorio.com is password-gated and only allow-listed GitHub accounts can sign in. These docs are public. The sandbox works for everyone who can reach the app.
+> **Heads up** Shiptorio is in private preview while we build it during the Meta AI Developer Hackathon (Oct 26 to Nov 4, 2026). The app at shiptorio.com is password-gated and only allow-listed GitHub accounts can sign in. These docs are public. Right now the sandbox is behind the same preview gate as the app, so a visitor without the preview password or an account sees the waitlist.

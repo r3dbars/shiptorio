@@ -126,7 +126,9 @@ Full rules: [`docs/context/pixel-deck.md`](docs/context/pixel-deck.md).
 ## Accessibility
 
 Every control is a real `<button>` or `<a>` whose name contains its visible text. Respect
-`prefers-reduced-motion`. Text stays at 4.5:1 contrast or better.
+`prefers-reduced-motion`. Text stays at 4.5:1 contrast or better. `node web/test/a11y/audit.mjs` (dev server up) runs
+axe on the deck's story and sim cards at phone and desktop; `web/test/deck2d-a11y.test.ts` covers the card's keyboard
+and names.
 
 ## Older docs
 
