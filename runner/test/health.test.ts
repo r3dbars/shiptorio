@@ -76,3 +76,12 @@ test("doctor's explicit edit probe runs only for a signed-in installed harness a
   await diagnose({ ...options, harnesses: [] });
   expect(calls).toBe(1);
 });
+
+test('only fixed controlled failure categories become public runner reasons', async () => {
+  const { RunnerExecutionFailure, runnerFailureSummary } = await import('../src/health');
+  expect(runnerFailureSummary(new RunnerExecutionFailure('timeout'))).toContain('Codex timed out');
+  expect(runnerFailureSummary(new RunnerExecutionFailure('stopped'))).toContain('Codex stopped');
+  const secret='token-private-file-path-and-prompt';
+  expect(runnerFailureSummary(new Error(secret))).not.toContain(secret);
+  expect(runnerFailureSummary({kind:'timeout',message:secret})).not.toContain('Codex timed out');
+});
