@@ -69,7 +69,7 @@ try { for (const [index,view] of views.entries()) {
       const cookies=res.headersArray().filter(h=>h.name.toLowerCase()==='set-cookie').map(h=>h.value);
       await route.fulfill({status:200,contentType:'text/html',headers:{'set-cookie':cookies.join('\n')},body:`<script>location.href=${JSON.stringify(to)}</script>`});
     });
-    const page=await context.newPage();page.setDefaultTimeout(15000);
+    const page=await context.newPage();page.setDefaultTimeout(60000); // the first run builds each station on screen before its card comes up
     const errors=[], requests=[];let signedIn=false;
     page.on('pageerror',e=>errors.push(e.message));
     page.on('request',r=>{if(r.method()!=='GET')requests.push(new URL(r.url()).pathname)});
@@ -84,7 +84,7 @@ try { for (const [index,view] of views.entries()) {
       else { assert.equal(await page.locator('.connection-tools').count(),0,'setup chips stay hidden before sign-in');assert.equal(await card().getByRole('button',{name:'Sign in',exact:true}).count(),0,'play the story before setup'); }
     });
     if(!baseline){
-      for(let n=1;n<=3;n++)await step(`story-decision-${n}`,async()=>{
+      for(let n=1;n<=1;n++)await step(`story-decision-${n}`,async()=>{
         const decision=page.locator(`.ic-card:not(.ic-ghost)[data-card="story-call-${n}"]`);
         await decision.waitFor({timeout:30000});assert.equal(await page.locator('.connection-tools').count(),0);
         assert.equal(await card().getByRole('button',{name:'Sign in',exact:true}).count(),0);
@@ -104,9 +104,12 @@ try { for (const [index,view] of views.entries()) {
     await step('runner-ready',async()=>{
       const joined=await context.request.post(origin+'/api/runner-device/join',{data:{join:joinTicket},headers:{origin}});assert.equal(joined.ok(),true,await joined.text());
       const {token}=await joined.json();
-      const online=await context.request.post(origin+`/api/runner/${stub.state.repo}/heartbeat`,{data:{harnesses:['codex']},headers:{origin,authorization:`Bearer ${token}`}});assert.equal(online.ok(),true,await online.text());
-      // No Check and no Open inbox: the deck notices the runner and shows the first issue.
-      await card().getByRole('button',{name:'Plan',exact:true}).waitFor();
+      // A real runner keeps beating while Shippy builds the rest of the line, so this fixture does too.
+      const beat=()=>context.request.post(origin+`/api/runner/${stub.state.repo}/heartbeat`,{data:{harnesses:['codex']},headers:{origin,authorization:`Bearer ${token}`}});
+      const online=await beat();assert.equal(online.ok(),true,await online.text());
+      const beating=setInterval(()=>{beat().catch(()=>{});},5000);
+      // No Check and no Open inbox: the deck notices the runner, builds the rest of the line, then shows the first issue.
+      try{await card().getByRole('button',{name:'Plan',exact:true}).waitFor();}finally{clearInterval(beating);}
     });
     await step('first-issue-card',async()=>{assert.match(await card().innerText(),/#1.*Checkout total/);});
     assert.ok(Date.now()-started<120000,'first issue must be reached in under two minutes');

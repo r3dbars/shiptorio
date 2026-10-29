@@ -119,6 +119,17 @@ test("item ids stay stable as crates move stop to stop", () => {
   }
 });
 
+test("the front door's short story ends right after one swipe clears the jam", () => {
+  const s = createStory({ seed: 1, swipes: 1 });
+  run(s, () => !!s.view().card);
+  s.approve(s.view().card!.id);
+  const t = run(s, () => s.phase() === "end", 60);
+  expect(t).toBeLessThan(15);
+  expect(s.view().card?.id).toBe(STORY_CARD.connect);
+  expect(s.view().stops.find((x) => x.id === "review")!.items).toEqual([]); // the jam fully cleared
+  expect(s.view().shipped).toBeGreaterThan(2); // and a crate it held has shipped
+});
+
 test("the three story calls each name a different fix", () => {
   for (const seed of [1, 2, 3, 7, 42]) {
     const story = createStory({ seed });
