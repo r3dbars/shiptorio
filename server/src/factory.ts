@@ -3636,9 +3636,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     for (const item of batch) {
       try {
         const pr = await gh<{ state: string; merged: boolean; merge_commit_sha?: string; head: { sha: string } }>(`/repos/${this.meta.repo}/pulls/${item.prNumber}`, token);
+        // A confirmed merge belongs to this immutable PR number even if another
+        // tick refreshed the item while GitHub replied. onPullClosed rechecks the
+        // current PR and durable launch credit; only open-PR results need identity.
+        if (pr.merged) { await this.onPullClosed(item.prNumber!, true, pr.merge_commit_sha); continue; }
         if (!this.state!.items.some(current => current === item && current.state !== "launched")) continue;
-        if (pr.merged) await this.onPullClosed(item.prNumber!, true, pr.merge_commit_sha);
-        else if (pr.state === "closed") await this.onPullClosed(item.prNumber!, false);
+        if (pr.state === "closed") await this.onPullClosed(item.prNumber!, false);
         else {
           if (item.inspection && item.inspection.headSha !== pr.head.sha) await this.patch({ items: [{ ...item, lane: undefined, state: "inspecting", machineId: "ci-1", inspection: freshInspection(pr.head.sha), updatedAt: now }] });
           await this.onCheckSuite([item.prNumber!], false, "Periodic GitHub reconciliation", pr.head.sha);
