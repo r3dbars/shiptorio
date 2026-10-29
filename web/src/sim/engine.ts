@@ -54,7 +54,7 @@ import {
   inferGoals,
   type Goals,
 } from "@shiptorio/shared";
-import type { Listener, Source, StatusListener } from "../source";
+import type { Listener, Source, StatusListener } from "../source/config";
 import { simSupport, SUPPORT_MAIL, type SimMail } from "./support";
 
 const TICK_MS = 1400; // a calm floor: one beat every 1.4s (was 0.9s, Justin's playtest 2026-10-27: "slow everything down")
@@ -510,7 +510,7 @@ export const SCENARIOS = {
     intro: true,
     ores: [],
   },
-  // Build as you go (docs/GAMEPLAY-PICKS.md, web/src/buildout/CONTRACT.md). Nothing exists until the player builds it
+  // Build as you go (docs/GAMEPLAY-PICKS.md). Nothing exists until the player builds it
   // with station_action("buildout", step), and one guided issue rides the line as it goes up: plan, wait for
   // Continue, build, CI, wait for the pad, wait for the hold. The coach card does the asking, so no moves
   // until the first rocket; after that it's the normal demo shop.
@@ -570,7 +570,7 @@ const INTRO_PILE = 6; // before docs can ship alone, the merge gate holds at mos
 
 export type ScenarioName = keyof typeof SCENARIOS;
 
-// Build as you go (web/src/buildout/CONTRACT.md): the steps the sim builds, in journey order. Building one builds
+// Build as you go (the old app's Build as you go, retired 2026-10-29): the steps the sim builds, in journey order. Building one builds
 // anything missing before it, so a skipped beat never strands the line. The coach card (ui/Buildout.tsx) sends
 // connect_source github for the tunnel, station_action("buildout", step) for boiler, builder, issue and planner (the
 // plan's Continue), and launch_pr for the hold. "checks" builds itself when the guided PR opens, the launch pad when

@@ -993,7 +993,7 @@ export const CRASH = {
   ref: (id: string) => `Fault ${id.slice(0, 8)}`,
 };
 
-// Brand art alt text (web/src/ui/Logo.tsx).
+// Brand art alt text.
 export const BRAND = {
   wordmarkAlt: "Shiptorio",
   markAlt: "Shiptorio",

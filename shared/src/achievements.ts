@@ -10,7 +10,7 @@ export interface Achievement {
   id: string;
   name: string;
   what: string; // one plain line: what you did
-  icon: string; // HUD pixel icon (web/src/ui/icons.tsx)
+  icon: string; // HUD pixel icon name (the old React HUD drew these)
   xp: number; // paid into progression when it unlocks
   tier: "bronze" | "silver" | "gold";
   /** How far along you are, from this factory's state. Unlocks at have >= need. */

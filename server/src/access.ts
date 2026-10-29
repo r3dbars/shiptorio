@@ -67,8 +67,8 @@ async function validForm(request: Request, secret: string, token: string | null)
 // shiptorio.com is public: anyone without the preview cookie gets the landing page at "/"
 // (web/public/welcome/), its files, robots/sitemap and the waitlist. Everything else stays gated.
 const PUBLIC_FILE = /^\/(?:welcome\/[\w.-]*|fonts\/[\w.-]+|brand\/[\w.-]+|robots\.txt|sitemap\.xml)$/;
-// Judge mode is a local simulation. Only its page and content-hashed JS/CSS are
-// public; no API, websocket, source map, arbitrary asset or private app route is opened.
+// Judge mode is the deck's story, a local simulation (no API, no account). Only its page, content-hashed JS/CSS and
+// the deck's static art are public; no API, websocket, source map, arbitrary asset or private app route is opened.
 export const isJudgePage = (path: string) => path === "/judge" || path === "/judge/";
 export const isJudgeAsset = (path: string) => /^\/assets\/[^/]+-[A-Za-z0-9_-]{8,}\.(?:js|css)$/.test(path);
 // shiptorio.dev opens straight into the tutorial (Justin 2026-10-29): the deck page, its front-door redirect and its
@@ -88,6 +88,7 @@ export async function publicRoute(request: Request, env: AccessEnv): Promise<Pub
   if (read && isJudgePage(url.pathname)) return "judge";
   if (read && isJudgeAsset(url.pathname)) return "file";
   if (read && PUBLIC_FILE.test(url.pathname)) return "file";
+  if (read && DECK_FILE.test(url.pathname)) return "file"; // the deck's static art, which /judge draws on every host
   if (read && isPublicDeck(url)) return "deck";
   if (url.pathname === "/api/waitlist" && request.method === "POST") return "waitlist";
   if (!read || url.pathname !== "/" || (env.DEV_LOGIN && isLocal(url))) return null;

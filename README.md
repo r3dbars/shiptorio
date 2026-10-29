@@ -94,7 +94,7 @@ bun run typecheck
 | --- | --- |
 | `shared/` | zod model + wire protocol, the contract between the lanes |
 | `server/` | Cloudflare Worker (Hono), GitHub App, webhooks, Factory Durable Object, Muse Spark client |
-| `web/` | Vite app. The game is the 2D pixel deck in `web/src/deck2d/` (`web/deck.html`); the old 3D map and React UI are on their way out |
+| `web/` | Vite app. The game is the 2D pixel deck in `web/src/deck2d/` (`web/deck.html`); `web/src/sim/` is its simulator and `web/src/source/` its connection to the server |
 | `docs/` | `VISION.md`, working context in `docs/context/`, the public docs site in `docs/site/` |
 | `runner/` | The local runner that runs Codex or Claude Code on your machine |
 

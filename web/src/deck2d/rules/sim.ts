@@ -3,7 +3,7 @@
 import type { FactoryState } from "@shiptorio/shared";
 import { MACHINE_COPY, POWER_COPY, REWORK_COPY } from "../../copy";
 
-/** Build as you go's eight builds, in order (web/src/buildout/CONTRACT.md). */
+/** Build as you go's eight builds, in order (the old app's Build as you go, retired 2026-10-29). */
 export const STEP_IDS = ["tunnel", "boiler", "builder", "issue", "planner", "build", "checks", "launch"] as const;
 export type StepId = (typeof STEP_IDS)[number];
 

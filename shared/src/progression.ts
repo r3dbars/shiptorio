@@ -153,7 +153,7 @@ export interface Unlock {
   id: string;
   name: string;
   what: string; // one plain line
-  icon: string; // HUD pixel icon (web/src/ui/icons.tsx)
+  icon: string; // HUD pixel icon name (the old React HUD drew these)
   level?: number; // reach this level
   streak?: number; // or keep a streak this long
   cosmetic?: boolean; // can be switched on and off

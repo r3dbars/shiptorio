@@ -23,7 +23,7 @@ describe("same-origin redirects", () => {
   });
 });
 
-// Every public path on shiptorio.dev and where it lands (null = served as is). shiptorio.com never moves.
+// Every public path and where it lands (null = served as is), on every host: the old React app is gone.
 const DECK = "/deck?source=live";
 const routes: [string, string | null][] = [
   ["/", DECK],
@@ -41,9 +41,10 @@ const routes: [string, string | null][] = [
   ["/deck?px=0", "/deck"],
   ["/deck.html?source=live&px=0", DECK],
   ["/deck?px=1", null],
-  ["/?source=sim&scenario=first-run", null],
-  ["/?source=replay", null],
-  ["/?scenario=quiet-morning", null],
+  ["/?source=sim&scenario=first-run", "/deck?source=sim&scenario=first-run"],
+  ["/?source=sim&scenario=checkin&world=shaft&simple=1&tour=0", "/deck?source=sim&scenario=checkin"],
+  ["/?source=replay", "/deck?source=replay"],
+  ["/?scenario=quiet-morning", "/deck?scenario=quiet-morning"],
   ["/judge", null],
   ["/judge?world=shaft", null],
   ["/settings", null],
@@ -54,15 +55,9 @@ const routes: [string, string | null][] = [
   ["/auth/login", null],
 ];
 
-describe("one front door on shiptorio.dev", () => {
+describe("one front door: the deck", () => {
   it.each(routes)("%s lands on %s", (path, target) => {
-    for (const host of ["shiptorio.dev", "www.shiptorio.dev"]) expect(deckFrontDoor(new URL(path, `https://${host}`))).toBe(target);
-  });
-  it("leaves shiptorio.com and local dev alone", () => {
-    for (const [path] of routes) {
-      expect(deckFrontDoor(new URL(path, origin))).toBeNull();
-      expect(deckFrontDoor(new URL(path, "http://localhost:8787"))).toBeNull();
-    }
+    for (const base of ["https://shiptorio.dev", "https://www.shiptorio.dev", origin, "http://localhost:8787"]) expect(deckFrontDoor(new URL(path, base))).toBe(target);
   });
   it("every redirect stays same-origin", () => {
     for (const [path, target] of routes) if (target) expect(sameOriginPath(target, "https://shiptorio.dev")).toBe(target);

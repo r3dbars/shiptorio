@@ -2,7 +2,7 @@ import { DecisionOutbox, isDecision } from "./decision-outbox";
 import { socketDisconnected } from "../telemetry";
 import { parseLiveMessage } from "./schemas";
 import { createRecorder, mountRecorder, recordingAllowed } from "../deck2d/data/replay";
-import type { Listener, Source, StatusListener } from ".";
+import type { Listener, Source, StatusListener } from "./config";
 
 const HEARTBEAT_MS = 15_000;
 // A cold authenticated upgrade can take ten seconds; snapshot/pong deadlines stay short.

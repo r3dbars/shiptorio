@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { connectLazyLive } from "../src/source";
+import { connectLazyLive } from "../src/source/connect";
 
 test("failed live chunks report offline without an unhandled rejection or a late callback after disposal", async () => {
   const statuses: string[] = [];

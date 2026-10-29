@@ -1,12 +1,9 @@
 import { FactoryState, ServerToWeb, type Move, type ServerToWeb as Message, type WebToServer } from "../../shared/src";
 import { connectSim, SCENARIOS, type ScenarioName } from "../../web/src/sim/engine";
-import { applyPatch } from "../../web/src/store";
-import { BEATS, introCanAct, introCommand, introDone, introNextReady } from "../../web/src/ui/IntroTour";
-import { stepFrom } from "../../web/src/buildout/journey";
+import { applyPatch } from "../../web/src/source/patch";
 
 export interface Finding { id: string; severity: "P1" | "P2"; title: string; scenario: string; step: number; repro: string; expected: string; actual: string; owner: string }
-export interface GuidedResult { steps: string[]; actions: string[]; completed: boolean; verifiedRework: boolean; sentryOre: boolean; automatedLaunches: number }
-export interface CaseResult { scenario: string; mode: "journey" | "early-close"; seed: number; steps: number; messages: number; decisions: number; shipped: number; states: string[]; tools: string[]; findings: Finding[]; trace: string[]; guided?: GuidedResult }
+export interface CaseResult { scenario: string; mode: "journey" | "early-close"; seed: number; steps: number; messages: number; decisions: number; shipped: number; states: string[]; tools: string[]; findings: Finding[]; trace: string[] }
 
 // Advance the real simulator's timers deterministically, without waiting minutes or calling a service.
 export class Clock {
@@ -62,9 +59,6 @@ export function runCase(scenario: ScenarioName, seed = 71, mode: CaseResult["mod
   let state: FactoryState | null = null, closed = false, lateEvents = 0, step = 0;
   const states = new Set<string>(), tools = new Set<string>();
   const seenMoves = new Map<string, number>();
-  const guided: GuidedResult | undefined = scenario === "intro" ? (result.guided = { steps: [], actions: [], completed: false, verifiedRework: false, sentryOre: false, automatedLaunches: 0 }) : undefined;
-  let introAt = 0, introEnteredAt = -1, introActed = false;
-  const reverified = new Set<string>();
   let rng = seed >>> 0;
   const random = () => { rng = (1664525 * rng + 1013904223) >>> 0; return rng / 4294967296; };
   const finding = (code: string, severity: Finding["severity"], title: string, expected: string, actual: string) => {
@@ -90,12 +84,6 @@ export function runCase(scenario: ScenarioName, seed = 71, mode: CaseResult["mod
       fold(parsed.data);
     }, () => {});
     if (mode === "early-close") {
-      if (guided) {
-        // Close halfway through the guided build while its delayed machine placements remain queued.
-        clock.flush();
-        source.send({ type: "station_action", stationId: "intro", action: "build" });
-        clock.advance(650);
-      }
       source.close(); closed = true; clock.advance(15000);
     } else {
       clock.flush();
@@ -110,44 +98,6 @@ export function runCase(scenario: ScenarioName, seed = 71, mode: CaseResult["mod
           states.add(item.state);
           if (item.state === "launched" && !item.prNumber) finding("rocket-without-pr", "P1", "Rocket launched without a PR", "A launched item identifies a PR", item.id);
           if (item.state === "working" && !current.machines.some(m => m.id === item.machineId)) finding("orphan-work", "P1", "Work lost its builder", "A working item points to a machine", item.id);
-        }
-        if (guided) {
-          const beat = BEATS[introAt];
-          const sendTwice = (command: WebToServer, player: boolean) => {
-            source!.send(command); clock.flush();
-            const receipt = JSON.stringify(state);
-            source!.send(command); clock.flush();
-            if (receipt !== JSON.stringify(state)) finding("double-guided-action", "P1", "A repeated guided action changed the factory twice", "The same tour command is idempotent", command.type);
-            guided.actions.push(command.type === "station_action" ? `${command.type}:${command.action}` : command.type);
-            if (player) result.decisions++;
-          };
-          if (introEnteredAt < 0) {
-            introEnteredAt = clock.now;
-            guided.steps.push(beat.kick);
-            if (beat.cue) sendTwice({ type: "station_action", stationId: "intro", action: beat.cue }, false);
-          }
-          // The simulator exposes station transit, not per-item receipt objects. Observe the
-          // scarred second attempt at verify and its later successful shipment.
-          for (const item of current.items) if (item.scars?.some(sc => sc.station === "verify") && item.attempts > 1 && item.state === "inspecting" && item.machineId === "verify-1") reverified.add(item.id);
-          guided.verifiedRework ||= current.items.some(i => reverified.has(i.id) && i.state === "launched");
-          guided.sentryOre ||= current.items.some(i => i.source === "sentry");
-          guided.automatedLaunches = Math.round((current.autonomy?.automated ?? 0) * (current.autonomy?.launches ?? 0));
-          const done = introDone(current, introAt);
-          if (beat.act && !done && !introActed && introCanAct(current, introAt, clock.now - introEnteredAt >= 4500)) {
-            const command = introCommand(current, introAt);
-            if (command) { introActed = true; sendTwice(command, true); }
-          } else if (introAt < BEATS.length - 1 && introNextReady(current, introAt, done)) {
-            introAt++; introEnteredAt = -1; introActed = false;
-          } else if (introAt === BEATS.length - 1 && current.autonomy?.level === "lights_out" && guided.verifiedRework && guided.sentryOre && guided.automatedLaunches > 0) guided.completed = true;
-        } else {
-        // build as you go: the coach card's command for the step you're on (ui/Buildout.tsx), sent twice like a double tap
-        const build = scenario === "buildout" ? buildoutCommand(current) : null;
-        if (build) {
-          source.send(build); clock.flush();
-          const receipt = JSON.stringify(state);
-          source.send(build); clock.flush();
-          if (receipt !== JSON.stringify(state)) finding("double-build", "P1", "A repeated build changed the factory twice", "The same build command is idempotent", JSON.stringify(build));
-          result.decisions++;
         }
         const move = current.move ?? current.deck?.[0];
         if (move) {
@@ -165,12 +115,10 @@ export function runCase(scenario: ScenarioName, seed = 71, mode: CaseResult["mod
             if (receipt !== JSON.stringify({ science: duplicate?.science, items: duplicate?.items, move: duplicate?.move?.id })) finding("double-approval", "P1", "A double tap changed the game twice", "Duplicate choice is idempotent", move.title);
           }
         }
-        }
         if (random() < 0.08) source.send({ type: "choose_move", moveId: "stale-playtest-id", optionId: "launch" });
       }
       const end = state as FactoryState | null;
       result.shipped = end?.items.filter(i => i.state === "launched").length ?? 0;
-      if (guided && !guided.completed) finding("guided-intro-incomplete", "P1", "The guided intro did not finish its eight factory beats", "All beats, scar rework, Sentry ore and an automatic launch complete", JSON.stringify(guided));
       if (!result.shipped) finding("no-complete-loop", "P2", "Recommended choices never completed a shipment", "At least one rocket after following suggested choices", `${steps} steps, ${result.decisions} decisions, states: ${[...states].join(", ")}`);
       source.close(); closed = true; clock.advance(15000);
     }
@@ -181,19 +129,15 @@ export function runCase(scenario: ScenarioName, seed = 71, mode: CaseResult["mod
   return result;
 }
 
-function buildoutCommand(s: FactoryState): WebToServer | null {
-  const { id } = stepFrom(s);
-  if (id === "tunnel") return { type: "connect_source", kind: "github" };
-  if (id === "boiler" || id === "builder" || id === "issue" || id === "planner") return { type: "station_action", stationId: "buildout", action: id };
-  const pad = s.items.find(i => i.state === "on_pad");
-  return id === "launch" && pad ? { type: "launch_pr", itemId: pad.id } : null;
-}
+// intro and buildout were the old React app's guided tours: their sims wait on that UI's commands, so a bare journey
+// through them proves nothing. They stay runnable with --scenario.
+const GUIDED = new Set<string>(["intro", "buildout"]);
 
-export function runSuite(seed = 71, scenarios = Object.keys(SCENARIOS) as ScenarioName[]): CaseResult[] {
+export function runSuite(seed = 71, scenarios = (Object.keys(SCENARIOS) as ScenarioName[]).filter(s => !GUIDED.has(s))): CaseResult[] {
   return scenarios.flatMap(s => [runCase(s, seed), runCase(s, seed, "early-close")]);
 }
 
 export function markdown(results: CaseResult[]): string {
   const findings = results.flatMap(r => r.findings);
-  return ["# Shiptorio playtest", "", "Simulation journeys and protocol/state checks, including the guided intro through its actual UI command helpers. This does not claim live integrations or visual QA passed.", "", "| Scenario | Mode | Decisions | Shipped | Findings |", "| --- | --- | ---: | ---: | ---: |", ...results.map(r => `| ${r.scenario} | ${r.mode} | ${r.decisions} | ${r.shipped} | ${r.findings.length} |`), "", "## Findings", "", ...(findings.length ? findings.flatMap(f => [`### ${f.severity}: ${f.title}`, "", `ID: ${f.id}`, `Reproduce: ${f.repro}`, `Expected: ${f.expected}`, `Observed: ${f.actual}`, `Owner: ${f.owner}`, ""]) : ["No findings in these scenarios."]), "", "## Coverage", "", `States: ${[...new Set(results.flatMap(r => r.states))].sort().join(", ")}`, `Tools: ${[...new Set(results.flatMap(r => r.tools))].sort().join(", ")}`, "", "Run the browser driver separately for visible controls, clipping, overlays, console errors and screenshots. Real GitHub/agent/gauntlet runs require an explicitly approved issue and are recorded separately."].join("\n") + "\n";
+  return ["# Shiptorio playtest", "", "Simulation journeys and protocol/state checks. This does not claim live integrations or visual QA passed.", "", "| Scenario | Mode | Decisions | Shipped | Findings |", "| --- | --- | ---: | ---: | ---: |", ...results.map(r => `| ${r.scenario} | ${r.mode} | ${r.decisions} | ${r.shipped} | ${r.findings.length} |`), "", "## Findings", "", ...(findings.length ? findings.flatMap(f => [`### ${f.severity}: ${f.title}`, "", `ID: ${f.id}`, `Reproduce: ${f.repro}`, `Expected: ${f.expected}`, `Observed: ${f.actual}`, `Owner: ${f.owner}`, ""]) : ["No findings in these scenarios."]), "", "## Coverage", "", `States: ${[...new Set(results.flatMap(r => r.states))].sort().join(", ")}`, `Tools: ${[...new Set(results.flatMap(r => r.tools))].sort().join(", ")}`, "", "Run the browser driver separately for visible controls, clipping, overlays, console errors and screenshots. Real GitHub/agent/gauntlet runs require an explicitly approved issue and are recorded separately."].join("\n") + "\n";
 }

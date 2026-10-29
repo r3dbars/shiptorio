@@ -101,7 +101,7 @@ Visual deck polish stays with Justin's local Codex (`codex/deck-visuals`) and Cl
 | 52 | Faster first load | web/public/{deck,welcome,brand}/**, web/public/sw.js, scripts/art/* |
 | 53 | When something breaks, say one plain sentence | stations/{inspector,status,attention}.ts, server/src/{errors,reliability}.ts |
 | 54 | Bug bash the loop | new bug-bash tests; small fixes in engine/{flow,camera}.ts, juice/build/grow/launch (not the sound wiring in juice/{sounds,index}.ts), server/src/runner-job.ts |
-| 55 | One way in | server/src/{redirect,landing,account-pages}.ts, web/index.html, web/src/main.tsx (routing) |
+| 55 | One way in | server/src/{redirect,landing,account-pages}.ts, web/index.html, web/src/front-door.ts (routing) |
 | 56 | Docs that match today | AGENTS.md, docs/context/* except the plan/deck/branch docs; history to docs/context/archive/ |
 | 57 | Shippy is calm and always easy to find | web/src/deck2d/shippy/* |
 | 58 | The runner talks in plain words | runner/src/{messages,cli,codex-diagnostic}.ts (text), runner/README.md |

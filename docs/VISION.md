@@ -151,3 +151,5 @@ New high-level goals from Justin go here, dated, then get folded into the sectio
   create their own factory, right before GitHub sign-in. Real accounts stay locked; the tutorial is scripted (no Spark
   spend). shiptorio.com follows only via a promotion. Details: `docs/context/landing.md`.
 - 2026-10-29: Docs, README and code should all describe what shiptorio.dev is now and where it's headed.
+- 2026-10-29: The old React app is deleted (shaft and island maps, old UI, judge replay, ~40k lines). The deck is the only
+  web app: "/" and old demo links go to it on every host, and `/judge` plays the deck's story with no password.

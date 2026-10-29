@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { FactoryState, projectPipeline } from "@shiptorio/shared";
-import { applyPatch } from "../src/store";
+import { applyPatch } from "../src/source/patch";
 
 test("live pipeline replaces all six steps and unrelated patches retain the last authoritative projection", () => {
   const state = FactoryState.parse({ repo: "owner/repo", baseBranch: "main", districts: [], machines: [], belts: [], power: [], items: [], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 });

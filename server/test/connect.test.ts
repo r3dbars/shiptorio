@@ -3,7 +3,7 @@ import { expect, mock, test } from "bun:test";
 import { unlimitedFactory } from "./browser-fixture";
 import { connectPage } from "../src/connect";
 import { makeSessionCookie } from "../src/session";
-import { readConfig } from "../../web/src/source";
+import { readConfig } from "../../web/src/source/config";
 import { signedInCookie, testD1 } from "./d1-fixture";
 mock.module("cloudflare:workers", () => ({ DurableObject: class { ctx: unknown; env: unknown; constructor(ctx: unknown, env: unknown) { this.ctx = ctx; this.env = env; } } }));
 const { testApp: app } = await import("./app-fixture");
