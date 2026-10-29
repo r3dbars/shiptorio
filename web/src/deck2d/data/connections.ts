@@ -71,7 +71,7 @@ export function createConnections(o: Options) {
     } catch (e) { if (current === revision) error = e instanceof Error ? e.message : 'Could not load connection.'; }
     finally { if (current === revision) { busy = false; refreshing = false; nextPoll = now() + (target === 'setup' ? 2000 : 5000); } }
     if (current !== revision || error || !status?.online || (target !== 'power' && target !== 'setup')) return;
-    // The runner just came online: no Check, no Open inbox. Show the first issue, or the one fix Codex still needs.
+    // The runner just came online: no Check, no See issues. Show the first issue, or the one fix Codex still needs.
     if (onboarding && status.harnesses.includes('codex') && !status.working) { onboarding = false; pane = 'issues'; revision++; index = 0; page = 1; await refresh(); }
     else if (target === 'setup') { pane = 'power'; revision++; }
   }

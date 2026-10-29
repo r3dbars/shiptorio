@@ -105,7 +105,7 @@ try { for (const [index,view] of views.entries()) {
       const joined=await context.request.post(origin+'/api/runner-device/join',{data:{join:joinTicket},headers:{origin}});assert.equal(joined.ok(),true,await joined.text());
       const {token}=await joined.json();
       const online=await context.request.post(origin+`/api/runner/${stub.state.repo}/heartbeat`,{data:{harnesses:['codex']},headers:{origin,authorization:`Bearer ${token}`}});assert.equal(online.ok(),true,await online.text());
-      // No Check and no Open inbox: the deck notices the runner and shows the first issue.
+      // No Check and no See issues: the deck notices the runner and shows the first issue.
       await card().getByRole('button',{name:'Plan',exact:true}).waitFor();
     });
     await step('first-issue-card',async()=>{assert.match(await card().innerText(),/#1.*Checkout total/);});
