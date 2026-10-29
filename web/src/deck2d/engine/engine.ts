@@ -125,7 +125,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     ptrs.set(e.pointerId, [e.clientX, e.clientY]);
     moved += Math.abs(e.clientX - p[0]) + Math.abs(e.clientY - p[1]);
     if (moved < 6) return;
-    cam.manual = performance.now() + 6000;
+    cam.manual = Infinity;
     if (ptrs.size === 1) { cam.x -= (e.clientX - p[0]) / cam.s; cam.y -= (e.clientY - p[1]) / cam.s; }
     else if (ptrs.size === 2) {
       const [a, b] = [...ptrs.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]);
@@ -138,11 +138,32 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     if (moved < 6 && e.clientX < 110 && e.clientY < 110) { cam.manual = 0; cam.pin = null; } // tap Shippy: fly to what he's looking at
   };
   cv.addEventListener("pointerup", up); cv.addEventListener("pointercancel", up);
-  cv.addEventListener("wheel", (e) => { e.preventDefault(); cam.manual = performance.now() + 6000; zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
+  cv.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    cam.manual = Infinity;
+    // Chromium exposes macOS trackpad pinches as small ctrl+wheel deltas.
+    const delta = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? H : 1);
+    zoomAt(e.clientX, e.clientY, Math.exp(-delta * (e.ctrlKey ? 0.012 : 0.004)));
+  }, { passive: false });
+  // Safari/WKWebView use gesture events instead of ctrl+wheel for a trackpad pinch.
+  let gestureScale = 1;
+  cv.addEventListener("gesturestart", (e) => { e.preventDefault(); gestureScale = 1; cam.manual = Infinity; }, { passive: false });
+  cv.addEventListener("gesturechange", (e) => {
+    e.preventDefault();
+    const gesture = e as Event & { scale: number; clientX?: number; clientY?: number };
+    if (!(gesture.scale > 0)) return;
+    zoomAt(gesture.clientX ?? W / 2, gesture.clientY ?? H / 2, gesture.scale / gestureScale);
+    gestureScale = gesture.scale;
+  }, { passive: false });
+  cv.addEventListener("gestureend", (e) => { e.preventDefault(); gestureScale = 1; }, { passive: false });
+  cv.addEventListener("dblclick", () => { cam.manual = 0; cam.pin = null; });
   function zoomAt(px: number, py: number, f: number) {
-    const wx = cam.x + (px - W / 2) / cam.s, wy = cam.y + (py - H / 2) / cam.s;
+    const visibleScale = () => pixelOn() ? Math.max(1, Math.round(cam.s * ART_PX * DPR)) / (ART_PX * DPR) : cam.s;
+    const before = visibleScale();
+    const wx = cam.x + (px - W / 2) / before, wy = cam.y + (py - H / 2) / before;
     cam.s = Math.max(fitAll().s * 0.8, Math.min(1.6, cam.s * f));
-    cam.x = wx - (px - W / 2) / cam.s; cam.y = wy - (py - H / 2) / cam.s;
+    const after = visibleScale();
+    cam.x = wx - (px - W / 2) / after; cam.y = wy - (py - H / 2) / after;
   }
 
   // ---------- views -> motion + events ----------
