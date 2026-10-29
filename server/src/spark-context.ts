@@ -70,7 +70,8 @@ export async function codeSearch(token: string, repo: string, query: string): Pr
 
 /** Every repo blob path at a commit. */
 export async function treePaths(token: string, repo: string, sha: string): Promise<string[]> {
-  const tree = await gh<{ tree: { path: string; type: string }[] }>(`/repos/${repo}/git/trees/${sha}?recursive=1`, token);
+  const tree = await gh<{ tree: { path: string; type: string }[]; truncated?: boolean }>(`/repos/${repo}/git/trees/${sha}?recursive=1`, token);
+  if (!Array.isArray(tree.tree) || tree.truncated) throw new Error("Repository tree is incomplete");
   return tree.tree.filter(e => e.type === "blob").map(e => e.path);
 }
 

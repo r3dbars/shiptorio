@@ -688,6 +688,25 @@ app.on(["GET", "POST"], "/connect/:kind", async (c) => {
 });
 
 // Same repository authorization as the factory; fetching the inbox never starts a job.
+app.post("/api/repos/:owner/:repo/review/retry", async c => {
+  if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({error:"invalid origin"},403);
+  const input = await c.req.json().catch(() => null);
+  if (!input || typeof input.itemId !== "string" || typeof input.head !== "string" || !/^[a-f0-9]{40}$/.test(input.head)) return c.json({error:"invalid review target"},400);
+  const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
+  const f = await factory(c.env, repo);
+  const queued = await f.retryAIReview(input.itemId,input.head);
+  return queued ? c.json({queued:true},202) : c.json({error:"The PR changed or is not ready for review again."},409);
+});
+app.post("/api/repos/:owner/:repo/issues/:number/start", async c => {
+  if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
+  const number = Number(c.req.param("number"));
+  if (!Number.isSafeInteger(number) || number < 1) return c.json({ error: "invalid issue" }, 400);
+  const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
+  const f = await factory(c.env, repo);
+  await f.ensure(repo, await installationFor(c.env, repo));
+  const result = await f.startInboxIssue(number, c.get("user").login);
+  return 'waitingFor' in result ? c.json({ error: `Finish PR #${result.waitingFor} before starting another issue.` }, 409) : c.json(result, 202);
+});
 app.get("/api/repos/:owner/:repo/issues", async c => {
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
   const page = Number(c.req.query("page") ?? 1);

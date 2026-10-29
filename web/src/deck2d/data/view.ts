@@ -19,6 +19,9 @@ export interface LiveCardView extends CardView {
 }
 export interface LiveDeckView extends AttentionView {
   card: LiveCardView | null;
+  intake?: (Item & { badge: string })[];
+  work?: { id: string; title: string; stop: StopId; badge: string; status: string };
+  followItem?: string;
 }
 
 export interface DeckOpts {
@@ -27,6 +30,8 @@ export interface DeckOpts {
   completed?: { stop: StopId; at: number } | null; // a real job completed at the station he was attending
   hidden?: ReadonlySet<string>; // cards answered here that the server hasn't dropped yet
   selectedStop?: StopId | null; // clicking a yellow machine selects its real pending decision
+  visualFlow?: boolean;
+  activeItemId?: string | null;
 }
 
 const LEVER_MS = 1200;
@@ -127,9 +132,16 @@ function jamStop(s: FactoryState, attention: ReadonlySet<StopId>): StopId | null
   return machine ? MACHINE_STOP[machine.type] : null;
 }
 
-function crate(it: FactoryItem, jammed: boolean): Item {
+function crate(it: FactoryItem, jammed: boolean): Item & { badge: string } {
   const look: Item["look"] = jammed ? "wait" : it.state === "rejected" ? "bad" : it.state === "passed" || it.state === "on_pad" || it.state === "launched" ? "ok" : it.priority === "rush" ? "glow" : "plain";
-  return { id: it.id, title: it.title, look };
+  return { id: it.id, title: it.title, look, badge: it.prNumber ? `PR${it.prNumber}` : `#${it.id.replace(/^gh-/, '')}` };
+}
+
+/** Pending issues stay in the inbox pile until a real planning/build job starts. */
+export function workStop(s: FactoryState, item: FactoryItem): StopId | null {
+  if (item.prNumber || ["working", "rejected", "launched"].includes(item.state)) return itemStop(item);
+  const step = s.pipeline?.find(p => p.itemIds.includes(item.id) && !["idle", "done"].includes(p.state) && p.cause !== "plan_required");
+  return step ? step.cause === "approval_required" ? "builder" : step.id : null;
 }
 
 export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckView {
@@ -137,10 +149,17 @@ export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckV
   if (!s) return { stops: STOPS.map((id) => ({ id, built: false, state: "idle", automated: false, items: [] })), jam: null, card: null, shippy: { pose: "folded", at: "corner" }, shipped: 0, caption: null };
 
   const deck = (s.deck?.length ? s.deck : s.move ? [s.move] : []).filter((m) => !opts.hidden?.has(m.id));
-  const move = (opts.selectedStop && pickCard(deck.filter(m => cardStop(s, m) === opts.selectedStop))) || pickCard(deck);
+  const flow = opts.visualFlow === true;
+  const candidates = s.items.filter(it => workStop(s, it));
+  const ongoing = candidates.filter(it => it.state !== 'launched');
+  const selectable = ongoing.length ? ongoing : candidates;
+  const active = flow ? selectable.find(it => it.id === opts.activeItemId) ?? selectable.sort((a, b) => b.updatedAt - a.updatedAt)[0] : undefined;
+  const activeStop = active && workStop(s, active);
+  const relevant = active ? deck.filter(m => m.itemId === active.id || isSetupCard(m)) : deck;
+  const move = (opts.selectedStop && pickCard(relevant.filter(m => cardStop(s, m) === opts.selectedStop))) || pickCard(relevant);
   // green means you handed it over (beat 4), so CI and AI review, which never asked you, stay plain working / idle
   const handed = handedStops(s);
-  const attention = new Set<StopId>(deck.map(m => cardStop(s, m)));
+  const attention = new Set<StopId>(relevant.map(m => flow && continueOption(m).actions.some(a => a.tool === "plan_runner_job") ? "repo" : cardStop(s, m)));
   if (s.sources?.some(source => source.state === "needs_action")) attention.add("repo");
   if (s.items.some(it => it.state === "inspecting" && itemStop(it) === "gate" && !it.inspection?.humanApproved)) attention.add("gate");
   const jam = jamStop(s, attention);
@@ -148,17 +167,17 @@ export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckV
   const busy = new Set(s.machines.filter((m) => m.state === "working").map((m) => MACHINE_STOP[m.type]));
   const at = new Map<StopId, FactoryItem[]>(STOPS.map((id) => [id, []]));
   // front of the line first: the oldest crate at a stop is the next one out
-  for (const it of [...s.items].sort((a, b) => a.updatedAt - b.updatedAt)) {
-    const stop = itemStop(it);
-    if (stop) at.get(stop)!.push(it);
-  }
+  if (active && activeStop) at.get(activeStop)!.push(active);
+  if (!flow) for (const it of [...s.items].sort((a,b) => a.updatedAt - b.updatedAt)) { const stop = itemStop(it); if (stop) at.get(stop)!.push(it); }
+  const intake = (flow ? s.items : []).filter(it => it.id !== active?.id && ["ore", "queued"].includes(it.state)).map(it => crate(it, false));
 
   const stops: Stop[] = STOPS.map((id) => {
     const here = at.get(id)!;
     const jammed = jam === id;
     const automated = handed.has(id);
-    const state: StopState = jammed ? "jammed" : attention.has(id) ? "idle" : automated ? "auto" : here.length || busy.has(id) ? "working" : "idle";
-    const stop: Stop = { id, built: built(s, id) || here.length > 0 || jammed, state, automated, items: here.map((it) => crate(it, jammed)) };
+    const held = active && s.pipeline?.some(p => p.itemIds.includes(active.id) && p.state === "waiting_player");
+    const state: StopState = jammed ? "jammed" : attention.has(id) || here.length && held ? "idle" : automated ? "auto" : here.length || busy.has(id) && (!flow || id === activeStop) ? "working" : "idle";
+    const stop: Stop = { id, built: built(s, id) || here.length > 0 || jammed, state, automated, items: here.map((it) => flow ? crate(it, jammed) : (({ badge, ...plain }) => plain)(crate(it, jammed))) };
     if (jammed) stop.waiting = `${STOP_LABEL[id].toUpperCase()} WAITING`;
     return stop;
   });
@@ -169,9 +188,11 @@ export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckV
     card = {
       id: move.id,
       title: move.title,
-      stop: cardStop(s, move),
+      stop: flow && continueOption(move).actions.some(a => a.tool === "plan_runner_job") ? "repo" : cardStop(s, move),
       dots: learn ? { have: learn.have, need: learn.need } : null,
-      line: learn ? LEARN.line(Math.max(1, learn.need - learn.have)) : move.why || FIRST_LINE,
+      line: !flow ? (learn ? LEARN.line(Math.max(1, learn.need - learn.have)) : move.why || FIRST_LINE) : `Shippy: ${move.why || FIRST_LINE}${move.plan?.find(p => p.startsWith('Files:')) ? ` ${move.plan.find(p => p.startsWith('Files:'))}` : ''}`,
+      yes: !flow ? undefined : isLaunchCard(move) ? "Ship it" : continueOption(move).actions.some(a => a.tool === "plan_runner_job") ? "Start issue" : continueOption(move).actions.some(a => a.tool === "approve_runner_job") ? "Start build" : "Continue",
+      no: flow ? "Later" : undefined,
       hold: isLaunchCard(move),
       setup: isSetupCard(move),
       attention: attentionOf(move),
@@ -180,8 +201,10 @@ export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckV
   }
 
   const shipped = s.metrics?.rockets ?? s.items.filter((it) => it.state === "launched").length;
-  const caption = card ? null : handed.size ? "Shippy has this. Fix the next jam." : "Software is a factory.";
-  return { stops, jam, attention: [...attention], card, shippy: shippyOf(s, stops, jam, card, opts, now), shipped, caption };
+  const status = activeStop ? s.pipeline?.find(p => p.id === activeStop && p.itemIds.includes(active!.id))?.state ?? 'working' : '';
+  const work = active && activeStop ? { id: active.id, title: active.title, stop: activeStop, badge: crate(active, false).badge, status } : undefined;
+  const caption = !flow ? (card ? null : handed.size ? "Shippy has this. Fix the next jam." : "Software is a factory.") : work ? `${work.badge} · ${work.title} · ${STOP_LABEL[work.stop]}${status === 'waiting_player' ? ' needs your approval' : ' is working'}` : `${intake.length} issues waiting in Repo. Choose one to start.`;
+  return { stops, jam, attention: [...attention], card, intake, work, shippy: work && !card ? { at: work.stop, pose: work.stop === 'builder' ? 'weld' : 'inspect' } : shippyOf(s, stops, jam, card, opts, now), shipped, caption };
 }
 
 function shippyOf(s: FactoryState, stops: Stop[], jam: StopId | null, card: CardView | null, opts: DeckOpts, now: number): ShippyView {

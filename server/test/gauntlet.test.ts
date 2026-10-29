@@ -97,6 +97,7 @@ describe("live gauntlet in the Factory", () => {
       if (/\/comments\?per_page=100&page=/.test(url)) return Response.json([]);
       if (url.includes("/check-runs?")) return Response.json({ total_count: 1, check_runs: [{ name: "CI", app: { id: 15368 }, head_sha: new URL(url).pathname.split("/").at(-2), status: "completed", conclusion: "success" }] });
       if (url.includes("/status?")) return Response.json({ total_count: 0, statuses: [] });
+      if (url.includes("/git/trees/")) return Response.json({tree:[{path:"web/src/cart.ts",type:"blob"},{path:"web/src/cart.test.ts",type:"blob"}],truncated:false});
       calls.push(`${init?.method ?? "GET"} ${url.replace("https://api.github.com", "")}`);
       const json = (v: unknown) => Response.json(v);
       if (url.endsWith("/access_tokens")) return json({ token: "t" });

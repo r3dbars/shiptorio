@@ -1,6 +1,6 @@
 import { sparkTestEnv } from "./budget-fixture";
 import { afterEach, describe, expect, it } from "bun:test";
-import { compact, planLocalTask, reviewWithTools, runReadTool, type Toolbox } from "../src/spark-tools";
+import { compact, planLocalTask, reviewWithTools, runReadTool, RepositoryReadUnavailable, type Toolbox } from "../src/spark-tools";
 import { factoryBrief, signalsBrief, issueComments, ciReport } from "../src/spark-context";
 import type { FactoryState, Item } from "@shiptorio/shared";
 
@@ -31,6 +31,15 @@ function spark(script: unknown[]) {
 }
 
 describe("read tools", () => {
+  it("does not turn provider failures into missing files or cache the failed read", async () => {
+    let failed = true;
+    const cache = new Map<string, string | null>();
+    const source = box({paths:["package.json"],read:async()=>{if(failed)throw Error("temporary provider outage");return '{"scripts":{"test":"bun test"}}';}});
+    await expect(runReadTool(source,"read_file",{path:"package.json"},cache)).rejects.toBeInstanceOf(RepositoryReadUnavailable);
+    expect(cache.size).toBe(0);
+    failed=false;
+    expect(await runReadTool(source,"read_file",{path:"package.json"},cache)).toContain("bun test");
+  });
   it("redacts complete source before file and search result truncation", async () => {
     const source = `${"x".repeat(9900)}\n${syntheticPem}`;
     const boundary = box({ paths: ["src/config.ts"], read: async () => source });

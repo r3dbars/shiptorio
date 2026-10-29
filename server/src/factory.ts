@@ -81,7 +81,7 @@ import { initialFactoryState } from "./factory-initialization";
 import { inventoryCommand } from "./factory-inventory";
 import { gameMaster, heuristicTriage, readGoals, judgeOrbit, judgePermit, pickPower, pickResearch, pickFiles, planLocalTask, proposeExperiment, sparkConfigured, sparkModel, triage, writeFix, type GameMasterBrief, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
 import { emptyBrain, recordThought, scoreShip } from "./brain";
-import type { SparkStep, Toolbox } from "./spark-tools";
+import { RepositoryReadUnavailable, type SparkStep, type Toolbox } from "./spark-tools";
 import { ciReport, codeSearch, factoryBrief, issueComments, signalsBrief, treePaths } from "./spark-context";
 import { issueRevision, RunnerHarness, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
 import { enforceRoute, geothermalGuard, harnessLabel, LOCAL_POWER_ID, looksSmall, ruleRoute } from "./geothermal";
@@ -274,7 +274,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   async observedCall(method: string, args: unknown[], trace: Trace): Promise<any> {
-    const allowed = ["allowDeviceStart", "startDevice", "startJoin", "takeJoin", "approveDevice", "readyDevice", "pollDevice", "activateRunner", "recordRunnerGrant", "rejectRunnerGrant", "runnerStatus", "planningRetries", "heartbeatRunner", "revokeRunner", "ensure", "connectMine", "disconnectMine", "pairRunner", "runnerJobs", "isRunnerPaired", "enqueueRunner", "claimRunner", "finishRunner", "enqueueGitHub", "enqueueSentry", "enqueueSupport", "debugSnapshot", "adminControl", "exportState", "summary", "exportAccountData", "eraseAccountData", "accountConnectionStatus", "closeAccountSockets", "pruneAccountDeliveries"];
+    const allowed = ["allowDeviceStart", "startDevice", "startJoin", "takeJoin", "approveDevice", "readyDevice", "pollDevice", "activateRunner", "recordRunnerGrant", "rejectRunnerGrant", "runnerStatus", "planningRetries", "retryAIReview", "startInboxIssue", "heartbeatRunner", "revokeRunner", "ensure", "connectMine", "disconnectMine", "pairRunner", "runnerJobs", "isRunnerPaired", "enqueueRunner", "claimRunner", "finishRunner", "enqueueGitHub", "enqueueSentry", "enqueueSupport", "debugSnapshot", "adminControl", "exportState", "summary", "exportAccountData", "eraseAccountData", "accountConnectionStatus", "closeAccountSockets", "pruneAccountDeliveries"];
 
     if (!allowed.includes(method)) throw new Error("Unknown factory RPC");
     return inTrace(trace, this.env, task => this.ctx.waitUntil(task), async () => {
@@ -1092,6 +1092,33 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     return this.redactor.value([...rows.entries()].flatMap(([key, retry]) => key !== PLANNER_REST_KEY && planningHold(retry) ? [{ itemId: key.slice("planningRetry:".length), ...retry }] : []));
   }
 
+  /** Recheck the same rejected head; this cannot approve or merge it. */
+  async retryAIReview(itemId: string, expectedHead: string) {
+    if (!(await this.load()) || !this.meta || await this.githubStopped()) return false;
+    const item = this.state!.items.find(i => i.id === itemId);
+    if (!item?.prNumber || item.state !== "rejected" || item.inspection?.headSha !== expectedHead || stageOf(item, "ai")?.state !== "rework" || stageOf(item, "ci")?.state !== "passed" || stageOf(item, "verify")?.state !== "passed") return false;
+    if ((await this.runnerJobs()).some(j => j.itemId === itemId && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) return false;
+    const evidence = await inspectPullRequest(await installationToken(this.env, this.meta.installationId), this.meta.repo, item.prNumber, expectedHead, this.state!.baseBranch);
+    if (evidence.stale || evidence.state !== "passed" || !this.state!.items.some(i => i === item)) return false;
+    await this.patch({items:[{...item,state:"inspecting",failure:undefined,machineId:"review-1",updatedAt:Date.now(),inspection:{...item.inspection,state:"pending",humanApproved:false,stages:item.inspection.stages.map(s => s.gate === "ai" || s.gate === "human" ? {...s,state:"pending",reason:"Waiting for a fresh review of this commit"} : s)}}]});
+    await this.decisionData();
+    this.openMoves = this.openMoves!.filter(m => m.itemId !== itemId);
+    await this.refreshDecisions();
+    await this.scheduleTick();
+    this.log("info", "AI review queued again for the same PR commit. Earlier review evidence is retained; nothing is approved or merged.", itemId);
+    return true;
+  }
+
+  async startInboxIssue(number: number, requestedBy: string) {
+    if (!(await this.load()) || !this.meta || !Number.isSafeInteger(number) || number < 1) throw new Error("Invalid issue selection");
+    const active = this.state!.items.find(i => i.prNumber && ["inspecting", "on_pad", "passed"].includes(i.state));
+    if (active) return { waitingFor: active.prNumber };
+    const signal = await freshIssueInput(await installationToken(this.env, this.meta.installationId), this.meta.repo, number);
+    await this.ingestSignal(signal);
+    const job = await this.enqueueRunner({ itemId: `gh-${number}`, harness: "codex", allowedPaths: [], needsApproval: true }, requestedBy);
+    return { jobId: job.id };
+  }
+
   async enqueueRunner(input: { itemId: string; harness: RunnerJob["harness"]; allowedPaths: string[]; needsApproval?: boolean; refreshBase?: boolean }, requestedBy?: string): Promise<RunnerJob> {
     if (await this.githubStopped()) throw new Error("GitHub factory is archived or paused");
 
@@ -1295,6 +1322,19 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
   async claimRunner(pairId: string, harnesses: RunnerJob["harness"][]) {
     if (await this.githubStopped()) throw new Error("GitHub factory is archived or paused");
+    if (!await this.isRunnerPaired(pairId)) throw new Error("Runner pairing revoked");
+    await this.load();
+    if (await adminPaused(this.env.DB, this.meta?.repo)) return null;
+    // Rendering offers and updating the player's deck can perform provider reads.
+    // They must never hold the DO's 30-second exclusive lock and reset an in-flight review.
+    await this.accountPut("runnerPresence", { harnesses, seenAt: Date.now() });
+    if (this.state) {
+      const power = syncRunnerPower(this.state.power, harnesses);
+      if (JSON.stringify(power) !== JSON.stringify(this.state.power)) await this.patch({ power });
+    }
+    await this.offerRunnerPlan();
+    await this.refreshDecisions();
+    await this.scheduleTick();
     const job = await this.ctx.blockConcurrencyWhile(async () => {
       if (await this.ctx.storage.get("runnerPair") !== pairId) throw new Error("Runner pairing revoked");
       if (await adminPaused(this.env.DB,this.meta?.repo ?? (await this.ctx.storage.get<Meta>("meta"))?.repo)) return null;
@@ -1313,17 +1353,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         return live;
       }
       if (live) return null;
-      await this.load();
       const stranded = this.state?.items.filter(i => i.state === "working" && expired.some(j => j.itemId === i.id)) ?? [];
-      if (stranded.length) await this.patch({ items: stranded.map(i => ({ ...i, state: "queued" as const, updatedAt: Date.now() })) });
-      await this.accountPut("runnerPresence", { harnesses, seenAt: Date.now() });
-      if (this.state) {
-        const power = syncRunnerPower(this.state.power, harnesses);
-        if (JSON.stringify(power) !== JSON.stringify(this.state.power)) await this.patch({ power });
-      }
-      await this.offerRunnerPlan();
-      await this.refreshDecisions();
-      await this.scheduleTick();
+      if (stranded.length) await this.patch({ items: stranded.map(i => ({ ...i, state: "queued" as const, updatedAt: Date.now() })) }, true);
       const jobs = await this.ctx.storage.list<RunnerJob>({ prefix: "runnerJob:" });
       const job = [...jobs.values()].find(j => j.status === "ready" && availableJobHarness(j.harness, harnesses));
       if (!job) return null;
@@ -1354,11 +1385,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       await this.accountPut(`runnerJob:${job.id}`, job);
       const item = this.state!.items.find(i => i.id === job.itemId)!;
       const machineId = `runner-${job.harness}`;
-      await this.clearRunnerMove();
-      await this.patch({ items: [{ ...item, state: "working", machineId, attempts: item.attempts + 1, updatedAt: Date.now() }], machines: [{ id: machineId, type: "assembler", x: 0, y: 6, harness: job.harness, powerId: job.harness === "local" ? LOCAL_POWER_ID : `solar-${job.harness}`, tier: 1, state: "working" }] });
+      await this.patch({ items: [{ ...item, state: "working", machineId, attempts: item.attempts + 1, updatedAt: Date.now() }], machines: [{ id: machineId, type: "assembler", x: 0, y: 6, harness: job.harness, powerId: job.harness === "local" ? LOCAL_POWER_ID : `solar-${job.harness}`, tier: 1, state: "working" }] }, true);
       this.log("info", job.harness === "local" ? "Your computer's local model picked up the plan (geothermal power)." : `Local ${job.harness} took the plan.`, item.id);
       return job;
     });
+    if (job) await this.clearRunnerMove();
+    await this.refreshDecisions();
     if (!job) return null;
     if (!this.meta) throw new Error("Missing repo");
     // Installation tokens go only to the runner supervisor, never to an agent child.
@@ -2265,7 +2297,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     ).catch(() => heuristicTriage(item.title, [], districts));
   }
 
-  private async patch(p: Patch) {
+  private async patch(p: Patch, deferDecisions = false) {
     const s = this.state!;
     if (p.research) s.research = p.research;
     // Researched checks join every PR that hasn't reached the verify bay yet.
@@ -2299,7 +2331,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     // an earlier frame. Never hold an atomic runner mutation behind that I/O.
     // broadcast preserves order and registers delivery with ctx.waitUntil.
     this.broadcast({ type: "patch", patch: p });
-    await this.refreshDecisions();
+    if (!deferDecisions) await this.refreshDecisions();
   }
 
   private async scheduleTick() {
@@ -2611,12 +2643,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         this.log("info", `AI review is reading PR #${pr} (${builder} built it, a different model reviews).`, item.id);
         // Docs that name code get that code, read at the PR head, so the reviewer can check the examples work.
         const context = (await Promise.all(referencedFiles(files).map(async path => {
-          const content = await fileContent(token, this.meta!.repo, path, headSha).catch(() => null);
+          const content = await fileContent(token, this.meta!.repo, path, headSha).catch(error => { throw new RepositoryReadUnavailable(error); });
           return { path, content: content === null ? undefined : redactText(content).slice(0, 6000) };
         })))
           .filter((c): c is { path: string; content: string } => typeof c.content === "string");
         // The reviewer can read, list and search the repo at the PR head, the issue thread and CI before it rules.
-        const box = await this.sparkToolbox(token, item, headSha, await treePaths(token, this.meta.repo, headSha).catch(() => files.map(f => f.filename)), { headSha, diff: async () => diffText(files) });
+        const box = await this.sparkToolbox(token, item, headSha, await treePaths(token, this.meta.repo, headSha).catch(error => { throw new RepositoryReadUnavailable(error); }), { headSha, diff: async () => diffText(files) });
         const record = async (step: SparkStep) => this.broadcast({ type: "log", level: "info", text: step.result, at: step.at, actor: "spark", tool: step.tool, reason: step.reason, itemId: item.id });
         const verdict = await this.think("review", { title: `PR #${pr}: ${item.title}`, itemId: item.id, target: "review-1" }, () => reviewDiff(this.sparkEnv(), { title: item.title, body: item.body ?? "", builder }, diffText(files), context, box, record),
           v => ({ outcome: `${v.verdict === "pass" ? `Passed ${builder}'s PR` : `Sent ${builder}'s PR back`}${v.steps?.length ? ` after ${v.steps.length - 1} ${v.steps.length === 2 ? "look" : "looks"} at the repo` : ""}`, reason: v.reason }));
@@ -2633,8 +2665,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       await this.scheduleTick();
       return advanced;
     } catch (e) {
-      if (e instanceof BudgetError || e instanceof RateLimitError) {
-        if (e instanceof RateLimitError) this.githubRest(e.retryAt);
+      if (e instanceof BudgetError || e instanceof RateLimitError || e instanceof RepositoryReadUnavailable) {
+        const limit = e instanceof RepositoryReadUnavailable ? e.cause : e;
+        if (limit instanceof RateLimitError) this.githubRest(limit.retryAt);
         this.log("warn", `Station paused: ${e.message}`, item.id);
         return; // Keep pending proof; resource waiting is not a failed code review.
       }

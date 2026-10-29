@@ -9,6 +9,7 @@ import { applyPatch } from "../../store";
 import { openUnlockLink } from "../../ui/unlockLink";
 import type { DeckSource, StopId } from "../contract";
 import { cardStop, deckView, isSetupCard, itemStop, type LiveDeckView } from "./view";
+import { createJourney } from "./journey";
 
 type Connect = (cfg: SourceConfig, onMessage: (m: ServerToWeb) => void, onStatus: (s: "connecting" | "live" | "offline") => void) => Source;
 
@@ -18,6 +19,8 @@ export interface LiveDeckSource extends DeckSource {
   status(): "connecting" | "live" | "offline";
   close(): void;
   selectStop(stop: StopId): void;
+  arrive(id: string, stop: StopId): void;
+  focusItem(id: string): void;
 }
 
 export function fold(s: FactoryState | null, msg: ServerToWeb): FactoryState | null {
@@ -38,6 +41,8 @@ export function createLiveSource(cfg: SourceConfig = readConfig(), opts: { onPow
   let completed: { stop: StopId; at: number } | null = null;
   let selectedStop: StopId | null = null;
   const hidden = new Set<string>(); // answered here, gone before the server agrees
+  const journey = createJourney();
+  let activeItemId: string | null = null;
   const fns = new Set<() => void>();
   const changed = () => fns.forEach((fn) => fn());
   const src = (opts.connect ?? connectFactory)(cfg, (msg) => {
@@ -59,7 +64,14 @@ export function createLiveSource(cfg: SourceConfig = readConfig(), opts: { onPow
   const send = (msg: WebToServer) => src.send(msg);
 
   return {
-    view: () => deckView(state, { now: now(), pulled, completed, hidden, selectedStop }),
+    view: () => {
+      const base = deckView(state, { now: now(), pulled, completed, hidden, selectedStop, activeItemId, visualFlow: cfg.kind === "live" });
+      activeItemId = base.work?.id ?? null;
+      return cfg.kind === "live" ? journey.view(base) : base;
+    },
+    step: dt => journey.step(dt),
+    arrive: (id, stop) => journey.arrive(id, stop),
+    focusItem: id => { activeItemId = id; changed(); },
     selectStop(stop) { selectedStop = stop; changed(); },
     state: () => state,
     status: () => status,
