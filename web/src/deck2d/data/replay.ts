@@ -155,7 +155,7 @@ export function connectReplay(onMessage: Listener, onStatus: StatusListener, opt
   else if (!/^[a-zA-Z0-9_-]{1,80}$/.test(name)) failed();
   else {
     const current = generation;
-    (options.fetch ?? fetch)(`/deck/traces/${name}.json`, { credentials: "omit", cache: "no-store" })
+    (options.fetch ?? fetch)(`/deck/traces/${name}.json`, { credentials: "same-origin", cache: "no-store" })
       .then(async response => { if (!response.ok) throw new Error("Trace unavailable."); return response.text(); })
       .then(text => { if (!closed && current === generation) loadText(text); }).catch(failed);
   }

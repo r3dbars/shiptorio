@@ -32,15 +32,15 @@ test("speed and idle-gap compression are deterministic, including equal-time mes
 });
 
 test("replay transport performs one read and never writes when sent player actions", async () => {
-  const c = clock(), messages: ServerToWeb[] = [], requests: { path: string; method?: string }[] = [];
+  const c = clock(), messages: ServerToWeb[] = [], requests: { path: string; method?: string; credentials?: RequestCredentials }[] = [];
   const source = connectReplay(m => messages.push(m), () => {}, { ui: false, search: "?trace=testing-16-sample&speed=2", timers: c.timers,
-    fetch: (async (path, init) => { requests.push({ path: String(path), method: init?.method }); return Response.json(fixture); }) as typeof fetch });
+    fetch: (async (path, init) => { requests.push({ path: String(path), method: init?.method, credentials: init?.credentials }); return Response.json(fixture); }) as typeof fetch });
   await flush();
   source.send({ type: "choose_move", moveId: "ship-27", optionId: "continue" });
   source.send({ type: "launch_pr", itemId: "gh-16" });
   c.advance(Infinity);
   expect(messages).toEqual(sample().frames.map(f => f.message));
-  expect(requests).toEqual([{ path: "/deck/traces/testing-16-sample.json", method: undefined }]);
+  expect(requests).toEqual([{ path: "/deck/traces/testing-16-sample.json", method: undefined, credentials: "same-origin" }]);
   source.close(); expect(c.pending()).toBe(0);
 });
 
