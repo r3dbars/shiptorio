@@ -46,7 +46,7 @@ const at = (d: number): [number, number] => {
 };
 const stopD = (s: StopId) => (s === "launch" ? PATH_LEN : STOP_X[s] - PATH[0][0]);
 
-interface Crate { id: string; d: number; look: string; stop: StopId; fade: number }
+interface Crate { id: string; d: number; look: string; stop: StopId; fade: number; moving: boolean; badge?: string }
 interface Puff { x: number; y: number; vx: number; vy: number; t: number; life: number; r: number }
 
 export interface Engine {
@@ -72,6 +72,8 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   addEventListener("resize", resize); resize();
 
   const crates = new Map<string, Crate>();
+  const beltPhases = new Map<StopId, number>();
+  const beltBay = (x: number) => STOPS.find((id, i) => i === STOPS.length - 1 || x < (STOP_X[id] + STOP_X[STOPS[i + 1]]) / 2)!;
   const drop: Record<StopId, number> = Object.fromEntries(STOPS.map((s) => [s, 0])) as never;
   const puffs: Puff[] = [];
   const rocket = { y: 0, v: 0, mode: "ready" as "ready" | "count" | "up" | "away" | "down", t: 0 };
@@ -106,6 +108,9 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   function target(v: DeckView) {
     const all = fitAll();
     if (cam.all) return all;
+    const following = (v as DeckView & { followItem?: string }).followItem;
+    const cargo = following ? crates.get(following) : undefined;
+    if (cargo) return { x: at(cargo.d)[0], y: 225, s: Math.max(all.s, W / 1100) };
     if ((v.card || (v as AttentionView).focus) && !rehearsingMachines) return { x: focusX(v), y: 225, s: Math.max(all.s, W / 1100) };
     if (rehearsingMachines) {
       return { x: focusX(v), y: 225, s: Math.max(all.s, W / 1000) };
@@ -225,15 +230,19 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     const blocked = blockedZones(v);
     const cargoBlocked = (distance: number) => blocked.some(zone => at(distance)[0] >= zone.left && at(distance)[0] <= zone.right);
     const seen = new Set<string>();
+    crates.forEach(c => { c.moving = false; });
     for (const s of v.stops) s.items.forEach((it, k) => {
       seen.add(it.id);
       let c = crates.get(it.id);
-      if (!c) { c = { id: it.id, d: 0, look: it.look, stop: s.id, fade: 1 }; crates.set(it.id, c); }
+      const item = it as Item & { badge?: string; spawnAt?: StopId };
+      if (!c) { c = { id: it.id, d: stopD(item.spawnAt ?? s.id) - k * GAP, look: it.look, stop: s.id, fade: 1, moving: false }; crates.set(it.id, c); }
       if (c.stop !== s.id) { c.stop = s.id; }
       c.look = it.look;
+      c.badge = item.badge;
       const want = stopD(s.id) - k * GAP;
       const before = c.d;
       if (c.d < want) c.d = advanceBeltDistance(c.d, want, SPEED * dt, cargoBlocked);
+      c.moving = c.d > before;
       if (before < want - 0.5 && c.d >= want - 0.5 && k === 0) bus.emit({ type: "crate-arrive", stop: s.id, id: it.id });
     });
     crates.forEach((c, id) => {
@@ -241,6 +250,8 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
       if (c.stop === "launch" || c.d >= PATH_LEN - 60) { crates.delete(id); return; } // it went up with the rocket
       c.fade -= dt * 3; if (c.fade <= 0) crates.delete(id);
     });
+    const activeBays = new Set([...crates.values()].filter(c => c.moving && !cargoBlocked(c.d)).map(c => beltBay(at(c.d)[0])));
+    for (const bay of activeBays) beltPhases.set(bay, (beltPhases.get(bay) ?? 0) + dt);
     prev = v;
   }
 
@@ -371,7 +382,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     if (px) {
       const blocked = blockedZones(v);
       const blockedAt = (x: number) => blocked.some((zone) => x >= zone.left && x <= zone.right);
-      for (const g of segs) pd.beltRun(cx, g.ax, g.ay, g.bx, g.by, islandUp ? g.len : Math.min(g.len, deckEnd() - 100 - g.ax), t, SPEED * 0.35, blockedAt);
+      for (const g of segs) pd.beltRun(cx, g.ax, g.ay, g.bx, g.by, islandUp ? g.len : Math.min(g.len, deckEnd() - 100 - g.ax), t, SPEED, blockedAt, x => beltPhases.get(beltBay(x)) ?? 0);
       return;
     }
     const b = img("belt"); if (!b) return;
@@ -387,7 +398,10 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   }
   function crate(c: Crate) {
     const [x, y] = at(c.d);
-    if (px) { if (c.fade > 0.5) pd.crate(cx, x, y, c.look as Item["look"]); return; } // pixel art: no half-faded sprites
+    if (px) {
+      if (c.fade > 0.5) { pd.crate(cx, x, y, c.look as Item["look"]); if (c.badge) pd.crateBadge(cx, x, y, c.badge); }
+      return;
+    }
     if (c.look === "wait") glow(x, y - 18, 46, "255,70,50", 0.3);
     cx.globalAlpha = c.fade;
     put("crate-" + c.look, x, y + 12, CRATE);
