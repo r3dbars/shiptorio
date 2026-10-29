@@ -108,6 +108,8 @@ Retains production-disabled negative-ID identities and scoped fixture delegation
 
 ## Mobile startup and stale chunk recovery (Codex, Oct 27, 2026)
 
+- 2026-10-29 (#61): consolidated private workspace TypeScript/Bun/Worker types at the root and took the Pixi 8 minor update from #542. Retained all used runtime packages; Three 0.x + matching types remain a separate compatibility pass.
+
 Entry-point splitting keeps judge off default factory startup and preserves current play-first Root/account callbacks; HTML preload hints start the required shaft art early; recovery installs before game/vendor imports and permits one session-guarded reload, then shows a refresh action. A manifest-based gzip budget includes startup's shaft art; `bun run --filter './web' test:chunks` covers transient/persistent missing chunks, preload errors, unavailable storage and unrelated errors. App.tsx remains untouched; a four-line FactoryMap exception defers the alternate island renderer to selection/fallback. Recovery cases resolve the current hashed game asset from a fresh build. The original 781,902-byte budget remains fixed; measurements and release checks are recorded in the PR.
 
 

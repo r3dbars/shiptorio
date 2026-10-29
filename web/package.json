@@ -13,7 +13,7 @@
   "dependencies": {
     "@sentry/react": "^11.9.0",
     "@shiptorio/shared": "workspace:*",
-    "pixi.js": "8.6.6",
+    "pixi.js": "8.22.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "three": "^0.180.0"
