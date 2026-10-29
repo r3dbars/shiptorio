@@ -90,6 +90,10 @@ try { for (const [index,view] of views.entries()) {
         const first=page.locator('.ic-card:not(.ic-ghost)[data-card^="tour-"]');
         await first.waitFor({timeout:30000});assert.match(await first.innerText(),/Shippy/);
         await first.locator('.later').click();
+        // Sign-in waits for the tour's own ask (the password comes up there, never before).
+        const ask=card().getByRole('button',{name:'Create my factory',exact:true});
+        await ask.waitFor({timeout:30000});assert.equal(await card().getByRole('button',{name:'Sign in',exact:true}).count(),0);
+        await ask.click();
       });
       await step('story-sign-in',async()=>{await card().getByRole('button',{name:'Sign in',exact:true}).waitFor({timeout:45000});assert.equal(await page.locator('.connection-tools').count(),0);});
     }

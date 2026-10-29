@@ -65,15 +65,22 @@ export async function deckSmoke({ origin = 'https://shiptorio.dev', password, ou
         const storyCards = [];
         // The guest tour: Shippy's cards one at a time, each answer builds the next machine, then sign-in.
         const signIn = page.getByRole('button', { name: 'Sign in', exact: true });
-        for (let n = 0; n < 30 && !(await signIn.count()); n++) {
+        // The tour ends on its own ask; only "Create my factory" opens sign-in (and, on staging, the password).
+        const ask = page.getByRole('button', { name: 'Create my factory', exact: true });
+        for (let n = 0; n < 30 && !(await ask.count()); n++) {
           const beat = page.locator('.ic-card:not(.ic-ghost)[data-card^="tour-"] .approve');
-          await Promise.race([beat.first().waitFor({ timeout: 30000 }).catch(() => {}), signIn.waitFor({ timeout: 30000 }).catch(() => {})]);
-          if (await signIn.count()) break;
+          await Promise.race([beat.first().waitFor({ timeout: 30000 }).catch(() => {}), ask.waitFor({ timeout: 30000 }).catch(() => {})]);
+          if (await ask.count()) break;
           assert.equal(await page.locator('.connection-tools').count(), 0);
-          storyCards.push(await page.locator('.ic-card:not(.ic-ghost)[data-card^="tour-"]').first().getAttribute('data-card'));
-          await beat.first().click();
+          const shown = page.locator('.ic-card:not(.ic-ghost)[data-card^="tour-"]').first();
+          storyCards.push(await shown.getAttribute('data-card'));
+          // Ship it is a held press, like every real merge.
+          await beat.first().click(await shown.evaluate(el => el.classList.contains('hold')) ? { delay: 1200 } : {});
         }
-        await page.getByRole('button', { name: 'Sign in', exact: true }).waitFor({ state: 'visible', timeout: 45000 });
+        await ask.waitFor({ state: 'visible', timeout: 45000 });
+        assert.equal(await signIn.count(), 0, 'Sign-in waits for the tour\'s own ask');
+        await ask.click();
+        await signIn.waitFor({ state: 'visible', timeout: 45000 });
         assert(new URL(page.url()).pathname === '/deck', 'Guest left the 2D deck');
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
         assert(overflow <= 1, `Guest deck overflowed the viewport by ${overflow}px`);

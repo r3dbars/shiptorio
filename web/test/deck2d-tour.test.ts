@@ -29,6 +29,20 @@ test("the story camera frames each station as it is named, the engine for the bo
   expect(t.view().shot).toBe("line");
 });
 
+test("Ship it is a held press; the rocket goes on camera, then a Shipped! card says what happened", () => {
+  const t = createTour();
+  for (let i = 0; i < 3000 && t.view().card?.yes !== "Ship it"; i++) { const c = t.view().card; if (c) t.approve(c.id); else t.step(0.1); }
+  const ship = t.view().card!;
+  expect(ship.hold).toBe(true);
+  t.approve(ship.id);
+  let shots = new Set<string | undefined>();
+  for (let i = 0; i < 200 && !t.view().card; i++) { t.step(0.1); shots.add(t.view().shot); }
+  expect([...shots]).toEqual(["launch"]);
+  expect(t.view().shipped).toBe(1);
+  expect(t.view().card?.title).toBe("Shipped!");
+  expect(t.view().caption).toBeNull();
+});
+
 test("each answer builds one station, card hidden while it builds; then a fix ships and the tour hands off to sign-in", () => {
   const t = createTour();
   const order: StopId[] = [];
