@@ -2184,7 +2184,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (this.state) {
 
         this.state.stations = liveStations(this.state);
-        this.state.autonomy = autonomyView(await this.permitBook(), await flagEnabled(this.env, "autonomy"));
+        this.state.autonomy = autonomyView(await this.permitBook(), await this.autonomyFlags());
         this.state.brain = { ...(this.state.brain ?? emptyBrain(sparkModel(this.env), false)), model: sparkModel(this.env), online: sparkConfigured(this.env) };
       }
     }
@@ -2548,7 +2548,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       return;
     }
     const candidate = item;
-    const levels = await flagEnabled(this.env, "autonomy");
+    const flags = await this.autonomyFlags();
     const committed = await this.ctx.blockConcurrencyWhile(async () => {
       const s = this.state!;
       const current = s.items.find(i => i.id === candidate.id);
@@ -2564,7 +2564,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         const book = recordShip(await tx.get<PermitBook>("permits") ?? emptyBook(), launchedItem, auto);
         const launched = startWatch({ ...launchedItem, state: "launched", updatedAt: now }, now, mergeSha);
         const items = s.items.some(i => i.id === launched.id) ? s.items.map(i => i.id === launched.id ? launched : i) : [...s.items, launched];
-        const next: FactoryState = { ...s, items, science: { ...s.science, [key]: s.science[key] + 1 }, trust: Math.min(1, s.trust + 0.05), autonomy: autonomyView(book, levels), brain: scoreShip(s.brain, launched.id) };
+        const next: FactoryState = { ...s, items, science: { ...s.science, [key]: s.science[key] + 1 }, trust: Math.min(1, s.trust + 0.05), autonomy: autonomyView(book, flags), brain: scoreShip(s.brain, launched.id) };
         next.stations = liveStations(next, now);
         await tx.put("state", next);
         await tx.put("permits", book);
@@ -2958,7 +2958,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
   private async savePermits(book: PermitBook): Promise<void> {
     await this.accountPut("permits", book);
-    await this.patch({ autonomy: autonomyView(book, await flagEnabled(this.env, "autonomy")) });
+    await this.patch({ autonomy: autonomyView(book, await this.autonomyFlags()) });
+  }
+
+  /** Permits and levels are parked (src/flags.ts): the player's one trust meter is learned cards. */
+  private async autonomyFlags(): Promise<{ levels: boolean; permits: boolean }> {
+    return { levels: await flagEnabled(this.env, "autonomy"), permits: await flagEnabled(this.env, "permits") };
   }
 
   /** A station sent work back. Its lane's streak resets and any permit there is revoked. */

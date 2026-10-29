@@ -1,5 +1,5 @@
 import { credentialEnv } from "./credential-fixture";
-import { authorizedDB, membershipCache, authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
+import { authorizedDB, permitsCache, authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
 import { describe, expect, it, mock } from "bun:test";
 import { FactoryState, type Item } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
@@ -74,10 +74,12 @@ describe("permit rules", () => {
   it("counts automated share for the HUD", () => {
     let book = setPermit(shipClean(emptyBook(), 5), "docs", true);
     book = recordShip(book, passed(), true);
-    const view = autonomyView(book);
+    const view = autonomyView(book, { permits: true });
     expect(view.launches).toBe(6);
     expect(view.automated).toBeCloseTo(1 / 6);
     expect(view.districts[0]).toMatchObject({ district: "docs", permit: true, risk: "low" });
+    // Parked by default: one trust meter (learned cards), so a stored permit never shows.
+    expect(autonomyView(book).districts[0].permit).toBe(false);
   });
 });
 
@@ -117,7 +119,7 @@ describe("permits in the Factory", () => {
         async setAlarm(v: number) { alarm = v; },
       };
       const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [authorizedSocket((raw: string) => events.push(JSON.parse(raw)))] };
-      const f = new Factory(ctx as never, credentialEnv({ ...browserEnv, CACHE: membershipCache, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, DB: { prepare: () => ({ bind: () => ({ first: async () => ({ token_version: 0, status: "active", installation_id: 1, id: 1, login: "test-player", user_id: 1, calls: 1, tokens: 100, next_at: Date.now(), failures: 0, enabled:1, runs_daily:20, count:1 }), all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } }) as never);
+      const f = new Factory(ctx as never, credentialEnv({ ...browserEnv, CACHE: permitsCache, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, DB: { prepare: () => ({ bind: () => ({ first: async () => ({ token_version: 0, status: "active", installation_id: 1, id: 1, login: "test-player", user_id: 1, calls: 1, tokens: 100, next_at: Date.now(), failures: 0, enabled:1, runs_daily:20, count:1 }), all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } }) as never);
 
       const saved = () => data.get("state") as FactoryState;
 
@@ -130,7 +132,7 @@ describe("permits in the Factory", () => {
 
       // a clean docs PR on the pad launches on its own, no card
       data.set("state", { ...saved(), items: [passed()] });
-      const g = new Factory(ctx as never, credentialEnv({ ...browserEnv, CACHE: membershipCache, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, DB: { prepare: () => ({ bind: () => ({ first: async () => ({ token_version: 0, status: "active", installation_id: 1, id: 1, login: "test-player", user_id: 1, calls: 1, tokens: 100, next_at: Date.now(), failures: 0, enabled:1, runs_daily:20, count:1 }), all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } }) as never);
+      const g = new Factory(ctx as never, credentialEnv({ ...browserEnv, CACHE: permitsCache, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, DB: { prepare: () => ({ bind: () => ({ first: async () => ({ token_version: 0, status: "active", installation_id: 1, id: 1, login: "test-player", user_id: 1, calls: 1, tokens: 100, next_at: Date.now(), failures: 0, enabled:1, runs_daily:20, count:1 }), all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } }) as never);
 
       alarm = null;
       await g.alarm();
@@ -144,7 +146,7 @@ describe("permits in the Factory", () => {
       let review: Item = { ...passed({ id: "gh-8", prNumber: 78, lane: undefined }) };
       review = { ...review, state: "inspecting", machineId: "review-1", inspection: { ...review.inspection!, state: "pending", stages: review.inspection!.stages.map((st) => (st.gate === "ai" ? { ...st, state: "pending" as const } : st)) } };
       data.set("state", { ...saved(), items: [review], move: null });
-      const h = new Factory(ctx as never, credentialEnv({ ...browserEnv, CACHE: membershipCache, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "test-meta-key-not-real", DB: { prepare: () => ({ bind: () => ({ first: async () => ({ token_version: 0, status: "active", installation_id: 1, id: 1, login: "test-player", user_id: 1, calls: 1, tokens: 100, next_at: Date.now(), failures: 0, enabled:1, runs_daily:20, count:1 }), all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } }) as never);
+      const h = new Factory(ctx as never, credentialEnv({ ...browserEnv, CACHE: permitsCache, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "test-meta-key-not-real", DB: { prepare: () => ({ bind: () => ({ first: async () => ({ token_version: 0, status: "active", installation_id: 1, id: 1, login: "test-player", user_id: 1, calls: 1, tokens: 100, next_at: Date.now(), failures: 0, enabled:1, runs_daily:20, count:1 }), all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } }) as never);
 
       alarm = null;
       await h.alarm();
@@ -156,7 +158,7 @@ describe("permits in the Factory", () => {
       expect(events.filter((e) => e.type === "autonomy_unlocked").length).toBe(2);
 
       data.set("state", { ...saved(), items: [passed({ id: "gh-9", prNumber: 79 })], move: null });
-      const k = new Factory(ctx as never, credentialEnv({ ...browserEnv, CACHE: membershipCache, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, DB: { prepare: () => ({ bind: () => ({ first: async () => ({ token_version: 0, status: "active", installation_id: 1, id: 1, login: "test-player", user_id: 1, calls: 1, tokens: 100, next_at: Date.now(), failures: 0, enabled:1, runs_daily:20, count:1 }), all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } }) as never);
+      const k = new Factory(ctx as never, credentialEnv({ ...browserEnv, CACHE: permitsCache, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, DB: { prepare: () => ({ bind: () => ({ first: async () => ({ token_version: 0, status: "active", installation_id: 1, id: 1, login: "test-player", user_id: 1, calls: 1, tokens: 100, next_at: Date.now(), failures: 0, enabled:1, runs_daily:20, count:1 }), all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } }) as never);
 
       alarm = null;
       await k.alarm();
