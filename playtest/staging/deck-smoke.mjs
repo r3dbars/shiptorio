@@ -31,7 +31,7 @@ export async function deckSmoke({ origin = 'https://shiptorio.dev', password, ou
       page.on('response', response => { if (response.status() >= 400 && new URL(response.url()).origin === origin) errors.push(`HTTP ${response.status()} ${new URL(response.url()).pathname}`); });
       try {
         if (password) {
-          const access = await context.request.post(`${origin}/access`, { form: { password, next: '/deck?source=live' }, maxRedirects: 0, timeout: 15000 });
+          const access = await context.request.post(`${origin}/access`, { headers: { origin }, form: { password, next: '/deck?source=live' }, maxRedirects: 0, timeout: 15000 });
           assert(access.status() === 303, 'Staging preview admission failed');
         }
         const who = await context.request.get(`${origin}/api/me`, { timeout: 15000 });
