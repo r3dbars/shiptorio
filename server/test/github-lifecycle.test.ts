@@ -3,9 +3,10 @@ import { Database } from "bun:sqlite";
 import { readFileSync, readdirSync } from "node:fs";
 import { FactoryState } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
-import { handleLifecycle, RETENTION_MS } from "../src/github-lifecycle";
+import { handleLifecycle, pausedForGitHubAccess, RETENTION_MS } from "../src/github-lifecycle";
 import { migrateRepository, repositoryFactory, type RepoRecord } from "../src/repository";
 import { authorizationRevoked, makeSessionCookie, readSessionDetails } from "../src/session";
+import { normalizeGitHub } from "../src/sources/github";
 import payload from "./fixtures/github/lifecycle.json";
 import { signedInCookie } from "./d1-fixture";
 import { browserEnv } from "./browser-fixture";
@@ -110,6 +111,58 @@ describe("GitHub lifecycle fixture payloads", () => {
     await handleLifecycle(f.env, "installation_repositories", { ...payload, action: "removed", repositories_removed: [payload.repository] });
     await handleLifecycle(f.env, "installation_repositories", { ...payload, action: "added", repositories_added: [payload.repository] });
     expect(f.row()?.archived_at).toBeNull(); expect(f.objects.get("repo:501")!.data.get("state").science.red).toBe(2);
+  });
+  it("duplicate removals keep one deadline; duplicate restores preserve items and queued backfill", async () => {
+    const f = fixture(); await install(f);
+    const obj = f.objects.get("repo:501")!;
+    for (const signal of normalizeGitHub({ repository: payload.repository, issue: { number: 16, title: "README checks", body: "Explain checks", html_url: "https://github.com/octo-org/demo/issues/16" } })) await obj.factory.ingestSignal(signal);
+    const removed = { ...payload, action: "removed", repositories_removed: [payload.repository] };
+    await handleLifecycle(f.env, "installation_repositories", removed);
+    const deadline = obj.alarm();
+    await handleLifecycle(f.env, "installation_repositories", removed);
+    expect(obj.alarm()).toBe(deadline);
+    expect(await pausedForGitHubAccess(f.env.DB)).toBe(1);
+    const added = { ...payload, action: "added", repositories_added: [payload.repository] };
+    await handleLifecycle(f.env, "installation_repositories", added);
+    await handleLifecycle(f.env, "installation_repositories", added);
+    expect(obj.data.get("state").items.map((i: { id: string }) => i.id)).toEqual(["gh-16"]);
+    expect([...obj.data.keys()].filter(k => k.startsWith("delivery:backfill-"))).toHaveLength(1);
+    expect(await pausedForGitHubAccess(f.env.DB)).toBe(0);
+  });
+  it("a delayed add or created delivery cannot wake a suspended or deleted installation", async () => {
+    const f = fixture(); await install(f);
+    const obj = f.objects.get("repo:501")!;
+    await handleLifecycle(f.env, "installation", { ...payload, action: "suspend" });
+    await handleLifecycle(f.env, "installation_repositories", { ...payload, action: "added", repositories_added: [payload.repository] });
+    expect(obj.alarm()).toBeNull();
+    expect(obj.data.get("githubLifecycle").reason).toBe("GitHub installation suspended");
+    await handleLifecycle(f.env, "installation", { ...payload, action: "created", repositories: [payload.repository] });
+    expect(obj.alarm()).toBeNull();
+    expect(await pausedForGitHubAccess(f.env.DB)).toBe(1);
+    await handleLifecycle(f.env, "installation", { ...payload, action: "deleted" });
+    const deadline = obj.alarm();
+    await handleLifecycle(f.env, "installation_repositories", { ...payload, action: "added", repositories_added: [payload.repository] });
+    await handleLifecycle(f.env, "installation", { ...payload, action: "created", repositories: [payload.repository] });
+    expect(obj.alarm()).toBe(deadline);
+    expect(f.row()?.archived_at).not.toBeNull();
+  });
+  it("wake catches missed removal before queued GitHub work, persists it, and stays stopped", async () => {
+    const f = fixture(); await install(f);
+    f.env.GITHUB_APP_PRIVATE_KEY = await privateKey();
+    const obj = f.objects.get("repo:501")!;
+    let requests = 0;
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      requests++;
+      expect(String(input)).toContain("/repos/octo-org/demo/installation");
+      return new Response(null, { status: 404 });
+    }) as typeof fetch;
+    try { await obj.factory.alarm(); await obj.factory.alarm(); } finally { globalThis.fetch = original; }
+    expect(requests).toBe(1);
+    expect(f.row()?.archive_reason).toBe("GitHub repository access unavailable");
+    expect(obj.data.get("state").tick).toBe(4);
+    expect(obj.data.get("githubLifecycle").reason).toBe("GitHub repository access unavailable");
+    expect(await pausedForGitHubAccess(f.env.DB)).toBe(1);
   });
   for (const action of ["renamed", "transferred"]) {
     it(`repository.${action} preserves identity and refreshes the installation`, async () => {

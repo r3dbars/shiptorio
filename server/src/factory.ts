@@ -77,7 +77,7 @@ import {
 import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, freshIssueInput, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, pullRequestReadiness, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
 import { layoutMap } from "./map";
-import { initialFactoryState } from "./factory-initialization";
+import { initialFactoryState, reconcileFactoryGitHubAccess } from "./factory-initialization";
 import { inventoryCommand } from "./factory-inventory";
 import { gameMaster, heuristicTriage, readGoals, judgeOrbit, judgePermit, pickPower, pickResearch, pickFiles, planLocalTask, proposeExperiment, sparkConfigured, sparkModel, triage, writeFix, type GameMasterBrief, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
 import { emptyBrain, recordThought, scoreShip } from "./brain";
@@ -3704,6 +3704,15 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     this.batchingDecisions = true;
     try {
     await this.load();
+    if (this.meta) {
+      const access = await reconcileFactoryGitHubAccess(this.env, this.meta, await this.ctx.storage.get<number>("githubAccessCheckedAt"));
+      if (access.stopped) {
+        if (access.archivedAt !== undefined) await this.archiveGitHub(access.reason, access.archivedAt);
+        else await this.pauseGitHub(access.reason);
+        return;
+      }
+      if (access.checkedAt !== undefined) await this.accountPut("githubAccessCheckedAt", access.checkedAt);
+    }
     // Paused factories retain queued deliveries without spending provider calls.
     if (await adminPaused(this.env.DB,this.meta?.repo)) { await this.accountAlarm(Date.now()+TICK_MS); return; }
     await this.processDeliveries();

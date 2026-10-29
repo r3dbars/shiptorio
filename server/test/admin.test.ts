@@ -28,7 +28,7 @@ it('shows Justin recent logs and a selected factory snapshot; rejects unknown fa
   expect(page.status).toBe(200); expect(await page.text()).toContain('Shiptorio diagnostics');
   const response = await app.fetch(new Request('https://shiptorio.com/admin/data?repo=owner/repo', { headers }), env);
   expect(response.status).toBe(200); expect(response.headers.get('Cache-Control')).toBe('no-store');
-  expect(await response.json()).toMatchObject({ release: 'abc123', snapshot: { tick: 7 }, errors: [], events: [], spark: [], webhooks: [] });
+  expect(await response.json()).toMatchObject({ release: 'abc123', snapshot: { tick: 7 }, pausedForAccess: 0, errors: [], events: [], spark: [], webhooks: [] });
   expect((await app.fetch(new Request('https://shiptorio.com/admin/data?repo=unknown/repo', { headers }), env)).status).toBe(404);
 });
 it('requires same-origin explicit POST and configured DSN to force a Sentry error', async () => {
