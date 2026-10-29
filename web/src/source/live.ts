@@ -135,7 +135,7 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
       clearTimeout(deadline); clearTimeout(heartbeat);
       // Record only validated, accepted messages, before local display substitutions.
       recorder?.record(msg);
-      const local = (m: { id: string; title: string; plan?: string[] } | null | undefined) => { if (m?.id === "planner-rest" && m.plan?.[0]) m.title = `Planner is resting until ${new Date(m.plan[0]).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}`; };
+      const local = (m: { id: string; title: string; plan?: string[] } | null | undefined) => { if (m?.id === "planner-rest" && m.plan?.[0] && m.title.startsWith("Planner is resting")) m.title = `Planner is resting until ${new Date(m.plan[0]).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}`; };
       if (msg.type === "snapshot") { msg.state.deck?.forEach(local); local(msg.state.move); }
       if (msg.type === "deck") msg.deck.forEach(local);
       if (msg.type === "move") local(msg.move);

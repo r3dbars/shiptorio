@@ -1,11 +1,14 @@
 /** Global false is a kill switch; user overrides may opt out or opt into a default-off feature. */
-export const FLAG_DEFAULTS = { research: true, permits: true, autonomy: false, newFeatures: false, attention: true, brain: false, learn: true };
+export const FLAG_DEFAULTS = { research: true, permits: false, autonomy: false, newFeatures: false, attention: true, brain: false, learn: true };
 export type Flag = keyof typeof FLAG_DEFAULTS;
 export type Flags = Record<Flag, boolean>;
 /** FEATURES="all" (the staging worker, shiptorio.dev) defaults every flag on: new features ship ON on dev
- * (docs/context/branches.md). KV overrides still win, so a global "false" is still a kill switch there. */
+ * (docs/context/branches.md). KV overrides still win, so a global "false" is still a kill switch there.
+ * PARKED flags stay off even there: the player sees one trust meter, learned cards (src/learn.ts), and Ship it
+ * always waits for a human. Launch permits and autonomy levels keep their data and code; a KV "true" opts in. */
 export interface FlagsEnv { CACHE?: KVNamespace; FEATURES?: string }
-const fallback = (env: FlagsEnv, name: Flag) => env.FEATURES === "all" || FLAG_DEFAULTS[name];
+const PARKED: ReadonlySet<Flag> = new Set(["permits", "autonomy"]);
+const fallback = (env: FlagsEnv, name: Flag) => (env.FEATURES === "all" && !PARKED.has(name)) || FLAG_DEFAULTS[name];
 export const flagName = (name: string): name is Flag => Object.hasOwn(FLAG_DEFAULTS, name);
 export const flagKey = (name: Flag, user?: string) => `flags:v1:${user ? `user:${user.toLowerCase()}` : "global"}:${name}`;
 export async function flagEnabled(env: FlagsEnv, name: Flag, user?: string): Promise<boolean> {
