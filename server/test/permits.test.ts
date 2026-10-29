@@ -92,6 +92,7 @@ describe("permits in the Factory", () => {
       if (/\/comments\?per_page=100&page=/.test(url)) return Response.json([]);
       if (url.includes("/check-runs?")) return Response.json({ total_count: 1, check_runs: [{ name: "CI", app: { id: 15368 }, head_sha: new URL(url).pathname.split("/").at(-2), status: "completed", conclusion: "success" }] });
       if (url.includes("/status?")) return Response.json({ total_count: 0, statuses: [] });
+      if (url.includes("/git/trees/")) return Response.json({tree:[{path:"docs/SETUP.md",type:"blob"}],truncated:false});
       if (url.endsWith("/access_tokens")) return Response.json({ token: "t" });
       if (url.endsWith("/files?per_page=100")) return Response.json([{ filename: "docs/SETUP.md", status: "modified", patch: "+x" }]);
       if (url.endsWith("/chat/completions")) return Response.json({ choices: [{ message: { content: '{"verdict":"rework","reason":"The steps are wrong.","findings":[]}' } }] });
