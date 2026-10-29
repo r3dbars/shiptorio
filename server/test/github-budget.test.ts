@@ -150,7 +150,7 @@ it("serializes replacement credentials, bounds queue pressure, and forwards Retr
   globalThis.fetch = (async () => { calls++; started(); await new Promise<void>(resolve => { finish = resolve; }); return new Response(null, { status: 429, headers: { "retry-after": "180" } }); }) as unknown as typeof fetch;
   const first = gh("/repos/a/b", tokens[0]);
   await entered;
-  const rest = Array.from({ length: 8 }, (_, index) => gh("/repos/a/b", tokens[index % 2]));
+  const rest = Array.from({ length: 8 }, (_, index) => gh(`/repos/a/b/issues/${index}`, tokens[index % 2]));
   // Attach handlers before releasing the first request to catch every rejection.
   const settled = Promise.allSettled([first, ...rest]);
   const overflow = await Promise.race(rest.map(promise => promise.catch(error => error)));
@@ -355,4 +355,63 @@ for (const status of [403, 404]) it(`never serves an in-flight expired candidate
     else await expect(gh("/repos/a/b/issues/1", token)).rejects.toMatchObject({ cause: { status } });
     expect(calls).toBe(2);
   } finally { clock.mockRestore(); }
+});
+
+it("coalesces overlapping reads, clones results and revalidates every later read", async () => {
+  const token = crypto.randomUUID();
+  let calls = 0, release!: () => void, entered!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const conditionals: (string | null)[] = [];
+  globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+    calls++; conditionals.push(new Headers(init?.headers).get("if-none-match")); entered();
+    await held;
+    return conditionals.at(-1) ? new Response(null, { status: 304 }) : Response.json({ checks: ["green"] }, { headers: { etag: '"current"' } });
+  }) as unknown as typeof fetch;
+  const first = gh<{ checks: string[] }>("/repos/a/b/pulls/7", token);
+  await started;
+  const second = gh<{ checks: string[] }>("/repos/a/b/pulls/7", token);
+  // Let both asynchronous fingerprint lookups finish before the provider responds.
+  await new Promise(resolve => setTimeout(resolve, 10));
+  release();
+  const [a, b] = await Promise.all([first, second]);
+  expect(calls).toBe(1);
+  a.checks.push("caller mutation");
+  expect(b.checks).toEqual(["green"]);
+  expect(await gh("/repos/a/b/pulls/7", token)).toEqual({ checks: ["green"] });
+  expect(calls).toBe(2);
+  expect(conditionals).toEqual([null, '"current"']);
+});
+
+it("never coalesces credentials, representations, queries or explicit freshness/cancellation controls", async () => {
+  const token = crypto.randomUUID();
+  let calls = 0;
+  globalThis.fetch = (async () => { calls++; await new Promise(resolve => setTimeout(resolve, 5)); return Response.json({ ok: true }); }) as unknown as typeof fetch;
+  await Promise.all([
+    gh("/repos/a/b", token),
+    gh("/repos/a/b", crypto.randomUUID()),
+    gh("/repos/a/b?page=2", token),
+    gh("/repos/a/b", token, { headers: { accept: "application/vnd.github.raw+json" } }),
+    gh("/repos/a/b", token, { headers: { "cache-control": "no-cache" } }),
+    gh("/repos/a/b", token, { headers: { "if-none-match": '"caller"' } }),
+    gh("/repos/a/b", token, { signal: new AbortController().signal }),
+    gh("/repos/a/b", token, { cache: "reload" }),
+  ]);
+  expect(calls).toBe(8);
+});
+
+it("shares provider backoff across duplicate reads without consuming more GitHub calls", async () => {
+  const { db } = budgetDb();
+  const token = crypto.randomUUID();
+  await registerGithubCredential(token, db, `github:installation:backoff-${crypto.randomUUID()}`);
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls++; await new Promise(resolve => setTimeout(resolve, 10));
+    return new Response(null, { status: 429, headers: { "retry-after": "180" } });
+  }) as unknown as typeof fetch;
+  const results = await Promise.allSettled(Array.from({ length: 12 }, () => gh("/repos/a/b/pulls/7", token)));
+  expect(calls).toBe(1);
+  expect(results.every(r => r.status === "rejected" && r.reason instanceof RateLimitError && r.reason.retryAt > Date.now() + 170000)).toBe(true);
+  await expect(gh("/repos/a/b/pulls/7", token)).rejects.toBeInstanceOf(RateLimitError);
+  expect(calls).toBe(1);
 });
