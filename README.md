@@ -26,8 +26,11 @@ Your software is a factory. GitHub issues ride a conveyor through seven stations
 is a real merged pull request. There's always a bottleneck, and it's usually waiting on one of your calls. Swipe the
 card and the line moves. Approve the same kind of thing a few times and it becomes automatic.
 
-Meta's Muse Spark makes the factory's decisions: triage, planning, routing and review. Coding goes to Codex or
-Claude Code running on your own machine with your own subscription.
+Shippy the robot is your guide. Shippy's brain is Meta Muse Spark: it reads the factory, finds the bottleneck, plans
+the work and reviews it. Coding goes to Codex or Claude Code running on your own machine with your own subscription.
+
+**Try it:** [shiptorio.dev](https://shiptorio.dev) opens straight into the tutorial. Creating your own factory
+(GitHub sign-in) needs the preview password for now.
 
 ## Does the AI review work?
 

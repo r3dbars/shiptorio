@@ -18,13 +18,13 @@ Open [shiptorio.dev](https://shiptorio.dev). Shippy shows you the deck: one line
 
 Nothing in the tutorial is real work. No GitHub, no agents, no merges.
 
-During the private preview the whole app, tutorial included, is still behind the preview gate. That's changing: the tutorial will be open to everyone, and the password will only come up at the next step.
+The tutorial needs no password. It's open to everyone on shiptorio.dev (shiptorio.com still shows its landing page for now).
 
 ## Create your own factory
 
-When the tutorial ends, Shippy offers to build yours.
+When the tutorial ends, Shippy offers to build yours with a **Sign in to your factory** card.
 
-1. **Enter the preview password.** Real repos are locked to people with the password while we're in preview.
+1. **Enter the preview password.** A small popup asks for it. Real repos are locked to people with the password while we're in preview. If your browser already has it, you skip this.
 2. **Sign in with GitHub.** Shiptorio only uses your GitHub identity. See [Install the GitHub App](/docs/github-app).
 3. **Pick a repo.** Install the Shiptorio GitHub App on just that repo. Your open issues show up in the Repo pile.
 4. **Connect your coding agent.** Install the local runner and sign in to Codex or Claude Code on your own machine. See [Connect your machine](/docs/runner).

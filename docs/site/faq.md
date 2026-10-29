@@ -68,7 +68,7 @@ Yes. The tutorial plays on sample work and touches nothing real. See [Getting st
 
 ## Is any of this open to the public yet?
 
-The docs are. The tutorial is opening to everyone; real repos stay behind the preview password for now. Built for the Meta AI Developer Hackathon, Oct 26 to Nov 4, 2026.
+The docs and the tutorial on shiptorio.dev are. Real repos stay behind the preview password for now. Built for the Meta AI Developer Hackathon, Oct 26 to Nov 4, 2026.
 
 ## Where do I report a bug?
 

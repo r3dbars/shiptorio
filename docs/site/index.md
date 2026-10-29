@@ -33,4 +33,4 @@ More on each station: [The line](/docs/the-line).
 - Run your own copy: [Self-host with your own keys](/docs/self-host).
 - What happens to your code: [Security and privacy](/docs/security).
 
-> **Heads up** Shiptorio is in private preview while we build it during the Meta AI Developer Hackathon (Oct 26 to Nov 4, 2026). These docs are public. Right now the app, tutorial included, is behind a preview gate (password or waitlist), and only allow-listed GitHub accounts can connect a real repo. We're opening the tutorial to everyone; the password will only come up when you create your own factory.
+> **Heads up** Shiptorio is in private preview while we build it during the Meta AI Developer Hackathon (Oct 26 to Nov 4, 2026). These docs are public. On [shiptorio.dev](https://shiptorio.dev) the tutorial is open to everyone. The preview password only comes up when you create your own factory, and only allow-listed GitHub accounts can connect a real repo. shiptorio.com still shows its landing page and waitlist.
