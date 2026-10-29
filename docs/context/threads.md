@@ -7,6 +7,7 @@ PR #598 (`codex/dev-deck-default`) makes authorized bare visits to shiptorio.dev
 - #66: exact duplicate Meta requests share only an in-flight result within the same run/account; later decisions are fresh. Duplicate triage/plan/review fixture: 10 → 5 calls, 1000 → 500 reported tokens, identical outputs; sequential happy-path savings are not claimed.
 - #60: retired the always-on remote intro flag; onboarding query/preferences and all safety kill switches remain. Other live/preview flags are inventoried in the PR and retained.
 - #56 (Claude): AGENTS.md cut from 284 to 135 lines (today only); docs/context/README.md is a short "read these 5 first" index; 13 retired docs + feedback-factory/ moved to docs/context/archive/ with a why-note on each.
+- #52 (Claude, 2026-10-29): deck first load on a throttled phone 11.0s → ~5.0s, 3.8 MB → 1.0 MB before the first frame. tube() in props/boiler2d.ts only checks nearby samples (byte-identical), the pixel deck preloads only the pictures it draws, and web/public art/fonts/sound get `private, max-age=300` instead of no-store.
 
 ## Deck visual iteration (Codex, 2026-10-28)
 

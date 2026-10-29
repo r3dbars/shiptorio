@@ -51,11 +51,16 @@ export function tube(g: Px, pts: [number, number][], r: number, ramp: Ramp, o: {
   }
   S.push(path[path.length - 1]);
   const xs = S.map((p) => p[0]), ys = S.map((p) => p[1]);
+  const x0 = Math.floor(Math.min(...xs) - r - 1), x1 = Math.max(...xs) + r + 1;
+  // Only samples within r of a column can be a drawn pixel's nearest, so each column checks just those (same order,
+  // so ties pick the same sample). A long pipe used to compare every pixel with every sample and stall the first frame.
+  const near: [number, number][][] = [];
+  for (let x = x0; x <= x1; x++) near.push(S.filter(([sx]) => Math.abs(x + 0.5 - sx) <= r + 1e-6));
   for (let y = Math.floor(Math.min(...ys) - r - 1); y <= Math.max(...ys) + r + 1; y++)
-    for (let x = Math.floor(Math.min(...xs) - r - 1); x <= Math.max(...xs) + r + 1; x++) {
+    for (let x = x0; x <= x1; x++) {
       const px = x + 0.5, py = y + 0.5;
       let best = 1e9, bx = 0, by = 0;
-      for (const [sx, sy] of S) { const d = (px - sx) ** 2 + (py - sy) ** 2; if (d < best) { best = d; bx = sx; by = sy; } }
+      for (const [sx, sy] of near[x - x0]) { const d = (px - sx) ** 2 + (py - sy) ** 2; if (d < best) { best = d; bx = sx; by = sy; } }
       const d = Math.sqrt(best);
       if (d > r) continue;
       const ox = (px - bx) / r, oy = (py - by) / r, nz = Math.sqrt(Math.max(0, 1 - ox * ox - oy * oy));

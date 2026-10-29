@@ -65,11 +65,16 @@ export function browserMutationAllowed(request: Request, routePath = new URL(req
   return request.headers.get("origin") === url.origin && request.headers.get("sec-fetch-site") !== "cross-site";
 }
 
+const media = /\.(webp|png|jpe?g|gif|svg|woff2?|mp3|m4a|ogg|mp4|webm)$/i;
 // Only authenticated content-hashed assets are immutable. Gates/errors/pages stay private and fresh.
 export function browserCacheControl(request: Request, status: number): string {
   const hash = /^\/assets\/[^/]+-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$/;
   // the public docs site is the same for everyone, so browsers and the edge may keep it a few minutes
   if (["GET", "HEAD"].includes(request.method) && [200, 304].includes(status) && isPublicDocs(new URL(request.url).pathname)) return "public, max-age=300";
-  return ["GET", "HEAD"].includes(request.method) && [200, 304].includes(status) && hash.test(new URL(request.url).pathname)
-    ? "private, max-age=31536000, immutable" : "no-store";
+  if (!["GET", "HEAD"].includes(request.method) || ![200, 304].includes(status)) return "no-store";
+  const path = new URL(request.url).pathname;
+  if (hash.test(path)) return "private, max-age=31536000, immutable";
+  // Art, fonts and sound (web/public) keep their names across deploys, so a browser may reuse them for a few minutes and
+  // then revalidate. no-store made every visit re-download ~1 MB of deck art and send each file back through the gate.
+  return media.test(path) ? "private, max-age=300" : "no-store";
 }
