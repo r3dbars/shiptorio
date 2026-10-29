@@ -7,6 +7,7 @@ import { Px } from "./px";
 import { repo } from "./repo";
 import { review } from "./review";
 import type { StationDef } from "./types";
+import { silhouetteOutline, statusLamp } from "./status";
 
 // The six stations, drawn in code into art-px grids (Black Iron 48, 1px soot outline, light from the upper right).
 // Calm: idle and auto hold still, working moves one small part, and only a jam pulses.
@@ -20,6 +21,25 @@ export const STATIONS: Record<StationId, StationDef> = { repo, planner, builder,
 export const STATION_STATES: readonly StopState[] = ["idle", "working", "jammed", "auto"];
 
 const cache = new Map<string, HTMLCanvasElement>();
+const outlines = new Map<StationId, HTMLCanvasElement>();
+
+function blockedOutline(id: StationId) {
+  let cv = outlines.get(id);
+  if (!cv) {
+    const def = STATIONS[id], shape = new Px(def.w, def.h);
+    // Trace structural pixels, not the transient smoke or light-layer halos.
+    def.draw(shape, "idle", 0);
+    const ring = silhouetteOutline(def.w, def.h, (x, y) => shape.d[y * def.w + x] !== 255);
+    cv = document.createElement("canvas"); cv.width = ring.width; cv.height = ring.height;
+    const ctx = cv.getContext("2d")!;
+    for (let y = 0; y < ring.height; y++) for (let x = 0; x < ring.width; x++) {
+      const distance = ring.pixels[y * ring.width + x];
+      if (distance) { ctx.fillStyle = distance === 1 ? PALETTE.jam[2] : PALETTE.jam[1]; ctx.fillRect(x, y, 1, 1); }
+    }
+    outlines.set(id, cv);
+  }
+  return cv;
+}
 
 /** Which frame of a state's loop is showing at time t (seconds). */
 export function frameAt(id: StationId, s: StopState, t: number) {
@@ -66,7 +86,12 @@ export function drawStation(ctx: CanvasRenderingContext2D, id: StationId, s: Sto
   }
   ctx.fillStyle = PALETTE.soot[0];
   ctx.fillRect(at(x - footW * scale / 2), at(feetY), footW * scale, scale);
+  if (s === "jammed") {
+    const outline = blockedOutline(id);
+    ctx.drawImage(outline, at(x - w / 2) - 2 * scale, at(feetY - h) - 2 * scale, outline.width * scale, outline.height * scale);
+  }
   ctx.drawImage(cv, at(x - w / 2), at(feetY - h), w, h);
+  statusLamp(ctx, s, x, feetY, scale);
   ctx.imageSmoothingEnabled = was;
 }
 

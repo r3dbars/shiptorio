@@ -7,6 +7,7 @@ import { fallbackCard, fallbackShippy } from "./engine/fallbacks";
 import { createShippyRehearsal } from "./shippy/rehearsal";
 import { createWatchSource, isWatchMode } from "./data/watch";
 import { createMachineRehearsal, mountMachineControls } from "./stations/rehearsal";
+import { createMachineInteraction } from "./stations/inspector";
 
 // The 2D deck page (web/deck.html). Wires the engine to a source, the card, Shippy and juice.
 // Each module lives in its own folder and is picked up here when it exists, so threads can land independently.
@@ -49,7 +50,11 @@ const seed = Number(params.get("seed")) || 0;
   const cv = document.getElementById("world") as HTMLCanvasElement;
   const layers: DeckLayer[] = [];
   for (const f of ["grow", "build", "launch", "juice", "props"]) { const m = await load(f, "createLayer"); if (m) layers.push((m.createLayer as CreateLayer)(art, bus)); }
-  const engine = createEngine(cv, art, bus, shippy, layers);
+  const inspector = createMachineInteraction(machines ? id => { if (id === machines.machine) machines.setMode("working"); } : undefined);
+  const engine = createEngine(cv, art, bus, shippy, layers, { onMachineSelect: id => {
+    if (machines) machines.cycling = false;
+    inspector.select(id);
+  } });
   if (rehearsal) {
     document.body.classList.add("shippy-rehearsal");
     const controls = document.createElement("div"); controls.className = "shippy-tools";
@@ -66,8 +71,8 @@ const seed = Number(params.get("seed")) || 0;
 
   const mountCard = (cardMod?.mountCard as MountCard | undefined) ?? fallbackCard;
   const card = mountCard(document.getElementById("card-host")!, {
-    onApprove(id) { bus.emit({ type: "approve", cardId: id }); source.approve(id); },
-    onLater(id) { bus.emit({ type: "later", cardId: id }); source.later(id); },
+    onApprove(id) { bus.emit({ type: "approve", cardId: id }); if (!inspector.answer(id, true)) source.approve(id); },
+    onLater(id) { bus.emit({ type: "later", cardId: id }); if (!inspector.answer(id, false)) source.later(id); },
   });
   (juiceMod?.attachJuice as AttachJuice | undefined)?.(bus, document.body, (s) => engine.where(s));
 
@@ -90,7 +95,7 @@ const seed = Number(params.get("seed")) || 0;
       if (machines.machine !== focusedMachine) { engine.focus(machines.machine); focusedMachine = machines.machine; }
       updateMachineControls?.();
     }
-    const view = source.view();
+    const view = inspector.view(source.view());
     engine.frame(view, dt);
     card.show(view.card);
     if (view.caption !== caption) { caption = view.caption; if (caption) toast.textContent = caption; }

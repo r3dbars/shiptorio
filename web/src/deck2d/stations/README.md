@@ -19,5 +19,12 @@ switches its status to red, and marks the affected belt section red; clear the b
 The current blocked sprites include warning smoke on some machines. These are baseline motions for
 visual iteration, not new factory behavior. The green automatic state remains separate from idle.
 
+Every machine now has a matching front-mounted status light: green for working/automatic, unlit for idle,
+red for blocked. A blocked machine also gets a red contour traced around its own outer structural pixels. Its conveyor
+bay holds the red plates and arrows still; cargo stops at that bay and resumes when it clears. Neighboring
+healthy bays keep moving. Click a machine to open the existing swipe card with Shippy's explanation.
+In the rehearsal, swiping right on a blocked machine clears the simulated jam. Actual factory approvals
+reuse their authoritative card and action; status-only cards never invent a live repair action.
+
 `/stations.html?only=code` still provides the original sprite comparison sheet. The in-deck preview is
 for focused motion review with the actual floor, shadows, spacing, conveyor and orb.

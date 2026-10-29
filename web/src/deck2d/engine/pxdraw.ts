@@ -30,12 +30,12 @@ export function beltRun(cx: CanvasRenderingContext2D, ax: number, ay: number, bx
     // back rail: brass, lit on top, with a post every 28 px
     px(cx, x, y + 1, 1, 1, end || post ? signal[2] : signal[1]);
     // the track: 6 rows of dark iron plate, lighter at the back (it faces the sun), darker at the front
-    const k = ((x - shift) % SEG + SEG) % SEG; // position inside the moving plate
+    const k = ((x - (blocked ? 0 : shift)) % SEG + SEG) % SEG; // blocked plates and arrows hold still
     const tr = blocked ? [C.jam[0], C.jam[0], C.iron[1], C.iron[1], C.jam[0], C.iron[0]] : [C.iron[2], C.iron[2], C.iron[1], C.iron[1], C.iron[1], C.iron[0]];
     for (let r = 0; r < 6; r++) px(cx, x, y + 2 + r, 1, 1, tr[r]);
     if (k === 0) { px(cx, x, y + 2, 1, 6, C.soot[0]); } // plate seam
     if (k === 1) { px(cx, x, y + 2, 1, 6, C.iron[3]); px(cx, x, y + 3, 1, 1, C.brass[4]); px(cx, x, y + 6, 1, 1, C.brass[2]); } // lit plate edge + rivets
-    // Two moving status arrows per plate: both states keep flowing to the right.
+    // Healthy plates travel right; a red blocked bay holds its entire pattern still.
     for (const c0 of [4, 9]) {
       const d = k - c0;
       if (d === 0 || d === 1) { px(cx, x, y + 3, 1, 1, signal[2]); px(cx, x, y + 6, 1, 1, signal[1]); }

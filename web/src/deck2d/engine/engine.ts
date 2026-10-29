@@ -7,6 +7,8 @@ import { createPixelCanvas } from "./pixel";
 import * as pd from "./pxdraw";
 import { FLIGHT } from "../launch/flight";
 import { BOILER_H, BOILER_W, boilerFrame } from "../../bakeoff/boiler2d";
+import { stationSize, type StationId } from "../stations";
+import { advanceBeltDistance } from "./flow";
 
 // stations/ (its own thread) draws each machine in pixel code; until it lands, pixel mode shows the snapped webp.
 type DrawStation = (cx: CanvasRenderingContext2D, id: StopId, state: string, t: number, x: number, feetY: number) => void;
@@ -53,7 +55,7 @@ export interface Engine {
   readonly portrait: boolean;
 }
 
-export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus, shippy: ShippyModule, layers: DeckLayer[] = []): Engine {
+export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus, shippy: ShippyModule, layers: DeckLayer[] = [], options: { onMachineSelect?: (id: StopId) => void } = {}): Engine {
   const owned = new Set(layers.flatMap((l) => l.replaces ?? []));
   const slot = (s: LayerSlot) => { for (const l of layers) l.draw(cx, s); };
   const screen = cv.getContext("2d")!;
@@ -148,6 +150,16 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     }
   });
   const up = (e: PointerEvent) => {
+    if (e.type === "pointerup" && moved < 6 && ptrs.size === 1 && prev) {
+      const scale = px ? Math.max(1, Math.round(cam.s * ART_PX * DPR)) / (ART_PX * DPR) : cam.s;
+      const x = cam.x + (e.clientX - W / 2) / scale, y = cam.y + (e.clientY - H / 2) / scale;
+      const hit = prev.stops.find(s => {
+        if (!s.built || s.id === "launch" || layers.some(l => l.owns?.(s))) return false;
+        const size = stationSize(s.id as StationId), feet = BELT_Y + LOOK[s.id].drop;
+        return Math.abs(x - STOP_X[s.id]) <= size.w * ART_PX / 2 + 15 && y >= feet - size.h * ART_PX - 10 && y <= feet + 25;
+      });
+      if (hit) options.onMachineSelect?.(hit.id);
+    }
     ptrs.delete(e.pointerId); pinch = 0;
     if (moved < 6 && e.clientX < 110 && e.clientY < 110) { cam.manual = 0; cam.pin = null; } // tap Shippy: fly to what he's looking at
   };
@@ -201,6 +213,8 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     } else if (p && islandUp && v.shipped > p.shipped && (rocket.mode === "ready" || rocket.mode === "down")) { rocket.mode = "count"; rocket.t = 0; }
 
     // crates: every item has a spot (its stop, minus its place in the queue); crates only ever slide forward
+    const blocked = blockedZones(v);
+    const cargoBlocked = (distance: number) => blocked.some(zone => at(distance)[0] >= zone.left && at(distance)[0] <= zone.right);
     const seen = new Set<string>();
     for (const s of v.stops) s.items.forEach((it, k) => {
       seen.add(it.id);
@@ -210,7 +224,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
       c.look = it.look;
       const want = stopD(s.id) - k * GAP;
       const before = c.d;
-      if (c.d < want) c.d = Math.min(want, c.d + SPEED * dt);
+      if (c.d < want) c.d = advanceBeltDistance(c.d, want, SPEED * dt, cargoBlocked);
       if (before < want - 0.5 && c.d >= want - 0.5 && k === 0) bus.emit({ type: "crate-arrive", stop: s.id, id: it.id });
     });
     crates.forEach((c, id) => {
@@ -335,15 +349,18 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     }
     cx.globalAlpha = 1;
   }
+  function blockedZones(v: DeckView) {
+    return v.stops.filter((s) => s.built && (s.state === "jammed" || s.id === v.jam)).map((s) => {
+      const i = STOPS.indexOf(s.id), x = STOP_X[s.id];
+      const left = i > 0 ? (STOP_X[STOPS[i - 1]] + x) / 2 : x - 200;
+      const right = i < STOPS.length - 1 ? (x + STOP_X[STOPS[i + 1]]) / 2 : x + 200;
+      return { left: Math.min(left, x - s.items.length * GAP - 60), right };
+    });
+  }
   function belt(v: DeckView) {
     const segs = islandUp ? SEGS : SEGS.slice(0, 1);
     if (px) {
-      const blocked = v.stops.filter((s) => s.built && (s.state === "jammed" || s.id === v.jam)).map((s) => {
-        const i = STOPS.indexOf(s.id), x = STOP_X[s.id];
-        const left = i > 0 ? (STOP_X[STOPS[i - 1]] + x) / 2 : x - 200;
-        const right = i < STOPS.length - 1 ? (x + STOP_X[STOPS[i + 1]]) / 2 : x + 200;
-        return { left: Math.min(left, x - s.items.length * GAP - 60), right };
-      });
+      const blocked = blockedZones(v);
       const blockedAt = (x: number) => blocked.some((zone) => x >= zone.left && x <= zone.right);
       for (const g of segs) pd.beltRun(cx, g.ax, g.ay, g.bx, g.by, islandUp ? g.len : Math.min(g.len, deckEnd() - 100 - g.ax), t, SPEED * 0.35, blockedAt);
       return;
@@ -375,7 +392,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     const bob = 0; // calm: working stations don't jitter; the belt and crates show the work
     const L = LOOK[id];
     cx.globalAlpha = Math.min(1, drop[id] * 3);
-    if (px && drawStation) drawStation(cx, id, s.state, t, STOP_X[id], BELT_Y + L.drop + fall);
+    if (px && drawStation) drawStation(cx, id, v.jam === id ? "jammed" : s.state, t, STOP_X[id], BELT_Y + L.drop + fall);
     else put(`${id}-${s.state}`, STOP_X[id], BELT_Y + L.drop + fall + bob, L.h);
     cx.globalAlpha = 1;
     if (s.state === "jammed") {
