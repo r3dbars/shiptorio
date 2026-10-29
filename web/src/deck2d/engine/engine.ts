@@ -361,12 +361,15 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   // Justin (10-29): the sky, city and cloud sea were as bright as the deck, so the platform didn't pop. In pixel
   // mode the background pictures are dimmed the pixel-art way: every pixel snaps to its nearest palette color, then
   // steps darker on that color's own ramp (dim.ts: DIM shades, one more on the long sun ramp, whose steps are small),
-  // so hues and detail stay and only the brightness drops. Done once per picture and cached; ?px=0 keeps the old
-  // bright pictures.
+  // so hues and detail stay and only the brightness drops. scripts/art/dim-sky.py bakes it into <name>-dim.webp so the
+  // first frame doesn't spend ~1.5s on a phone doing it; without that file it's done here once and cached. ?px=0 keeps
+  // the old bright pictures.
   const darker = new Map<number, number>();
   const dimmed = new Map<string, HTMLCanvasElement>();
   function dimArt(name: string): HTMLCanvasElement | HTMLImageElement | null {
-    const im = img(name); if (!im || !px) return im;
+    if (!px) return img(name);
+    const baked = img(`${name}-dim`); if (baked) return baked;
+    const im = img(name); if (!im) return null;
     let c = dimmed.get(name);
     if (!c) {
       c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = im.naturalHeight;
