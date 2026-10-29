@@ -1,5 +1,5 @@
-import { expect, test } from 'bun:test';
-import { deckSignedIn, oneAsk, setupFromStations, storyBeforeSignIn } from '../src/deck2d/main';
+import { describe, expect, mock, test } from 'bun:test';
+import { deckSignedIn, freshStart, oneAsk, setupFromStations, storyBeforeSignIn } from '../src/deck2d/main';
 import { createStory } from '../src/deck2d/story';
 import { createConnections } from '../src/deck2d/data/connections';
 
@@ -76,4 +76,36 @@ test('one question at a time: while a card asks, only its station glows', () => 
   expect(oneAsk({ ...view, card: null }).attention).toEqual(['repo', 'review', 'gate']); // no card: the view is untouched
   const single = { ...view, attention: ['review'] };
   expect(oneAsk(single)).toBe(single);
+});
+
+describe("?fresh=1 replays the first run (staging only)", () => {
+  const store = (init: Record<string, string>) => {
+    const data = new Map(Object.entries(init));
+    return Object.assign(Object.create(null), Object.fromEntries(data), {
+      removeItem(k: string) { data.delete(k); delete (this as Record<string, unknown>)[k]; }, clear() { data.clear(); },
+      has: (k: string) => data.has(k), size: () => data.size,
+    });
+  };
+  const loc = (hostname: string, search = "?fresh=1") => ({ hostname, search, pathname: "/deck", replace: mock((_: string) => {}) });
+
+  test("on shiptorio.dev it forgets shiptorio keys, signs out and reloads as a guest", async () => {
+    const local = store({ "shiptorio.sound": "{}", "shiptorio.deck.shippedToday": "3", "other": "keep" });
+    const session = store({ "shiptorio:chunk-reloaded": "1" });
+    const request = mock(async () => new Response(null));
+    const where = loc("shiptorio.dev");
+    expect(await freshStart(where, local as unknown as Storage, session as unknown as Storage, request as unknown as typeof fetch)).toBe(true);
+    expect(local.has("shiptorio.sound") || local.has("shiptorio.deck.shippedToday")).toBe(false);
+    expect(local.has("other")).toBe(true);
+    expect(session.size()).toBe(0);
+    expect((request.mock.calls[0] as unknown[])[0]).toBe("/auth/logout");
+    expect(where.replace).toHaveBeenCalledWith("/deck?source=live");
+  });
+
+  test("does nothing on shiptorio.com or without the flag", async () => {
+    const local = store({ "shiptorio.sound": "{}" }), request = mock(async () => new Response(null));
+    for (const where of [loc("shiptorio.com"), loc("www.shiptorio.com"), loc("shiptorio.dev", "?source=live")])
+      expect(await freshStart(where, local as unknown as Storage, local as unknown as Storage, request as unknown as typeof fetch)).toBe(false);
+    expect(local.has("shiptorio.sound")).toBe(true);
+    expect(request).not.toHaveBeenCalled();
+  });
 });
