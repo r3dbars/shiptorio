@@ -1058,3 +1058,16 @@ it("a confirmed merged PR still reconciles when its item was refreshed during th
     expect(f.saved().science.red).toBe(1);
   }finally{release.resolve();globalThis.fetch=original;}
 });
+
+it("an idle tick writes the snapshot once and leaves unchanged cards and deck book alone", async () => {
+  const f = fixture();
+  const storage = (f.factory as unknown as { ctx: { storage: { put(key: string, value: unknown): Promise<void> } } }).ctx.storage;
+  const put = storage.put.bind(storage), keys: string[] = [];
+  storage.put = async (key, value) => { keys.push(key); return put(key, value); };
+  await f.factory.alarm();
+  keys.length = 0;
+  for (let i = 0; i < 3; i++) await f.factory.alarm();
+  expect(keys.filter(k => k === "state")).toHaveLength(3);
+  expect(keys.filter(k => k === "openMoves" || k === "deckBook")).toEqual([]);
+  expect(f.saved().tick).toBe(4);
+});
