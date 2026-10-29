@@ -157,7 +157,8 @@ async function ghRequest<T>(path: string, token: string, init: RequestInit = {})
     && !(init as RequestInit & { cache?: string }).cache && !headers.has("if-none-match") && !headers.has("if-modified-since")
     && !headers.has("range") && !headers.has("cache-control");
   if (!shared) return queuedGhRequest<T>(path, token, init);
-  const key = await readCache.key(fingerprint, `inflight:${readGenerations.get(generationKey)}`, path, headers);
+  const identity = JSON.stringify(["inflight", readGenerations.get(generationKey), owner?.env.GITHUB_APP_ID, owner?.installationId, owner?.version, owner?.scope]);
+  const key = await readCache.key(fingerprint, identity, path, headers);
   let pending = pendingReads.get(key);
   if (!pending) {
     // The ordinary queue/deadline still bounds the work; avoid retaining an
