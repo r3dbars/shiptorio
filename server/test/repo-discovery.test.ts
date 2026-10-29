@@ -15,7 +15,7 @@ async function setup() {
 
 test("a failed permission lookup is a retryable error, never a misleading empty repository list", async () => {
   const f = await setup(), realBatch = f.env.DB.batch.bind(f.env.DB);
-  f.env.DB.batch = (async () => [{ success: false, results: [] }, { success: false, results: [] }, { success: false, results: [] }]) as any;
+  f.env.DB.batch = (async (statements: any[]) => statements[0].sql.startsWith("SELECT u.id") ? realBatch(statements) : [{ success: false, results: [] }, { success: false, results: [] }, { success: false, results: [] }]) as any;
   const failed = await f.get();
   expect(failed.status).toBe(503);
   expect(failed.headers.get("retry-after")).toBe("5");
@@ -35,7 +35,8 @@ test("real membership revocation still removes a repository without an outage er
 
 test("discovery failures never expose internal exception details", async () => {
   const f = await setup();
-  f.env.DB.batch = (async () => { throw Error("private-database-detail"); }) as any;
+  const realBatch = f.env.DB.batch.bind(f.env.DB);
+  f.env.DB.batch = (async (statements: any[]) => { if (statements[0].sql.startsWith("SELECT u.id")) return realBatch(statements); throw Error("private-database-detail"); }) as any;
   const response = await f.get();
   expect(response.status).toBe(503);
   const text = await response.text();

@@ -9,11 +9,12 @@ async function fixture(login = "player", id = 37) {
   return { env, cookie };
 }
 
+// Exercise the compatibility path for lightweight adapters without D1 batch.
 test("fresh admission starts while this request's fresh revocation read is pending", async () => {
   const { env, cookie } = await fixture();
   const real = env.DB, revocationStarted = deferred(), release = deferred(), admissionRelease = deferred();
   let admitted = false, sessions = 0;
-  env.DB = { ...real, prepare(sql: string) {
+  env.DB = { ...real, batch: undefined, prepare(sql: string) {
     const statement = real.prepare(sql);
     return { ...statement, bind(...args: unknown[]) {
       const bound = statement.bind(...args);
@@ -24,7 +25,7 @@ test("fresh admission starts while this request's fresh revocation read is pendi
         return bound.first();
       } };
     } };
-  } } as D1Database;
+  } } as unknown as D1Database;
   let settled = false;
   const lookup = currentUser(env, cookie).then(user => { settled = true; return user; });
   try {
@@ -51,10 +52,10 @@ test("revocation and admission changes are checked on every call, with no author
 
 test("admission errors fail closed, while known revocation retains precedence over admission errors", async () => {
   const { env, cookie } = await fixture(), real = env.DB;
-  env.DB = { ...real, prepare(sql: string) {
+  env.DB = { ...real, batch: undefined, prepare(sql: string) {
     if (!sql.startsWith("SELECT enabled")) return real.prepare(sql);
     return { bind: () => ({ first: async () => { throw Error("admission unavailable"); } }) };
-  } } as D1Database;
+  } } as unknown as D1Database;
   await expect(currentUser(env, cookie)).rejects.toThrow("admission unavailable");
   await real.prepare("INSERT INTO github_authorization_revocations(login,revoked_at) VALUES (?,?)").bind("player", Date.now()+1).run();
   expect(await currentUser(env, cookie)).toBeNull();
@@ -75,9 +76,9 @@ test("pending sign-in skips admission only when explicitly requested, and tester
 test("a revocation lookup error keeps its original precedence over an admission denial", async () => {
   const { env, cookie } = await fixture(), real = env.DB;
   await real.prepare("INSERT INTO signup_allowlist(login,enabled,approved_by,updated_at) VALUES (?,0,'fixture',0)").bind("player").run();
-  env.DB = { ...real, prepare(sql: string) {
+  env.DB = { ...real, batch: undefined, prepare(sql: string) {
     if (!sql.includes("github_authorization_revocations")) return real.prepare(sql);
     return { bind: () => ({ first: async () => { throw Error("revocation unavailable"); } }) };
-  } } as D1Database;
+  } } as unknown as D1Database;
   await expect(currentUser(env, cookie)).rejects.toThrow("revocation unavailable");
 });
