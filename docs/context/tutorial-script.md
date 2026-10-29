@@ -20,7 +20,7 @@ the model is named once through `CREDIT` ("powered by Meta Muse Spark"). Guard: 
 | 5 | Deck (wide) | walking | | Software is a factory. / Ideas go in one end. Shipped code comes out the other. | Show me |
 | 6 | Repo (mid) | weld | Repo | This is Repo. / Your GitHub issues land here. | Next |
 | 7 | Planner (mid) | weld | Planner | Planner. / I read an issue and write a short plan. | Next |
-| 8 | Engine (mid) | carry | steam engine | This steam engine powers the whole line. / Sign in with your own Codex or Claude here to run it. | Next |
+| 8 | Engine (mid) | carry | steam engine | This steam engine powers the whole line. / Sign in with your own Codex or Muse Code to run it. | Next |
 | 9 | Builder (mid) | weld | Builder, deck grows to medium | Builder. / Codex writes the code, on your computer. | Next |
 | 10 | Checks (mid) | weld | Checks | Checks. / Your tests run here. Broken code stops. | Next |
 | 11 | Review (mid) | weld | Review, deck grows to large | Review. / A second look before anything ships. | Next |
@@ -35,5 +35,5 @@ Notes for wiring:
 - A build plays to the end before its card can be swiped (one thing moves at a time).
 - Card 15 is the only one that ships code, so it needs a held press or a full swipe. For a guest it ships the sample
   PR; with a real repo it's the real one.
-- Card 8 names only the agents the runner can drive today (Codex, Claude Code). Muse Code joins the line once the
-  Muse Code harness runs a real job (say "Muse Code account", not "subscription").
+- Card 8 names Codex and Muse Code (Justin, 2026-10-29). Never name Claude in player text. The Muse Code engine in
+  the runner is being built in thread "Let the steam engine run on Meta's coding agent".
