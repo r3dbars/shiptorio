@@ -66,3 +66,18 @@ The live test exposed a case mismatch: GitHub's `r3dbars/Testing` assignment was
 Staging still had 44 active factory records from the initial all-repositories installation after access was narrowed to Testing. Those records were paused using audited staging controls to stop background GitHub contention; Testing remained active. Durable installation reconciliation and smoother live card updates still need follow-up. No production runner or production factory was changed.
 
 Test issue #25 was closed after the inbox-only check passed. The unused single-file smoke test #26 was closed as superseded by the real README test. Neither was built or shipped.
+
+## Live conveyor presentation — 2026-10-29
+
+The live deck now places unstarted issues in a compact intake pile before Repo. Choosing **Start issue** requests a real Codex plan; a separate **Start build** card approves execution. One labeled item follows the reported pipeline, and changes from its issue number to its real PR number. Presentation arrival events only pace the drawing: they cannot start a job, approve a review, or merge code. Reconnecting starts at the current real stage rather than inventing work history. The rocket waits for GitHub's confirmed merge and the crate's arrival at Launch.
+
+Runner polling no longer holds the Durable Object's exclusive lock while preparing player cards. This addresses the observed staging lock timeout that interrupted the README PR's independent review. Pairing and job leases are still checked inside the claim lock.
+
+Local verification includes the real live-source renderer driven by validated protocol fixtures, plus a manual in-app-browser walkthrough of the isolated conveyor demo: intake, moving labeled crate, red stopped bay, recovery, review, gate and launch. These fixtures prove presentation and interaction behavior; they do not prove a new GitHub merge or deployed acceptance. Testing PR #27 is still reserved for the player's final Ship action.
+
+Player check:
+- Open Repo inbox and choose one issue; the remaining boxes stay before Repo.
+- Watch its number travel to Planner, then approve **Start build** after reading the plan.
+- Watch the same item become its real PR number at Checks, then reach Review and Gate.
+- At Gate, inspect the evidence. A short tap must not merge; hold **Ship it** only when ready.
+- Confirm the rocket launches after GitHub confirms the merge.

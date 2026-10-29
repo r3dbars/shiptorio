@@ -5,9 +5,9 @@ import { runnerInstallCommand } from '../../runner-install';
 type Repo = { fullName: string };
 type Issue = { id: number; number: number; title: string; body: string };
 type Pane = 'repos' | 'issues' | 'power' | 'setup' | 'disconnect';
-type Options = { repo?: string; origin: string; path: string; fetch?: typeof fetch; navigate: (url: string) => void; copy: (text: string) => Promise<void>; now?: () => number };
+type Options = { repo?: string; origin: string; path: string; fetch?: typeof fetch; navigate: (url: string) => void; copy: (text: string) => Promise<void>; onStart?: (id: string) => void; now?: () => number };
 
-/** Connection/inbox cards only. No choose_move, job, triage or merge commands. */
+/** Browsing is read-only. Starting one issue requests a plan; a separate card approves the build. */
 export function createConnections(o: Options) {
   const request = o.fetch ?? fetch, now = o.now ?? Date.now;
   let pane: Pane | null = null, revision = 0, displayRevision = 0, busy = false, refreshing = false, error = '', login = false;
@@ -18,6 +18,7 @@ export function createConnections(o: Options) {
   async function json<T>(url: string, init?: RequestInit): Promise<T> {
     const response = await request(url, { cache: 'no-store', ...init });
     if (!response.ok) {
+      if (response.status === 409) { const body = await response.json(); throw new Error(body.error || 'Finish the current work before starting another issue.'); }
       if (response.status === 429) throw new Error(`GitHub is taking a short pause. Try again in ${response.headers.get('retry-after') || 'a few'} seconds.`);
       if (response.status === 401) {
         login = true;
@@ -51,6 +52,7 @@ export function createConnections(o: Options) {
     finally { if (current === revision) { busy = false; refreshing = false; nextPoll = now() + 5000; } }
   }
   function open(target: 'repo' | 'power') {
+    if (pane === (target === 'repo' ? 'issues' : 'power') && !busy) { pane = null; revision++; return; }
     revision++; busy = false; refreshing = false; error = ''; login = false; index = 0; page = 1;
     pane = !repo ? 'repos' : target === 'repo' ? 'issues' : 'power';
     void refresh();
@@ -66,8 +68,8 @@ export function createConnections(o: Options) {
       yes = r ? 'Use this repo' : nextPage ? 'More repos' : 'Connect GitHub'; no = r && (repos.length > 1 || nextPage || page > 1) ? 'Next repo' : 'Close';
     } else if (pane === 'issues') {
       const issue = issues[index]; title = issue ? `#${issue.number}: ${issue.title}` : 'No open issues on this page';
-      line = issue ? `Shippy: ${repo} · Issue ${index + 1} of ${issues.length}. ${issue.body.slice(0, 180) || 'No description provided.'} Browsing does not start work.` : `Shippy: ${repo}. Refresh to check for new issues.`;
-      yes = issue ? index + 1 < issues.length ? 'Next issue' : nextPage ? 'More issues' : 'Refresh' : nextPage ? 'More issues' : 'Refresh';
+      line = issue ? `Shippy: ${repo} · Issue ${index + 1} of ${issues.length}. ${issue.body.slice(0, 180) || 'No description provided.'} Choose Start issue to ask Shippy for a plan. You approve the plan before Codex builds.` : `Shippy: ${repo}. Refresh to check for new issues.`;
+      yes = issue ? 'Start issue' : nextPage ? 'More issues' : 'Refresh'; no = issue ? 'Next issue' : 'Close';
     } else if (pane === 'setup') {
       title = copied ? 'Setup command copied' : 'Connect your Codex subscription';
       line = `Shippy: Run this on your computer: ${command} Setup opens Codex sign-in if needed. Keep that terminal open. Your sign-in stays on your computer.`;
@@ -92,7 +94,11 @@ export function createConnections(o: Options) {
       if (login) return true;
     }
     if (!approve) {
-      if (pane === 'repos' && (repos.length > 1 || nextPage || page > 1)) {
+      if (pane === 'issues' && !error) {
+        if (index + 1 < issues.length) { index++; revision++; }
+        else { page = nextPage ?? 1; await refresh(); }
+      }
+      else if (pane === 'repos' && (repos.length > 1 || nextPage || page > 1)) {
         if (index + 1 < repos.length) { index++; revision++; }
         else { page = nextPage ?? 1; index = 0; await refresh(); }
       }
@@ -116,8 +122,14 @@ export function createConnections(o: Options) {
         finally { if (generation === revision) busy = false; }
       }
     } else if (pane === 'issues') {
-      if (index + 1 < issues.length) { index++; revision++; }
-      else { page = nextPage ?? 1; await refresh(); }
+      const issue = issues[index];
+      if (!issue) { page = nextPage ?? 1; await refresh(); return true; }
+      busy = true;
+      try {
+        await json(`${api}/issues/${issue.number}/start`, { method: 'POST' });
+        if (generation === revision) { o.onStart?.(`gh-${issue.number}`); pane = null; revision++; }
+      } catch (e) { if (generation === revision) error = e instanceof Error ? e.message : 'Could not start this issue.'; }
+      finally { busy = false; }
     } else if (pane === 'power' && !status?.paired) {
       busy = true;
       try {

@@ -1,6 +1,6 @@
 import { createConnections } from "./data/connections";
 import "./deck.css";
-import { SPRITES, createBus, type AttachJuice, type CreateLayer, type CreateShippy, type DeckLayer, type DeckSource, type MountCard } from "./contract";
+import { SPRITES, createBus, type StopId, type AttachJuice, type CreateLayer, type CreateShippy, type DeckLayer, type DeckSource, type MountCard } from "./contract";
 import { createArt } from "./engine/art";
 import { createDemo, createOrbDemo, createLaunchDemo } from "./engine/demo";
 import { createEngine } from "./engine/engine";
@@ -35,6 +35,7 @@ const seed = Number(params.get("seed")) || 0;
   const connections = createConnections({
     repo: params.get("repo") || undefined, origin: location.origin, path: location.pathname + location.search,
     navigate: url => { location.href = url; }, copy: text => navigator.clipboard.writeText(text),
+    onStart: id => (source as DeckSource & { focusItem?: (id: string) => void }).focusItem?.(id),
   });
   let source: DeckSource;
   const want = params.get("source");
@@ -65,6 +66,10 @@ const seed = Number(params.get("seed")) || 0;
   else if (want !== "demo" && story?.createStory) source = (story.createStory as (o: { seed: number; speed: number }) => DeckSource)({ seed, speed });
   else source = createDemo();
 
+  bus.on(event => {
+    if (event.type === 'crate-arrive') (source as DeckSource & { arrive?: (id: string, stop: StopId) => void }).arrive?.(event.id, event.stop);
+  });
+
   const shippy = ((shippyMod?.createShippy as CreateShippy | undefined) ?? fallbackShippy)(art);
   const cv = document.getElementById("world") as HTMLCanvasElement;
   const layers: DeckLayer[] = [];
@@ -75,7 +80,7 @@ const seed = Number(params.get("seed")) || 0;
     const button = document.createElement("button"); button.type = "button"; button.textContent = label;
     button.onclick = () => connections.open(target); connectionTools.append(button);
   }
-  document.body.append(connectionTools);
+  if (!want?.endsWith("-demo")) document.body.append(connectionTools);
   if (want === "live" && !params.has("repo")) connections.open("repo");
   const engine = createEngine(cv, art, bus, shippy, layers, { onPowerSelect: () => connections.open("power"), onMachineSelect: id => {
     if (id === "repo" && !want?.endsWith("-demo")) { connections.open("repo"); return; }
@@ -85,7 +90,6 @@ const seed = Number(params.get("seed")) || 0;
   } });
   let updateConveyorControls: (() => void) | undefined;
   if (conveyor) {
-    bus.on(event => { if (event.type === "crate-arrive") conveyor.arrive(event.id, event.stop); });
     const controls = document.createElement("div"); controls.className = "shippy-tools";
     const pause = document.createElement("button"), block = document.createElement("button"), replay = document.createElement("button");
     pause.type = block.type = replay.type = "button";
@@ -143,6 +147,11 @@ const seed = Number(params.get("seed")) || 0;
     }
     connections.tick();
     const view = connections.view(inspector.view(source.view()));
+    const work = (view as import('./data/view').LiveDeckView).work;
+    cv.dataset.workId = work?.id ?? '';
+    cv.dataset.workStop = work?.stop ?? '';
+    cv.dataset.workMoving = String(!!(view as import('./data/view').LiveDeckView).followItem);
+    cv.setAttribute('aria-label', work ? `${work.badge}: ${work.title}. ${view.caption ?? ''}` : view.caption ?? 'Shiptorio factory deck');
     engine.frame(view, dt);
     card.show(view.card);
     if (view.caption !== caption) { caption = view.caption; if (caption) toast.textContent = caption; }

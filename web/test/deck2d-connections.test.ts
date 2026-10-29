@@ -13,15 +13,28 @@ function setup(responses: unknown[], repo: string | undefined = 'owner/repo') {
 test('browse real issues without starting work; refresh does not accumulate duplicates', async () => {
   const issues = { issues: [{ id: 1, number: 101, title: 'Fix cart', body: 'Real issue' }, { id: 2, number: 102, title: 'Fix checkout', body: '' }], nextPage: null };
   const f = setup([issues, issues]); f.ui.open('repo'); await settle();
-  expect(f.ui.card()?.title).toBe('#101: Fix cart'); await f.yes(); expect(f.ui.card()?.title).toBe('#102: Fix checkout');
-  await f.yes(); expect(f.ui.card()?.title).toBe('#101: Fix cart');
+  expect(f.ui.card()?.title).toBe('#101: Fix cart'); await f.no(); expect(f.ui.card()?.title).toBe('#102: Fix checkout');
+  await f.no(); expect(f.ui.card()?.title).toBe('#101: Fix cart');
   expect(f.calls).toEqual([{ url: '/api/repos/owner/repo/issues?page=1', method: 'GET' }, { url: '/api/repos/owner/repo/issues?page=1', method: 'GET' }]);
-  await f.no(); expect(f.ui.card()).toBeNull();
+  f.ui.open('repo'); expect(f.ui.card()).toBeNull();
 });
 test('empty pages can advance, and empty inbox is clearly different from error', async () => {
   const f = setup([{ issues: [], nextPage: 2 }, { issues: [], nextPage: null }]);
   f.ui.open('repo'); await settle(); expect(f.ui.card()?.yes).toBe('More issues'); await f.yes();
   expect(f.calls[1].url).toEndWith('page=2'); expect(f.ui.card()?.title).toContain('No open issues');
+});
+test('starting the selected issue requests only its plan, once, then returns to the live deck', async () => {
+  const f = setup([{issues:[{id:1,number:16,title:'README',body:''}],nextPage:null},{jobId:'planned'}]);
+  f.ui.open('repo'); await settle();
+  expect(f.ui.card()?.yes).toBe('Start issue');
+  await f.yes();
+  expect(f.calls).toEqual([{url:'/api/repos/owner/repo/issues?page=1',method:'GET'},{url:'/api/repos/owner/repo/issues/16/start',method:'POST'}]);
+  expect(f.ui.card()).toBeNull();
+});
+test('an existing PR blocks another start and tells the player which work to finish', async () => {
+  const f=setup([{issues:[{id:1,number:16,title:'README',body:''}],nextPage:null},Response.json({error:'Finish PR #27 before starting another issue.'},{status:409})]);
+  f.ui.open('repo');await settle();await f.yes();
+  expect(f.ui.card()?.line).toContain('Finish PR #27');
 });
 test('repository selection explicitly enters live mode and never starts a job', async () => {
   const f = setup([{ repos: [{ fullName: 'alice/a' }, { fullName: 'bob/b' }] }], '');

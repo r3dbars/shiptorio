@@ -7,7 +7,8 @@ export function beltConnectionAt(x: number) {
 
 /** Stop approaching cargo at a blocked bay; resume from that point when it clears. */
 export function advanceBeltDistance(from: number, to: number, distance: number, blocked: (at: number) => boolean) {
-  const next = Math.min(to, from + distance);
-  for (let at = from; at < next; at += ART_PX) if (blocked(at)) return at;
-  return blocked(next) ? Math.max(from, next - ART_PX) : next;
+  const direction = Math.sign(to - from);
+  const next = from + direction * Math.min(Math.abs(to - from), distance);
+  for (let at = from; Math.abs(at - from) < Math.abs(next - from); at += ART_PX * direction) if (blocked(at)) return at;
+  return blocked(next) ? next - direction * Math.min(ART_PX, Math.abs(next - from)) : next;
 }

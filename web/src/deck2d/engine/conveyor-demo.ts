@@ -21,13 +21,15 @@ export function createConveyorDemo() {
     step(dt) {
       if (!demo.paused && !blocked && phase === "work" && (age += dt) >= (station === 2 ? 4 : 2.5)) move();
     },
-    view(): AttentionView & { followItem?: string } {
+    view(): AttentionView & { followItem?: string; intake?: { id: string; look: 'plain' }[]; work?: { id: string; title: string; stop: StopId; badge: string; status: string } } {
       const stop = STOPS[station], pr = station >= 3, waiting = ["ready", "review", "gate"].includes(phase);
       const badge = pr ? "PR301" : "#101";
       return {
+        intake: Array.from({length: phase === 'ready' ? 8 : 7},(_, i)=>({id:`queued-${i}`,look:'plain' as const})),
+        work: phase === 'ready' || phase === 'done' ? undefined : { id: issue(), title:'Fix checkout retries', stop, badge, status:phase },
         stops: STOPS.map(id => ({ id, built: true, automated: false,
           state: id === stop ? blocked ? "jammed" : phase === "work" ? "working" : "idle" : "idle",
-          items: id === stop && phase !== "ready" && phase !== "done" ? [{ id: issue(), title: "Fix checkout retries", look: blocked ? "bad" : pr ? "ok" : "plain", badge, spawnAt: "repo" }] : [],
+          items: id === stop && phase !== "ready" && phase !== "done" ? [{ id: issue(), title: "Fix checkout retries", look: blocked ? "bad" : pr ? "ok" : "plain", badge, spawnAt: "repo", fromIntake:true }] : [],
         })),
         followItem: phase === "travel" && !blocked ? issue() : undefined,
         focus: phase !== "done" ? stop : undefined,

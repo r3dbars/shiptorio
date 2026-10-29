@@ -32,7 +32,7 @@ const SPEED = 170, GAP = 50, CRATE = 42;
 const LEVER = DECK_DX ? { x: STOP_X.review + 92, base: 330, h: 78 } : { x: STOP_X.review + 92, base: FLOOR_Y + 48, h: 78 };
 
 // The belt: along the deck, down onto the bridge, out to the launch circle.
-const PATH: [number, number][] = [[STOP_X.repo + 60, BELT_Y], [1915 + DECK_DX, BELT_Y], [1995 + DECK_DX, BRIDGE_Y], [STOP_X.launch - 130, BRIDGE_Y], [STOP_X.launch - 34, LAUNCH_Y]];
+const PATH: [number, number][] = [[STOP_X.repo - 260, BELT_Y], [1915 + DECK_DX, BELT_Y], [1995 + DECK_DX, BRIDGE_Y], [STOP_X.launch - 130, BRIDGE_Y], [STOP_X.launch - 34, LAUNCH_Y]];
 const SEGS: { ax: number; ay: number; bx: number; by: number; len: number; at: number; a: number }[] = [];
 let PATH_LEN = 0;
 for (let i = 1; i < PATH.length; i++) {
@@ -235,9 +235,9 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     for (const s of v.stops) s.items.forEach((it, k) => {
       seen.add(it.id);
       let c = crates.get(it.id);
-      const item = it as Item & { badge?: string; spawnAt?: StopId };
+      const item = it as Item & { badge?: string; spawnAt?: StopId; fromIntake?: boolean };
       if (!c) {
-        const start = stopD(item.spawnAt ?? s.id) - k * GAP;
+        const start = item.fromIntake ? stopD("repo") - 130 : stopD(item.spawnAt ?? s.id) - k * GAP;
         c = { id: it.id, d: start, previousD: start, look: it.look, stop: s.id, fade: 1, moving: false }; crates.set(it.id, c);
       }
       if (c.stop !== s.id) { c.stop = s.id; }
@@ -246,9 +246,9 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
       const want = stopD(s.id) - k * GAP;
       const before = c.d;
       c.previousD = before;
-      if (c.d < want) c.d = advanceBeltDistance(c.d, want, SPEED * dt, cargoBlocked);
-      c.moving = c.d > before;
-      if (before < want - 0.5 && c.d >= want - 0.5 && k === 0) bus.emit({ type: "crate-arrive", stop: s.id, id: it.id });
+      if (c.d !== want) c.d = advanceBeltDistance(c.d, want, SPEED * dt, cargoBlocked);
+      c.moving = c.d !== before;
+      if (Math.abs(before - want) > 0.000001 && Math.abs(c.d - want) <= 0.000001 && k === 0) bus.emit({ type: "crate-arrive", stop: s.id, id: it.id });
     });
     crates.forEach((c, id) => {
       if (seen.has(id)) return;
@@ -528,9 +528,22 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     belt(v);
     slot("line");
     rocketDraw();
+    const live = v as DeckView & { intake?: (Item & { badge?: string })[]; work?: { id: string; stop: StopId; badge: string } };
+    if (px && live.intake?.length) {
+      const stack = [[0,0],[-65,0],[-130,0],[-30,-45],[-95,-45],[-65,-90]];
+      for (let i = 0; i < Math.min(stack.length, live.intake.length); i++) pd.crate(cx, STOP_X.repo - 135 + stack[i][0], BELT_Y + stack[i][1], 'plain');
+      pd.crateBadge(cx, STOP_X.repo - 200, BELT_Y - 100, String(live.intake.length));
+    }
     crates.forEach(crate);
     for (const id of STOPS) station(v, id);
     slot("stations");
+    if (px && live.work) {
+      const c = crates.get(live.work.id);
+      if (c) {
+        const [x, y] = at(c.d);
+        pd.crateBadge(cx, x, c.moving ? y : live.work.stop === 'launch' ? y : FLOOR_Y - LOOK[live.work.stop].h - 15, c.badge ?? live.work.badge);
+      }
+    }
     leverDraw(v);
     shippy.drawWorld(cx);
     puffsDraw(dt);
