@@ -1,7 +1,7 @@
 import type { Color } from "../stations/palette";
 import { Px } from "../stations/px";
 import { BRASS, GOLD, ball, bezel, blotch, cylV, noise, rivet, strap, tone, type Ramp } from "../stations/shade";
-import { CU, lathe, lit } from "../../bakeoff/boiler2d";
+import { CU, lathe, lit } from "./boiler2d";
 
 // The deck's sides and underside, drawn to match the launch island (Justin, 2026-10-29: "make the bottom of the island
 // for the main factory line match that ... I want the engine to be right in the middle"). The island reads as a heavy

@@ -1,6 +1,6 @@
 // The shaft in the game (?world=shaft): the vertical Black Iron factory driven by the real FactoryState. Same public
 // API as FactoryScene (map/scene.ts), so FactoryMap can swap one for the other. The engine (core.js), the layout
-// (layout.js) and the art (modules/*.js) are the dev harness's (harness.ts); this adds the real driver (driver.ts),
+// (layout.js) and the art (modules/*.js) are shared with the old dev harness; this adds the real driver (driver.ts),
 // a plan read off the real machines (plan.ts), the in-world HUD (hud.ts: chips, item tags, pings, floor buttons),
 // picking, and the game's camera asks (focus, overview, lift), framed by frame.ts.
 //

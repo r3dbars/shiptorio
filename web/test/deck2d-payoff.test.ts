@@ -40,11 +40,14 @@ test("story: only the first ship after a yes, and never during the level-up clim
   p.view(view(0), 0);
   expect(run(p, view(2), PAYOFF.noRocket + 0.1).caption).toBeNull(); // the opening ships carry the story's own words
   phase = "swipe"; p.event({ type: "approve", cardId: "call-1" });
-  expect(run(p, view(3), PAYOFF.noRocket + 0.1).caption).toBe(payoffLine(3));
+  expect(run(p, view(3), PAYOFF.noRocket + 0.1).caption).toBe(payoffLine(1)); // your yes, not the opening ships
   run(p, view(3), PAYOFF.beat);
   expect(run(p, view(5), PAYOFF.noRocket + 0.1).caption).toBeNull(); // one beat per yes, not per crate
+  p.event({ type: "approve", cardId: "call-2" });
+  expect(run(p, view(6), PAYOFF.noRocket + 0.1).caption).toBe(payoffLine(2));
+  run(p, view(6), PAYOFF.beat);
   phase = "automatic"; p.event({ type: "approve", cardId: "call-3" });
-  expect(run(p, view(6), PAYOFF.noRocket + 0.1).caption).toBeNull();
+  expect(run(p, view(7), PAYOFF.noRocket + 0.1).caption).toBeNull();
 });
 
 test("live counts today's ships across visits and starts fresh tomorrow", () => {

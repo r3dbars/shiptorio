@@ -92,13 +92,13 @@ try { for (const [index,view] of views.entries()) {
       });
       await step('story-sign-in',async()=>{await card().getByRole('button',{name:'Sign in',exact:true}).waitFor({timeout:45000});assert.equal(await page.locator('.connection-tools').count(),0);});
     }
-    await step('github-sign-in',async()=>{await card().getByRole('button',{name:'Sign in',exact:true}).click();await card().getByRole('button',{name:'Use this repo',exact:true}).waitFor();signedIn=true;});
-    await step('choose-repository',async()=>{await card().getByRole('button',{name:'Use this repo',exact:true}).click();await page.waitForURL(u=>u.searchParams.get('repo')===stub.state.repo);if(baseline) await page.getByRole('button',{name:'Codex engine',exact:true}).click();await card().getByRole('button',{name:'Set up Codex',exact:true}).waitFor();});
+    // The fixture account has one repo, so signing in opens it with no pick: the next card is the Codex setup.
+    await step('github-sign-in',async()=>{await card().getByRole('button',{name:'Sign in',exact:true}).click();await page.waitForURL(u=>u.searchParams.get('repo')===stub.state.repo);signedIn=true;await card().getByRole('button',{name:'Copy setup',exact:true}).waitFor();});
     let joinTicket;
     await step('codex-setup',async()=>{
       const response=page.waitForResponse(r=>r.request().method()==='POST'&&new URL(r.url()).pathname.endsWith('/runner/join'));
-      await card().getByRole('button',{name:'Set up Codex',exact:true}).click();joinTicket=(await (await response).json()).join;
-      await card().getByRole('button',{name:baseline?'Copy command':'Copy setup',exact:true}).click();await card().getByRole('heading',{name:'Setup command copied',exact:true}).waitFor();
+      await card().getByRole('button',{name:'Copy setup',exact:true}).click();joinTicket=(await (await response).json()).join;
+      await card().getByRole('heading',{name:'Paste it into Terminal',exact:true}).waitFor();
       assert.match(await page.evaluate(()=>navigator.clipboard.readText()),/--join/);
     });
     await step('runner-ready',async()=>{
@@ -108,9 +108,10 @@ try { for (const [index,view] of views.entries()) {
       const beat=()=>context.request.post(origin+`/api/runner/${stub.state.repo}/heartbeat`,{data:{harnesses:['codex']},headers:{origin,authorization:`Bearer ${token}`}});
       const online=await beat();assert.equal(online.ok(),true,await online.text());
       const beating=setInterval(()=>{beat().catch(()=>{});},5000);
-      try{await card().getByRole('button',{name:baseline?'Check again':'Check',exact:true}).click();await card().getByRole('heading',{name:'Codex engine is ready',exact:true}).waitFor();}finally{clearInterval(beating);}
+      // No Check and no Open inbox: the deck notices the runner, builds the rest of the line, then shows the first issue.
+      try{await card().getByRole('button',{name:'Plan',exact:true}).waitFor();}finally{clearInterval(beating);}
     });
-    await step('first-issue-card',async()=>{if(baseline) await page.getByRole('button',{name:'Repo inbox',exact:true}).click();else await card().getByRole('button',{name:'Open inbox',exact:true}).click();await card().getByRole('button',{name:baseline?'Start issue':'Plan',exact:true}).waitFor();assert.match(await card().innerText(),/#1.*Checkout total/);});
+    await step('first-issue-card',async()=>{assert.match(await card().innerText(),/#1.*Checkout total/);});
     assert.ok(Date.now()-started<120000,'first issue must be reached in under two minutes');
     assert.deepEqual(errors,[],'no browser runtime errors');
     assert.ok(!requests.some(p=>p.endsWith('/start')),'browsing must not start a job');

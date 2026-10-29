@@ -1,3 +1,5 @@
+> **Archived 2026-10-29:** Feedback Factory canvas artboards, the very first layout reference. The art is now the 2D pixel deck (../../pixel-deck.md).
+
 # Feedback Factory canvas (layout reference only)
 
 Raw artboards from Justin's "Feedback Factory" Design canvas

@@ -129,3 +129,17 @@ test("the front door's short story ends right after one swipe clears the jam", (
   expect(s.view().stops.find((x) => x.id === "review")!.items).toEqual([]); // the jam fully cleared
   expect(s.view().shipped).toBeGreaterThan(2); // and a crate it held has shipped
 });
+
+test("the three story calls each name a different fix", () => {
+  for (const seed of [1, 2, 3, 7, 42]) {
+    const story = createStory({ seed });
+    const titles: string[] = [];
+    for (let t = 0; t < 600 && titles.length < 3; t += 0.1) {
+      story.step?.(0.1);
+      const card = story.view().card;
+      if (card?.id.startsWith("story-call-") && !titles.includes(card.title)) { titles.push(card.title); story.approve(card.id); }
+    }
+    expect(titles).toHaveLength(3);
+    expect(new Set(titles).size).toBe(3);
+  }
+});

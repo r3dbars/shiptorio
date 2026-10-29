@@ -13,6 +13,7 @@ export function assertSafePrimaryAction(label) {
 // Accept the visible, scoped decision rather than blindly clicking a right button.
 export function fixtureCardIntent(label, title, actionTools = []) {
   const text = label.replace(/[←→]/g, "").trim();
+  if (!text) return "wait";
   assertSafePrimaryAction(text);
   if (/^(Please wait|Loading|Checking)/i.test(text)) return "wait";
   if (text === "Plan" || text === "Start issue") {
@@ -35,4 +36,22 @@ export function fixtureDecisionDeck(previous, message) {
   if (message.type === "move") return [...previous.filter(move => move.id !== message.move.id), message.move];
   if (message.type === "move_resolved") return previous.filter(move => move.id !== message.moveId);
   return message.type === "snapshot" ? [] : previous;
+}
+
+// Capture and activate the same DOM card in one browser evaluation. A new card
+// arriving between probes must never inherit an old action (especially Later).
+export async function activateFixtureCard(card, expected, side = "approve", focus = false) {
+  return card.evaluate((element, { expected, side, focus }) => {
+    const button = element.querySelector(`button.${side}`);
+    const current = {
+      title: element.querySelector(".ic-title")?.textContent ?? "",
+      label: button?.textContent ?? "",
+      hold: element.classList.contains("hold"),
+    };
+    if (!element.isConnected || element.classList.contains("ic-ghost") || !button || button.disabled ||
+        current.title !== expected.title || current.label !== expected.label || current.hold !== expected.hold)
+      return false;
+    if (focus) button.focus(); else button.click();
+    return true;
+  }, { expected, side, focus });
 }

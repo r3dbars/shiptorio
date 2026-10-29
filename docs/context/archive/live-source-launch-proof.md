@@ -1,3 +1,5 @@
+> **Archived 2026-10-29:** Oct 26 live-source proof from the old map loop.
+
 # Live source and launch proof — 2026-10-26
 
 ## Verified source delivery

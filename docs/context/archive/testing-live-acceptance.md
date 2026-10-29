@@ -1,3 +1,5 @@
+> **Archived 2026-10-29:** Oct 26 Testing acceptance record from before the 2D deck.
+
 # Testing real-loop acceptance — 2026-10-26
 
 Status: **historical checkpoint recorded; real-loop acceptance incomplete**.

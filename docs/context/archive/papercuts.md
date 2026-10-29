@@ -1,3 +1,5 @@
+> **Archived 2026-10-29:** one-night paper-cut sweep on the old 3D map (Oct 26).
+
 # Overnight paper-cut sweep
 
 Run: Oct 26, 2026, 9:22–10:08 PM CT. Read-only sweep completed a second rotation with no new functional finding. The fix/merge/deploy loop remains blocked by GitHub billing; deadline was Oct 27, 8:00 AM CT.
