@@ -4,6 +4,7 @@ import { STOPS, type DeckView } from "../src/deck2d/contract";
 import { connectSim } from "../src/sim/engine";
 import type { Source, SourceConfig } from "../src/source";
 import { createLiveSource } from "../src/deck2d/data/source";
+import { createWatchSource, isWatchMode } from "../src/deck2d/data/watch";
 import { deckView, FIRST_LINE, itemStop } from "../src/deck2d/data/view";
 
 const base = (over: Partial<FactoryState> = {}): FactoryState => ({
@@ -19,6 +20,35 @@ const base = (over: Partial<FactoryState> = {}): FactoryState => ({
 const item = (id: string, state: Item["state"], over: Partial<Item> = {}): Item => ({ id, kind: "bug", source: "github_issue", title: id, district: "web", state, attempts: 0, updatedAt: 0, ...over });
 const card = (id: string, tool: string, over: Partial<Move> = {}): Move => ({ id, title: `Approve ${id}?`, why: "", createdAt: 0, options: [{ id: "go", label: "Go", recommended: true, actions: [{ tool, args: {}, reason: "" }] }, { id: "skip", label: "Not now", recommended: false, actions: [] }], ...over });
 const stop = (v: DeckView, id: string) => v.stops.find((x) => x.id === id)!;
+
+test("watch mode is explicitly simulator-only", () => {
+  expect(isWatchMode("?source=sim&watch=1")).toBe(true);
+  expect(isWatchMode("?source=live&watch=1")).toBe(false);
+  expect(isWatchMode("?source=sim")).toBe(false);
+});
+
+test("watch mode builds, fails, repairs, launches, and resets without a click", () => {
+  const src = createWatchSource();
+  const seen = new Set<string>();
+  let repaired = false, launched = false, reset = false;
+  for (let i = 0; i < 2000; i++) {
+    advance(100);
+    src.step?.(0.1);
+    const job = src.state()?.items[0];
+    if (job) seen.add(job.state);
+    if (job?.state === "rejected") expect(src.view().jam).toBe("builder");
+    if (job?.state === "working" && job.attempts > 1) repaired = true;
+    if (src.view().shipped > 0) launched = true;
+    if (launched && src.view().shipped === 0) { reset = true; break; }
+    expect(src.view().card).toBeNull();
+  }
+  src.close();
+  expect([...seen]).toEqual(expect.arrayContaining(["working", "rejected", "inspecting", "launched"]));
+  expect(repaired).toBe(true);
+  expect(launched).toBe(true);
+  expect(reset).toBe(true);
+  expect(timers.size).toBe(0);
+});
 
 describe("the 2D deck's view of a factory", () => {
   test("no state yet: seven dark stops, no card, Shippy folded", () => {

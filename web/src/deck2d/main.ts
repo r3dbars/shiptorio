@@ -5,6 +5,7 @@ import { createDemo, createOrbDemo, createLaunchDemo } from "./engine/demo";
 import { createEngine } from "./engine/engine";
 import { fallbackCard, fallbackShippy } from "./engine/fallbacks";
 import { createShippyRehearsal } from "./shippy/rehearsal";
+import { createWatchSource, isWatchMode } from "./data/watch";
 
 // The 2D deck page (web/deck.html). Wires the engine to a source, the card, Shippy and juice.
 // Each module lives in its own folder and is picked up here when it exists, so threads can land independently.
@@ -30,6 +31,7 @@ const seed = Number(params.get("seed")) || 0;
   const want = params.get("source");
   const rehearsal = want === "shippy-demo" ? createShippyRehearsal() : null;
   if (rehearsal) source = rehearsal;
+  else if (isWatchMode(location.search)) source = createWatchSource();
   else if (want === "launch-demo") source = createLaunchDemo();
   else if (want === "orb-demo") source = createOrbDemo();
   else if ((want === "live" || want === "sim") && data?.createLiveSource) source = await (data.createLiveSource as () => Promise<DeckSource> | DeckSource)();

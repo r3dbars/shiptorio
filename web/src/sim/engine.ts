@@ -525,6 +525,12 @@ export const SCENARIOS = {
   // The 2D deck's story (web/src/deck2d/data/CONTRACT.md): every bug asks before it builds, so you can say yes three
   // times in a row and watch the builder go automatic. Software is a factory, it's waiting on your calls, swipe and it
   // moves, approve twice more and it's automatic.
+  "deck-watch": {
+    districts: SHOP_DISTRICTS,
+    harness: "claude_code",
+    ores: [{ at: 2, title: "Fix checkout on Safari", kind: "bug", district: "checkout",
+      ask: "Build the checkout fix.", failAt: "ci", failFirst: "Checkout test failed. Repair the payment retry before shipping." }],
+  },
   deck2d: {
     districts: SHOP_DISTRICTS,
     harness: "claude_code",
