@@ -94,6 +94,7 @@ export interface DeckView {
     growing?: number; // 0..1 while bolting on the next section
     island: "none" | "building" | "built"; // bridge + rocket island; no rocket until it's built
     islandProgress?: number; // 0..1 while building
+    boiler?: number; // 0..1: the steam engine rising into place (0 = not there yet). Omitted = standing
   };
 }
 

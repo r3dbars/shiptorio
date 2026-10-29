@@ -15,6 +15,8 @@ import { createFirstVisitDemo } from "./stations/first-visit";
 import { createConveyorDemo } from "./engine/conveyor-demo";
 import { createPayoff } from "./payoff";
 import { createFirstRun } from "./data/firstrun";
+import { createTour } from "./story/tour";
+import { shipFeel } from "./story/ship";
 import { askPassword } from "./password";
 import type { AttentionView } from "./stations/attention";
 
@@ -123,15 +125,24 @@ export function oneAsk<V extends DeckView>(view: V): V {
   return { ...view, attention: [card.stop] };
 }
 
-/** Finish the sample loop with the existing connection card, not a second front door. */
-export function storyBeforeSignIn(story: DeckSource, connections: { open(target: "repo"): void; card(): CardView | null }): DeckSource {
-  let finished = false, replay = 0;
+/** Finish the sample loop with the existing connection card, not a second front door.
+ *  ask: the story's own "Want to create your own factory?" card shows first, and only its yes opens sign-in
+ *  (the guest tour: the password comes up there, never before), straight on to the password or GitHub with no second
+ *  card. Closing sign-in brings that card back. */
+export function storyBeforeSignIn(story: DeckSource, connections: { open(target: "repo"): void; card(): CardView | null; answer?(id: string, yes: boolean): unknown }, opts: { ask?: boolean } = {}): DeckSource {
+  let finished = false, replay = 0, asks = 0, asked = false, pressed: string | null = null;
+  const askId = () => `story-connect:ask-${asks}`; // fresh each time it shows, so the card renders it again
   const originalId = (id: string) => !replay ? id : id.endsWith(`:replay-${replay}`) ? id.slice(0, -`:replay-${replay}`.length) : null;
-  return { ...story, approve(id) { const original = originalId(id); if (original) story.approve(original); },
-    later(id) { const original = originalId(id); if (original) story.later(original); }, view() {
+  return { ...story, approve(id) { if (opts.ask && id === askId()) { asked = true; return; } const original = originalId(id); if (original) story.approve(original); },
+    later(id) { if (opts.ask && id === askId()) { asks++; story.later("story-connect"); return; } const original = originalId(id); if (original) story.later(original); }, view() {
     const view = story.view();
     if (view.card?.id !== "story-connect") return replay && view.card ? { ...view, card: { ...view.card, id: `${view.card.id}:replay-${replay}` } } : view;
+    if (opts.ask && !asked) return { ...view, card: { ...view.card, id: askId() } };
     if (!finished) { finished = true; connections.open("repo"); }
+    else if (opts.ask && connections.answer && connections.card()?.yes === "Sign in" && pressed !== `${asks}`) {
+      pressed = `${asks}`; void connections.answer(connections.card()!.id, true); // "Create my factory" was the press
+    }
+    else if (!connections.card() && opts.ask) { finished = false; asked = false; asks++; return { ...view, card: { ...view.card, id: askId() } }; }
     else if (!connections.card()) {
       finished = false; replay++;
       story.later("story-connect"); // Close replays with fresh ids, so the renderer can show the same decisions again.
@@ -178,7 +189,6 @@ const seed = Number(params.get("seed")) || 0;
     onStart: id => (source as DeckSource & { focusItem?: (id: string) => void }).focusItem?.(id),
   });
   let source: DeckSource;
-  let guestStory: { phase(): string } | null = null;
   const rehearsal = want === "shippy-demo" ? createShippyRehearsal() : null;
   const machines = want === "machine-demo" ? createMachineRehearsal() : null;
   const conveyor = want === "conveyor-demo" ? createConveyorDemo() : null;
@@ -208,11 +218,13 @@ const seed = Number(params.get("seed")) || 0;
   }
   else if (want !== "demo" && story?.createStory) {
     // A guest at the live front door gets the short version: one swipe, it clears, then Shippy and sign-in.
-    const run = (story.createStory as (o: { seed: number; speed: number; swipes?: number }) => DeckSource & { phase(): string })({ seed, speed, swipes: want === "live" ? 1 : undefined });
-    if (want === "live") guestStory = run;
-    source = storyBeforeSignIn(run, connections);
+    // A guest at the live front door meets Shippy: a small deck, the story told in the card at their pace, each
+    // station built and named, then one fix shipped. /deck.html keeps the jam-and-swipe story for the video.
+    source = want === "live" ? storyBeforeSignIn(shipFeel(createTour(), bus), connections, { ask: true })
+      : storyBeforeSignIn((story.createStory as (o: { seed: number; speed: number }) => DeckSource)({ seed, speed }), connections);
   }
   else source = createDemo();
+  const guestTour = want === "live" && !signedIn;
 
   const liveState = (source as DeckSource & { state?: () => import("@shiptorio/shared").FactoryState | null }).state;
   // Live only; ?source=sim&away=5h or ?source=replay&away=5h shows it for rehearsals and the video.
@@ -236,14 +248,14 @@ const seed = Number(params.get("seed")) || 0;
   for (const f of ["grow", "build", "launch", "juice", "props"]) { const m = await load(f, "createLayer"); if (m) layers.push((m.createLayer as CreateLayer)(art, bus)); }
   const inspector = createMachineInteraction(machines ? id => { if (id === machines.machine) machines.setMode("working"); } : undefined);
   if (want === "live" && signedIn && !params.has("repo")) connections.open("repo");
-  // The live first run: a guest feels one swipe on the sample, Shippy says hi, then sign in. After that, picking a
-  // repo and connecting Codex each build the next stations, one at a time, with one plain line each.
+  // The live first run after sign-in (the guest already met Shippy in the tour): picking a repo and connecting Codex
+  // each build the next stations, one at a time, with one plain line each.
   // New accounts only (no repo yet, or the onboarding hand-off); ?firstrun=1 replays it.
   const repo = signedIn ? params.get("repo") ?? "" : "";
   if (params.get("firstrun") === "1") try { for (const k of ["", repo]) localStorage.removeItem(`shiptorio:firstrun:${k}`); } catch { /* private mode */ }
   const firstRun = want === "live" && (!repo || params.get("onboard") === "codex" || params.has("firstrun")) ? createFirstRun({
     key: repo, store: (() => { try { return localStorage; } catch { return undefined; } })(),
-    stage: () => !signedIn ? (guestStory?.phase() === "end" ? "intro" : null) : !repo ? "hello" : connections.engineReady() ? "engine" : "repo",
+    stage: () => !signedIn ? null : !repo ? "hello" : connections.engineReady() ? "engine" : "repo",
     established: () => !!(source.view() as import('./data/view').LiveDeckView).work,
   }) : null;
   // Tap a station: brass corners + a small "what is this" note in Shippy's words (stations/whatis.ts). Ignored while
@@ -345,7 +357,8 @@ const seed = Number(params.get("seed")) || 0;
     if (whatis.open && !anchor) whatis.close();
     engine.pick(whatis.open);
     note.show(whatis.open, anchor || null);
-    card.show(view.card, { quiet: !!firstRun?.playing() });
+    // No "All caught up" while a script owns the screen: the first run, or the guest tour building between Shippy's cards.
+    card.show(view.card, { quiet: !!firstRun?.playing() || guestTour });
     accessibility.update(view.card, view.caption);
     if (view.caption !== caption) caption = view.caption;
     toast.classList.toggle("on", !!caption && !view.card); // the card owns the bottom of the screen
