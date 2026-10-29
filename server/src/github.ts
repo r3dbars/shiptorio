@@ -143,14 +143,21 @@ export async function registerGithubCredential(token: string, db: D1Database, sc
 // reaches this point after gh() checked its current installation and repository.
 // Writes, explicit freshness/cancellation controls, and different credentials stay separate.
 const pendingReads = new Map<string, Promise<unknown>>();
+const readGenerations = new Map<string, string>();
 async function ghRequest<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
+  const fingerprint = await credentialKey(token);
+  const owner = tokenOwners.get(fingerprint);
+  const generationKey = owner ? `github:installation:${owner.installationId}` : contexts.get(fingerprint)?.scope ?? fingerprint;
+  if (!readGenerations.has(generationKey) || (init.method ?? "GET").toUpperCase() !== "GET") {
+    // Random generations avoid reusing an old key after bounded-map eviction.
+    boundedSet(readGenerations, generationKey, crypto.randomUUID());
+  }
   const headers = new Headers(init.headers);
   const shared = (init.method ?? "GET").toUpperCase() === "GET" && !init.body && !init.signal
-    && !init.cache && !headers.has("if-none-match") && !headers.has("if-modified-since")
+    && !(init as RequestInit & { cache?: string }).cache && !headers.has("if-none-match") && !headers.has("if-modified-since")
     && !headers.has("range") && !headers.has("cache-control");
   if (!shared) return queuedGhRequest<T>(path, token, init);
-  const fingerprint = await credentialKey(token);
-  const key = await readCache.key(fingerprint, "inflight", path, headers);
+  const key = await readCache.key(fingerprint, `inflight:${readGenerations.get(generationKey)}`, path, headers);
   let pending = pendingReads.get(key);
   if (!pending) {
     // The ordinary queue/deadline still bounds the work; avoid retaining an

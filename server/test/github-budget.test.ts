@@ -415,3 +415,50 @@ it("shares provider backoff across duplicate reads without consuming more GitHub
   await expect(gh("/repos/a/b/pulls/7", token)).rejects.toBeInstanceOf(RateLimitError);
   expect(calls).toBe(1);
 });
+
+it("a read after a queued write cannot join the read before that write", async () => {
+  const token = crypto.randomUUID();
+  let value = "before", release!: () => void, entered!: () => void, reads = 0;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const held = new Promise<void>(resolve => { release = resolve; });
+  globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+    if (init?.method === "PATCH") { value = "after"; return Response.json({ value }); }
+    reads++; const atStart = value;
+    if (reads === 1) { entered(); await held; }
+    return Response.json({ value: atStart });
+  }) as unknown as typeof fetch;
+  const before = gh("/repos/a/b/issues/1", token);
+  await started;
+  const write = gh("/repos/a/b/issues/1", token, { method: "PATCH", body: "{}" });
+  await new Promise(resolve => setTimeout(resolve, 10));
+  const after = gh("/repos/a/b/issues/1", token);
+  await new Promise(resolve => setTimeout(resolve, 10));
+  release();
+  expect(await before).toEqual({ value: "before" });
+  await write;
+  expect(await after).toEqual({ value: "after" });
+  expect(reads).toBe(2);
+});
+
+it("a revoked installation cannot join an already-running authorized read", async () => {
+  const isolated = await import(`../src/github.ts?pending-revocation=${crypto.randomUUID()}`) as typeof import("../src/github");
+  const { db, sqlite } = budgetDb();
+  sqlite.exec("ALTER TABLE installations ADD COLUMN token_version INTEGER DEFAULT 0; ALTER TABLE installations ADD COLUMN status TEXT DEFAULT 'active'; INSERT INTO installations(id, account_login) VALUES(9022, 'owner'); CREATE TABLE repos(full_name TEXT, archived_at INTEGER, installation_id INTEGER); INSERT INTO repos VALUES('a/b', NULL, 9022)");
+  const env = { DB: db, GITHUB_APP_ID: crypto.randomUUID(), GITHUB_APP_PRIVATE_KEY: generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } }).privateKey };
+  const token = crypto.randomUUID();
+  let release!: () => void, entered!: () => void, reads = 0;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const held = new Promise<void>(resolve => { release = resolve; });
+  globalThis.fetch = (async (url: unknown) => {
+    if (String(url).endsWith("/access_tokens")) return Response.json({ token, expires_at: new Date(Date.now() + 3600000).toISOString() });
+    reads++; entered(); await held; return Response.json({ private: true });
+  }) as unknown as typeof fetch;
+  await isolated.installationToken(env, 9022);
+  const first = isolated.gh("/repos/a/b", token);
+  await started;
+  sqlite.exec("UPDATE installations SET status='suspended', token_version=1 WHERE id=9022");
+  try { await expect(isolated.gh("/repos/a/b", token)).rejects.toThrow("suspended"); }
+  finally { release(); }
+  await first;
+  expect(reads).toBe(1);
+});
