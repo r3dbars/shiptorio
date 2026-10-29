@@ -4,6 +4,11 @@ Written 2026-10-29 by the "Plan what's next and load up Codex" thread. Every age
 Deadline: Meta hackathon cutoff Nov 4 8 PM CT, aim to be done Nov 3 evening. Feature freeze ~Nov 1 (after that:
 bugs, polish, reliability). Justin films the demo video himself on the real deck.
 
+## The rule (Justin, 2026-10-29 18:01)
+
+"As simple as possible ... continuously work on the loop that we have. Make it more simple, more clear, more
+friendly for end users, and more polished." No new features, screens or settings. Deleting beats adding.
+
 ## The demo in one line
 
 Open shiptorio.dev, see your one bottleneck within 5 seconds, swipe once, it clears. Then approve the same kind of
@@ -55,3 +60,18 @@ Visual deck polish stays with Justin's local Codex (`codex/deck-visuals`) and Cl
 | 46 | First two minutes on a new account | web/src/deck2d/data/{connections,journey,watch}.ts, server/src/{connect,issue-inbox,signup}.ts |
 | 47 | Shippy's brain picks the bottleneck | server/src/{brain,bottleneck,spark-context}.ts, web/src/deck2d/data/view.ts |
 | 48 | Green CI and a boring promotion | .github/workflows/*, playtest/bot/*, flaky tests only |
+
+## Polish batch (#49–#56, Justin 18:01: simpler, clearer, friendlier, no new features)
+
+| # | Prompt | Owns |
+| --- | --- | --- |
+| 49 | Delete the old experiments | web/*.html (not deck/index), web/src/{deck3d,bakeoff,arttest,lab}, vite configs, scripts/bundle-budget.ts |
+| 50 | Plain words on every card | web/src/deck2d/card/*.ts (strings), server/src/deck.ts (card text), web/src/copy.ts |
+| 51 | The deck feels good on a phone | web/src/deck2d/deck.css, card/card.css, web/deck.html (meta only) |
+| 52 | Faster first load | web/public/{deck,welcome,brand}/**, web/public/sw.js, scripts/art/* |
+| 53 | When something breaks, say one plain sentence | stations/{inspector,status,attention}.ts, server/src/{errors,reliability}.ts |
+| 54 | Bug bash the loop | new bug-bash tests; small fixes in engine/{flow,camera}.ts, juice/build/grow/launch, server/src/runner-job.ts |
+| 55 | One way in | server/src/{redirect,landing,account-pages}.ts, web/index.html, web/src/main.tsx (routing) |
+| 56 | Docs that match today | AGENTS.md, docs/context/* except the plan/deck/branch docs; history to docs/context/archive/ |
+
+Status 18:10: #43 → PR #618, #44 → #615, #45 → #616, #46 → #617. #47 and #48 not started yet.
