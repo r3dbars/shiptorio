@@ -70,7 +70,7 @@ export function createConnections(o: Options) {
       yes = issue ? index + 1 < issues.length ? 'Next issue' : nextPage ? 'More issues' : 'Refresh' : nextPage ? 'More issues' : 'Refresh';
     } else if (pane === 'setup') {
       title = copied ? 'Setup command copied' : 'Connect your Codex subscription';
-      line = `Shippy: Run this on your computer: ${command} Then sign in with: shiptorio-runner login codex. Your Codex sign-in stays on your computer.`;
+      line = `Shippy: Run this on your computer: ${command} Setup opens Codex sign-in if needed. Keep that terminal open. Your sign-in stays on your computer.`;
       yes = 'Copy command'; no = 'Check again';
     } else if (pane === 'disconnect') {
       title = 'Disconnect this engine?'; line = 'Shippy: This revokes the factory pairing. It does not sign you out of Codex.'; yes = 'Disconnect'; no = 'Close';
