@@ -13,6 +13,7 @@ export function assertSafePrimaryAction(label) {
 // Accept the visible, scoped decision rather than blindly clicking a right button.
 export function fixtureCardIntent(label, title, actionTools = []) {
   const text = label.replace(/[←→]/g, "").trim();
+  if (!text) return "wait";
   assertSafePrimaryAction(text);
   if (/^(Please wait|Loading|Checking)/i.test(text)) return "wait";
   if (text === "Plan" || text === "Start issue") {
@@ -47,7 +48,7 @@ export async function activateFixtureCard(card, expected, side = "approve", focu
       label: button?.textContent ?? "",
       hold: element.classList.contains("hold"),
     };
-    if (!element.isConnected || !button || button.disabled ||
+    if (!element.isConnected || element.classList.contains("ic-ghost") || !button || button.disabled ||
         current.title !== expected.title || current.label !== expected.label || current.hold !== expected.hold)
       return false;
     if (focus) button.focus(); else button.click();

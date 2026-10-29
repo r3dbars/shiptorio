@@ -94,7 +94,7 @@ try {
       const closeSheet = page.locator(".sheet").getByRole("button", { name: "Close", exact: true });
       const checkin = page.getByRole("button", { name: /^Check in/i });
       const menu = page.getByRole("button", { name: /^Menu:/ });
-      const card = await page.locator(".ic-card:not(.ic-ghost)").first().elementHandle();
+      const [card] = await page.locator(".ic-card:not(.ic-ghost)").elementHandles();
       const cardState = card ? await card.evaluate(element => ({
         title: element.querySelector(".ic-title")?.textContent ?? "",
         label: element.querySelector("button.approve")?.textContent ?? "",
