@@ -40,6 +40,10 @@ export function sparkConfigured(env: SparkEnv): boolean {
 
 export const sparkModel = (env: SparkEnv): string => env.SPARK_MODEL || "muse-spark-1.3";
 
+// Share only identical work already in flight in the same run environment. Completed
+// decisions are never cached: the next state must be judged against fresh evidence.
+const pendingChats = new WeakMap<SparkEnv, { db: SparkEnv["DB"]; account: SparkEnv["budgetAccount"]; signal: SparkEnv["planningSignal"]; requests: Map<string, Promise<string>> }>();
+
 export async function sparkChat(env: SparkEnv, messages: ChatMessage[], effort: Effort = "low", format?: ResponseFormat): Promise<string> {
   if (!env.META_API_KEY) throw new SparkError("META_API_KEY isn't set");
   if (env.SPARK_DISABLED === "1") throw new BudgetError("Planner budget: global kill switch is on");
@@ -49,12 +53,22 @@ export async function sparkChat(env: SparkEnv, messages: ChatMessage[], effort: 
   const reservedTokens = new TextEncoder().encode(JSON.stringify(requestMessages)).length + requestMessages.length * 32 + output;
   if (!env.DB || !env.budgetAccount) throw new BudgetError("Budget ledger/account unavailable; Planner paused");
   const base = (env.SPARK_BASE_URL || "https://api.meta.ai/v1").replace(/\/$/, "");
-  return retry("Spark completion", async () => {
+  env.planningSignal?.throwIfAborted();
+  const account = await env.budgetAccount();
+  let pending = pendingChats.get(env);
+  if (!pending || pending.db !== env.DB || pending.account !== env.budgetAccount || pending.signal !== env.planningSignal) {
+    pending = { db: env.DB, account: env.budgetAccount, signal: env.planningSignal, requests: new Map() };
+    pendingChats.set(env, pending);
+  }
+  const key = JSON.stringify([base, sparkModel(env), env.META_API_KEY, env.budgetRepo, account, output, effort, format, requestMessages]);
+  const existing = pending.requests.get(key);
+  if (existing) return existing;
+  const request = retry("Spark completion", async () => {
     env.planningSignal?.throwIfAborted();
     // A provider retry is another billable call: reserve every attempt independently.
     const spendId = env.budgetRepo ? await reserveFactorySpend(env.DB!, env.budgetRepo, reservedTokens - output, output, sparkModel(env)) : null;
     let reservation;
-    try { reservation = await reserveSpark(env, await env.budgetAccount!(), reservedTokens); }
+    try { reservation = await reserveSpark(env, account, reservedTokens); }
     catch (error) {
       if (spendId) await env.DB!.prepare("DELETE FROM spark_factory_calls WHERE id = ?").bind(spendId).run();
       throw error;
@@ -80,6 +94,9 @@ export async function sparkChat(env: SparkEnv, messages: ChatMessage[], effort: 
     if (typeof text !== "string" || !text || text.length > 100000) throw new SparkError("Planner returned no content");
     return text;
   }, { shouldRetry: error => !(error instanceof BudgetError) && !(error instanceof SparkError) && !env.planningSignal?.aborted });
+  pending.requests.set(key, request);
+  try { return await request; }
+  finally { if (pending.requests.get(key) === request) pending.requests.delete(key); }
 }
 
 // Pulls the JSON object out of a reply, tolerating ```json fences, chatter around it (even chatter with
