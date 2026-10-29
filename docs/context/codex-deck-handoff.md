@@ -11,7 +11,14 @@ Launch**. Crates are changes, rockets are releases, Shippy (a small folding robo
 At most one card on screen, ever. The camera parks on the one bottleneck. The line builds out piece by piece as the
 story (first run) or the real factory (`?source=live`) moves.
 
-- Dev: `bun install && bun run dev:web`, then http://localhost:5173/deck.html
+- Run it locally with hot reload: `bun install`, then `cd web && bunx vite --port 5191`, then open
+  http://localhost:5191/deck.html. Saving any file under `web/src/deck2d/` reloads the page. Use the main web vite
+  config. `vite.deck.config.ts` is build-only and sets `publicDir: false`, so the sprites 404 under it.
+- Mockups to match: `docs/art/deck-mockups/` (Justin's pictures). `01-whole-deck-island-clouds` is the main
+  reference for every area. `02-planner-shippy-boilers-closeup` covers the Planner desk, Shippy, boilers and rail
+  lanterns. `03`/`04` are the other angles. The person in the mockups is Shippy in the game (no humans).
+- Don't hardcode station x positions. Stop spacing is being widened (repo at 640, then every 560), so read positions
+  from the engine/contract.
 - Useful params: `?seed=1` deterministic story, `?speed=2` faster time,
   `?source=story|live|demo`.
 - Preview pages for single slices: `web/stations.html`, `web/shippy.html`, `web/shippy-sheet.html`, `web/deckbuild.html`,
@@ -72,7 +79,9 @@ Claude threads are actively painting the deck. Codex takes only the slices its p
 | `data/*` (real repo data, `?source=live`) | **Codex** | own (#41) |
 | `launch/*` (rocket island) | **Codex** | own (#42) |
 
-This split is from the hub on 2026-10-29 and changes as threads finish. Ask through Justin if it looks stale.
+Exception: Justin's own local Codex session (branch `codex/deck-visuals`) may change any visual folder, including
+stations/, props/, shippy/, card/, launch/, juice/ and the sky/city/clouds in `engine/` (`sky()`). His changes win any
+clash, and Claude threads rebase onto them. This split is from the hub on 2026-10-29 and changes as threads finish. Ask through Justin if it looks stale.
 
 If you're unsure, run `git log --since=6.hours -- <path>`. If a Claude thread touched it recently, don't edit it. Put the
 idea in your PR instead.
