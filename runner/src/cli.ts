@@ -8,7 +8,7 @@ import { mkdir, lstat, realpath, rm, mkdtemp } from "node:fs/promises";
 import { resolve } from "node:path";
 import { agentEnvironment, assemblerPrompt, assertCheckCommand, harnessArgs, validateChanges } from "./policy";
 import { TEST_PATH, resetVerifyBase, verifyRegression } from "./verify";
-import { assertVerificationPlatform, checkSandbox, type CheckSandbox, verificationGit } from "./sandbox";
+import { assertVerificationPlatform, checkSandbox, resumeOnTimeout, type CheckSandbox, verificationGit } from "./sandbox";
 import { assemblerContext, snapshotApproved, publishApproved } from "./publication";
 import { runnerHome, loadPairings, pairMachine, joinMachine, type Pairing } from "./pairing";
 import { loadConnections, persistRenewal, persistGrantRejection } from "./grant-store";
@@ -97,7 +97,6 @@ if (process.argv[2] === "doctor") {
   if (args.length && (args.length !== 2 || args[0] !== "--edit" || args[1] !== "codex")) throw new Error("Usage: shiptorio-runner doctor [--edit codex]");
   const realEdit = args.length > 0;
   if (realEdit) console.log("Codex will try one small test change without starting factory work.");
-  await mkdir(resolve(authHome, ".codex"), { recursive: true, mode: 0o700 });
   const checks = await diagnose({ harnesses: available, pairs: await connections(), auth: signedInHarness,
     editHarness: realEdit ? "codex" : undefined,
     edit: async () => {
@@ -141,7 +140,6 @@ if (process.argv[2] === "doctor") {
   process.exit(checks.every(c => c.ok) ? 0 : 1);
 }
 if (["setup", "login"].includes(process.argv[2])) {
-  await mkdir(resolve(authHome, ".codex"), { recursive: true, mode: 0o700 });
   if (!available.length) throw new Error(`Install Codex CLI or Claude Code first, then rerun the installer. See ${base}/docs/runner`);
   if (process.argv[2] === "login") {
     const h = process.argv[3] === "claude" ? "claude_code" : process.argv[3] === "codex" ? "codex" : null;
@@ -168,7 +166,6 @@ if (action === "pair") {
 }
 if (action === "uninstall") {
   console.log("Removing this runner; close any other runner windows first.");
-  const { rm } = await import("node:fs/promises");
   const { homedir } = await import("node:os");
   // Fixed install paths only; environment overrides must never become recursive delete targets.
   await rm(resolve(homedir(), ".local/bin/shiptorio-runner"), { force: true });
@@ -214,7 +211,6 @@ async function execute(job: Job, pair: Pairing) {
     if (!sandbox) throw new Error("Verification sandbox not prepared");
     if (job.deadline <= Date.now()) throw new Error("Build lease expired; approve a fresh attempt in the game");
     const result = await sandbox.run(args, work, { install, timeout: Math.min(180000, job.deadline - Date.now()) });
-    if (result.timedOut) throw new TypeError("Supervisor interrupted or timed out; saved build will resume");
     if (result.code) throw new Error(`Sandboxed ${args[0].split("/").at(-1)} ${args[1]} failed (${result.code}): ${(result.err || result.out).slice(-2000)}`);
     return result.out.trim();
   };
@@ -225,16 +221,12 @@ async function execute(job: Job, pair: Pairing) {
     const source = resolve(jobRoot, "source.git");
     if (!workspace.state.initialized) {
       await rm(source, { recursive: true, force: true }); await rm(work, { recursive: true, force: true });
-      await fetchApprovedSource(async (args, cwd = jobRoot) => command([await verificationGit(), "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", ...args], cwd, gitEnv), source, `https://github.com/${job.repo}.git`, [job.baseSha, ...(job.verifyBaseSha ? [job.verifyBaseSha] : [])], true);
-      await command([await verificationGit(), "-c", "core.hooksPath=/dev/null", "--git-dir", source, "worktree", "add", "--detach", work, job.baseSha], jobRoot, cleanEnv);
+      const git = await verificationGit();
+      await fetchApprovedSource((args, cwd = jobRoot) => command([git, "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", ...args], cwd, gitEnv), source, `https://github.com/${job.repo}.git`, [job.baseSha, ...(job.verifyBaseSha ? [job.verifyBaseSha] : [])], true);
+      await command([git, "-c", "core.hooksPath=/dev/null", "--git-dir", source, "worktree", "add", "--detach", work, job.baseSha], jobRoot, cleanEnv);
       await workspace.checkpoint("initialized");
     }
-    const boundary = await checkSandbox(jobRoot);
-    sandbox = { run: async (args, cwd = work, options) => {
-      const result = await boundary.run(args, cwd, options);
-      if (result.timedOut) throw new TypeError("Supervisor interrupted or timed out; saved build will resume");
-      return result;
-    }, close: () => boundary.close() };
+    sandbox = resumeOnTimeout(await checkSandbox(jobRoot), work);
     await resetVerifyBase(sandbox, work);
     await checked(["git", "checkout", "--detach", job.baseSha]);
     let output = "";
@@ -258,10 +250,7 @@ async function execute(job: Job, pair: Pairing) {
         if (result.code) {
           // The redacted stderr tail stays on this Mac (service-error.log); the server only sees the generic failure.
           if (verbose) console.error(`${job.harness} exited ${result.code}: ${redactText(result.err.trim().slice(-2000))}`);
-          if (authExpired(result.err + "\n" + result.out)) {
-            blocked.add(job.harness); authFailures.reject(job.harness, await subscriptionCredentialVersion(job.harness, authHome));
-            throw new SignInExpired(`Sign-in expired: ${loginCommand(job.harness)}. The build is saved while its lease remains valid.`);
-          }
+          if (authExpired(result.err + "\n" + result.out)) throw await signInExpired(job.harness, `Sign-in expired: ${loginCommand(job.harness)}. The build is saved while its lease remains valid.`);
           if (result.timedOut || agentOffline(result.err + "\n" + result.out)) throw new TypeError("Agent connection interrupted or timed out; saved build will resume");
           throw new Error(`Agent failed (${result.code}); see the runner log for the agent's error`);
         }
@@ -271,7 +260,7 @@ async function execute(job: Job, pair: Pairing) {
       // Preserve local evidence; never forward raw agent output to the server/browser.
       await Bun.write(resolve(root, ".work", `${job.id}.agent.log`), output, { mode: 0o600 });
       if (job.harness === "claude_code" && JSON.parse(output).is_error) {
-        if (authExpired(output)) { blocked.add(job.harness); authFailures.reject(job.harness, await subscriptionCredentialVersion(job.harness, authHome)); throw new SignInExpired(`Sign-in expired: ${loginCommand(job.harness)}`); }
+        if (authExpired(output)) throw await signInExpired(job.harness, `Sign-in expired: ${loginCommand(job.harness)}`);
         if (agentOffline(output)) throw new TypeError("Agent connection interrupted; saved build will resume");
         throw new Error("Claude reported an agent error");
       }
@@ -328,6 +317,11 @@ async function execute(job: Job, pair: Pairing) {
   } finally { await agentSandbox?.close(); await sandbox?.close(); if (completed) await workspace.close(); job.token = ""; gitEnv.GIT_CONFIG_VALUE_0 = ""; }
 
 }
+/** Stop offering a provider until its credentials change or a login succeeds. */
+async function signInExpired(h: Subscription, message: string) {
+  blocked.add(h); authFailures.reject(h, await subscriptionCredentialVersion(h, authHome));
+  return new SignInExpired(message);
+}
 function connectionStopped(pair: Pairing) { return !!pair.rejected || rejectedGrants.get(pair.repo) === pair.token; }
 async function stopRejectedConnection(pair: Pairing, error: unknown): Promise<boolean> {
   if (!(error instanceof RunnerGrantRejected)) return false;
@@ -339,7 +333,6 @@ async function stopRejectedConnection(pair: Pairing, error: unknown): Promise<bo
 async function connections() {
   return loadConnections(root, { SHIPTORIO_REPO: process.env.SHIPTORIO_REPO, SHIPTORIO_RUNNER_TOKEN: process.env.SHIPTORIO_RUNNER_TOKEN });
 }
-await mkdir(resolve(authHome, ".codex"), { recursive: true, mode: 0o700 });
 let pairs = await connections();
 if (!pairs.length) { await pinPairingOrigin(); await pairMachine(base, root); pairs = await connections(); }
 if (action === "retry") {
@@ -365,9 +358,10 @@ if (action === "retry") {
     return next;
   };
   let ready = await refreshAuth();
+  const heartbeatOptions = { renew: renewPairing, heartbeat: (p: Pairing) => api(p, "heartbeat", { harnesses: ready, authRequired: [...blocked] }) };
   for (const pair of pairs) {
     if (connectionStopped(pair)) { console.error("This computer needs to reconnect to your factory.\nshiptorio-runner pair"); continue; }
-    try { await maintainConnection(pair, { renew: renewPairing, heartbeat: p => api(p, "heartbeat", { harnesses: ready, authRequired: [...blocked] }) }); }
+    try { await maintainConnection(pair, heartbeatOptions); }
     catch (error) { await stopRejectedConnection(pair, error); }
   }
   const heartbeat = setInterval(async () => {
@@ -379,7 +373,7 @@ if (action === "retry") {
         if (connectionStopped(pair)) continue;
         const retry = heartbeatBackoffs.get(pair.repo) ?? new Backoff(); heartbeatBackoffs.set(pair.repo, retry);
         if (!retry.ready()) continue;
-        try { await maintainConnection(pair, { renew: renewPairing, heartbeat: p => api(p, "heartbeat", { harnesses: ready, authRequired: [...blocked] }) }); retry.reset(); }
+        try { await maintainConnection(pair, heartbeatOptions); retry.reset(); }
         catch (error) { if (await stopRejectedConnection(pair, error)) continue; retry.fail(); if (verbose) showError(error); else console.error("The factory connection was interrupted; retrying shortly."); }
       }
     }
@@ -412,7 +406,7 @@ if (action === "retry") {
           else console.error(`${plainRunnerError(error).split("\n")[0].replace(/\.$/, "")}; retrying shortly.`);
           if (error instanceof SignInExpired) {
             ready = ready.filter(h => !blocked.has(h as Subscription));
-            await api(pair, "heartbeat", { harnesses: ready, authRequired: [...blocked] }).catch(() => {});
+            await heartbeatOptions.heartbeat(pair).catch(() => {});
           }
           // Generic 401s may come from an upstream proxy: retain the grant and retry with backoff.
 
