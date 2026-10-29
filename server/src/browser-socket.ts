@@ -1,7 +1,7 @@
 import type { AccessUser } from "./authorization";
 import { currentUser } from './accounts';
 import { signupMode, signupAllowed, hash } from './signup';
-import { authorizationRevoked, isAllowed, readSessionDetails } from "./session";
+import { isAllowed, readSessionDetails } from "./session";
 import { ipSubject } from "./rate-limit";
 
 export interface BrowserSocketEnv { SESSION_SECRET: string; APP_PASSWORD?: string; ALLOWED_LOGINS: string; DEV_LOGIN?: string; DB?: D1Database; SIGNUP_GATE_MODE?: string }
