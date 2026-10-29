@@ -4,6 +4,7 @@ import { checks } from "./checks";
 import { gate } from "./gate";
 import { planner } from "./planner";
 import { Px } from "./px";
+import { box3q, rivet } from "./shade";
 import { repo } from "./repo";
 import { review } from "./review";
 import type { StationDef } from "./types";
@@ -78,15 +79,11 @@ export function drawStation(ctx: CanvasRenderingContext2D, id: StationId, s: Sto
     ctx.fillStyle = row > 5 ? PALETTE.iron[1] : PALETTE.iron[0];
     ctx.fillRect(at(x - footW * scale / 2 - row * scale), at(feetY + row * scale), footW * scale, scale);
   }
-  // A low mounting slab has a receding top and a vertical front face. The feet
-  // meet its lit upper edge; the walkway remains visible beyond its shadow.
-  for (let row = -5; row <= 3; row++) {
-    ctx.fillStyle = row < 0 ? PALETTE.iron[2] : row === 0 ? PALETTE.iron[4] : PALETTE.iron[0];
-    const recede = row < 0 ? -row : 0;
-    ctx.fillRect(at(x - footW * scale / 2 + recede * scale), at(feetY + row * scale), footW * scale, scale);
-  }
-  ctx.fillStyle = PALETTE.soot[0];
-  ctx.fillRect(at(x - footW * scale / 2), at(feetY), footW * scale, scale);
+  // A low mounting slab in 3/4, drawn with the stations' own shading: a lit top face receding up-right, a riveted
+  // iron front with a brass trim line, a lit right side. The feet stand on its top face; the walkway shows beyond
+  // its shadow.
+  const sl = slab(footW);
+  ctx.drawImage(sl, at(x - footW * scale / 2 - scale), at(feetY - (SLAB_UP + 1) * scale), sl.width * scale, sl.height * scale);
   if (s === "jammed" || attention) {
     const outline = blockedOutline(id, s !== "jammed" && attention);
     ctx.drawImage(outline, at(x - w / 2) - 2 * scale, at(feetY - h) - 2 * scale, outline.width * scale, outline.height * scale);
@@ -94,6 +91,23 @@ export function drawStation(ctx: CanvasRenderingContext2D, id: StationId, s: Sto
   ctx.drawImage(cv, at(x - w / 2), at(feetY - h), w, h);
   statusLamp(ctx, s, x, feetY, scale, attention);
   ctx.imageSmoothingEnabled = was;
+}
+
+const SLAB_D = 5, SLAB_UP = Math.round(SLAB_D * 0.75), SLAB_H = 4;
+const slabs = new Map<number, HTMLCanvasElement>();
+/** The slab under a station whose front is w art px wide, baked once per width (1px outline margin all round). */
+function slab(w: number) {
+  let cv = slabs.get(w);
+  if (!cv) {
+    const g = new Px(w + SLAB_D + 2, SLAB_UP + SLAB_H + 2), y = SLAB_UP + 1;
+    box3q(g, 1, y, w, SLAB_H, SLAB_D, 0.3, { grime: 1, seed: w });
+    for (let x = 3; x < w - 1; x += 5) rivet(g, x, y + 1, "iron-4", "iron-0"); // iron rivets along the front
+    for (const fx of [1, w - 2]) rivet(g, fx + (fx === 1 ? 1 : 0), y + 1); // brass ones at the corners
+    g.outline();
+    cv = g.bake();
+    slabs.set(w, cv);
+  }
+  return cv;
 }
 
 /** Size in art px (outline included), for layout. */

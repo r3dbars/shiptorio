@@ -13,9 +13,11 @@ function px(cx: CanvasRenderingContext2D, ax: number, ay: number, w: number, h: 
 const BELT_H = 12;
 const SEG = 14; // one belt plate, art px
 /** One belt run from (ax, ay) to (bx, by) in world units, plates moving right. Slopes become 1-px stairs.
- * 3/4 view like Justin's mockups, top to bottom: soot, lit brass back rail, a 6-row dark track of riveted plates with
- * green chevrons (red in a blocked bay), status-lit lips, iron front face, soot.
- * Each bay supplies its own accumulated movement phase; no cargo means a stationary green belt. */
+ * 3/4 view like Justin's mockups and the deck's underside, top to bottom: soot, the status line on the back rail
+ * (green, red in a blocked bay) with brass studs on its posts, a shadowed gap, a track of cool steel plates (lit at
+ * the back, a sun-lit right edge, brass rivets) with one chevron per plate, a brass front lip, an iron front face
+ * with steel roller hubs, soot. Each bay supplies its own accumulated movement phase; no cargo means a stationary
+ * green belt. */
 export function beltRun(cx: CanvasRenderingContext2D, ax: number, ay: number, bx: number, by: number, len: number, t: number, speed: number, blockedAt: (worldX: number) => boolean = () => false, phaseAt: (worldX: number) => number = () => 0) {
   const x0 = g(ax), x1 = g(ax + (bx - ax) * Math.min(1, len / Math.hypot(bx - ax, by - ay)));
   // cast shadow on the floor first (light layer, sun from the upper right: it falls down-left)
@@ -24,29 +26,35 @@ export function beltRun(cx: CanvasRenderingContext2D, ax: number, ay: number, bx
   cx.restore();
   for (let x = x0; x < x1; x++) {
     const f = (x - x0) / Math.max(1, g(bx) - x0), y = g(ay + (by - ay) * f) - Math.floor(BELT_H / 2);
-    const end = x === x0 || x === x1 - 1, post = x % 28 === 0;
+    const end = x === x0 || x === x1 - 1, post = x % 28 === 0, postLit = x % 28 === 1;
     const blocked = blockedAt(x * P), signal = blocked ? C.jam : C.ok;
     px(cx, x, y, 1, 1, C.soot[0]);
-    // back rail: brass, lit on top, with a post every 28 px
-    px(cx, x, y + 1, 1, 1, end || post ? signal[2] : signal[1]);
-    // the track: 6 rows of dark iron plate, lighter at the back (it faces the sun), darker at the front
+    // back rail: the status line along its top, a brass stud on every post catching the sun on its right
+    px(cx, x, y + 1, 1, 1, end ? signal[2] : post ? C.brass[2] : postLit ? C.brass[4] : signal[1]);
+    // the track. Row 0 is the gap in the back rail's shadow; the plates are cool steel, lit at the back (it faces the
+    // sun), darker toward the front lip, so the warm crates pop off them.
     const shift = Math.floor(phaseAt(x * P) * speed / P);
     const k = ((x - shift) % SEG + SEG) % SEG;
-    const tr = blocked ? [C.jam[0], C.jam[0], C.iron[1], C.iron[1], C.jam[0], C.iron[0]] : [C.iron[2], C.iron[2], C.iron[1], C.iron[1], C.iron[1], C.iron[0]];
+    const tr = blocked
+      ? [C.iron[0], C.jam[0], C.jam[0], C.iron[1], C.iron[1], C.iron[0]]
+      : [C.iron[0], C.steel[2], C.steel[1], C.steel[0], C.steel[0], C.iron[0]];
     for (let r = 0; r < 6; r++) px(cx, x, y + 2 + r, 1, 1, tr[r]);
-    if (k === 0) { px(cx, x, y + 2, 1, 6, C.soot[0]); } // plate seam
-    if (k === 1) { px(cx, x, y + 2, 1, 6, C.iron[3]); px(cx, x, y + 3, 1, 1, C.brass[4]); px(cx, x, y + 6, 1, 1, C.brass[2]); } // lit plate edge + rivets
-    // Healthy plates travel right; a red blocked bay holds its entire pattern still.
-    for (const c0 of [4, 9]) {
-      const d = k - c0;
-      if (d === 0 || d === 1) { px(cx, x, y + 3, 1, 1, signal[2]); px(cx, x, y + 6, 1, 1, signal[1]); }
-      if (d === 1 || d === 2) { px(cx, x, y + 4, 1, 1, signal[2]); px(cx, x, y + 5, 1, 1, signal[1]); }
-    }
-    // front lip, brass, then the iron front face with rivets and a rust run under some of them
-    px(cx, x, y + 8, 1, 1, end ? signal[2] : signal[0]);
-    const rv = x % 7 === 3;
-    px(cx, x, y + 9, 1, 1, rv ? C.brass[4] : C.iron[1]);
-    px(cx, x, y + 10, 1, 1, rv && x % 21 === 3 ? C.copper[0] : C.iron[0]);
+    if (k === 0) px(cx, x, y + 2, 1, 6, C.soot[0]); // plate seam
+    else if (k === 1) px(cx, x, y + 3, 1, 4, blocked ? C.iron[0] : C.steel[0]); // the plate's shaded left edge
+    else if (k === SEG - 1) { px(cx, x, y + 3, 1, 1, blocked ? C.jam[1] : C.steel[3]); px(cx, x, y + 4, 1, 3, blocked ? C.jam[0] : C.steel[2]); } // its sun-lit right edge
+    else if (k === SEG - 2) { px(cx, x, y + 3, 1, 1, C.brass[4]); px(cx, x, y + 6, 1, 1, C.brass[2]); } // rivets, brass as jewelry
+    // One chevron per plate. Healthy plates travel right; a red blocked bay holds its entire pattern still.
+    const d = k - 5;
+    if (d === 0 || d === 1) { px(cx, x, y + 3, 1, 1, signal[2]); px(cx, x, y + 6, 1, 1, signal[1]); }
+    if (d === 1 || d === 2) { px(cx, x, y + 4, 1, 1, signal[2]); px(cx, x, y + 5, 1, 1, signal[1]); }
+    if (d === 2) px(cx, x, y + 6, 1, 1, signal[0]); // the chevron's shadow on the plate, falling down-left of its tip
+    // front lip: a brass trim line, a glint where it passes a post; the ends carry the status color
+    px(cx, x, y + 8, 1, 1, end ? signal[2] : postLit ? C.brass[4] : blocked ? C.jam[0] : C.brass[2]);
+    // the iron front face: a roller hub under every plate (static: the plates move, the rollers' frame doesn't),
+    // iron rivets between them and the odd rust run
+    const hub = x % SEG;
+    px(cx, x, y + 9, 1, 1, hub === 6 ? C.steel[2] : hub === 7 ? C.steel[3] : hub === 13 ? C.iron[3] : C.iron[1]);
+    px(cx, x, y + 10, 1, 1, hub === 6 ? C.steel[0] : hub === 7 ? C.steel[1] : hub === 13 && x % 42 === 13 ? C.copper[0] : C.iron[0]);
     px(cx, x, y + 11, 1, 1, C.soot[0]);
   }
 }
