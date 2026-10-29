@@ -63,16 +63,23 @@ export async function deckSmoke({ origin = 'https://shiptorio.dev', password, ou
         assert.equal(await page.getByRole('button', { name: 'Sign in', exact: true }).count(), 0, 'Play comes before sign-in');
         await page.screenshot({ path: join(out, `guest-first-frame-${viewport.width}.png`) });
         const storyCards = [];
-        for (let n = 1; n <= 1; n++) { // the front door's sample is one swipe
-          const decision = page.locator(`.ic-card:not(.ic-ghost)[data-card="story-call-${n}"]`);
-          await decision.waitFor({ timeout: 30000 });
+        // The guest tour: Shippy's cards one at a time, each answer builds the next machine, then sign-in.
+        const signIn = page.getByRole('button', { name: 'Sign in', exact: true });
+        // The tour ends on its own ask; only "Create my factory" opens sign-in (and, on staging, the password).
+        const ask = page.getByRole('button', { name: 'Create my factory', exact: true });
+        for (let n = 0; n < 60 && !(await ask.count()); n++) { // a story card's first tap may finish its typed line
+          const beat = page.locator('.ic-card:not(.ic-ghost)[data-card^="tour-"] .approve');
+          await Promise.race([beat.first().waitFor({ timeout: 30000 }).catch(() => {}), ask.waitFor({ timeout: 30000 }).catch(() => {})]);
+          if (await ask.count()) break;
           assert.equal(await page.locator('.connection-tools').count(), 0);
-          await decision.locator('.approve').click();
-          await decision.waitFor({ state: 'detached' });
-          storyCards.push(`story-call-${n}`);
+          const shown = page.locator('.ic-card:not(.ic-ghost)[data-card^="tour-"]').first();
+          storyCards.push(await shown.getAttribute('data-card'));
+          // Ship it is a held press, like every real merge.
+          await beat.first().click(await shown.evaluate(el => el.classList.contains('hold')) ? { delay: 1200 } : {});
         }
-        // One swipe clears the sample jam, Shippy says hello, then the sign-in card.
-        await page.getByRole('button', { name: 'Sign in', exact: true }).waitFor({ state: 'visible', timeout: 45000 });
+        // Stop at the ask: its press leaves for the password or GitHub, and preview admission never signs in.
+        await ask.waitFor({ state: 'visible', timeout: 45000 });
+        assert.equal(await signIn.count(), 0, 'Sign-in waits for the tour\'s own ask');
         assert(new URL(page.url()).pathname === '/deck', 'Guest left the 2D deck');
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
         assert(overflow <= 1, `Guest deck overflowed the viewport by ${overflow}px`);

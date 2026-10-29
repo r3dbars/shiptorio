@@ -24,7 +24,7 @@ const COL = 16; // art px: the hull grows one plate-ish column at a time
 export const createLayer: CreateLayer = () => {
   if (!pixelOn()) return { update() {}, draw() {} };
   let t = 0, size: Size = "large", growing = 0;
-  let blocked = false;
+  let blocked = false, boiler = 1;
   const still = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
   function width(): number {
@@ -42,6 +42,7 @@ export const createLayer: CreateLayer = () => {
       t += dt;
       size = v.deck?.size ?? "large";
       growing = v.deck?.growing ?? 0;
+      boiler = v.deck?.boiler ?? 1;
       blocked = v.jam !== null || v.stops.some((stop) => stop.built && stop.state === "jammed");
     },
     draw(ctx: CanvasRenderingContext2D, slot: LayerSlot) {
@@ -64,8 +65,13 @@ export const createLayer: CreateLayer = () => {
       const phase = still ? 3 : Math.floor(t * (blocked ? 4 : 2)) % 8;
       const core = coreLight(blocked, phase), at = coreAt(w);
       ctx.drawImage(core, (at.x - CORE / 2) * ART_PX, (at.y - CORE / 2) * ART_PX, CORE * ART_PX, CORE * ART_PX);
-      const b = boilerFrame(t);
-      ctx.drawImage(b, snap(BOILER.x - (BOILER_W * ART_PX) / 2), snap(BOILER.base - BOILER_H * ART_PX), BOILER_W * ART_PX, BOILER_H * ART_PX);
+      if (boiler > 0) {
+        // The steam engine pops up out of the floor (first run), clipped at the floor line, in whole art px.
+        const b = boilerFrame(t), drop = Math.round((1 - boiler) ** 3 * BOILER_H) * ART_PX; // eases out as it lands
+        ctx.save(); ctx.beginPath(); ctx.rect(BOILER.x - BOILER_W * ART_PX, BOILER.base - BOILER_H * ART_PX - 40, BOILER_W * ART_PX * 2, BOILER_H * ART_PX + 40); ctx.clip();
+        ctx.drawImage(b, snap(BOILER.x - (BOILER_W * ART_PX) / 2), snap(BOILER.base - BOILER_H * ART_PX) + drop, BOILER_W * ART_PX, BOILER_H * ART_PX);
+        ctx.restore();
+      }
       ctx.imageSmoothingEnabled = was;
     },
   };

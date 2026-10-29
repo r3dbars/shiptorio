@@ -12,10 +12,17 @@
     <meta property="og:image" content="https://shiptorio.com/brand/og.png" />
     <!-- The 2D deck (web/src/deck2d/contract.ts): one floating iron deck, one line left to right. -->
     <link rel="preload" href="/fonts/silkscreen-400.woff2" as="font" type="font/woff2" crossorigin />
+    <!-- The first frame's pictures (main.ts FIRST_FRAME_ART), fetched with the page instead of after the scripts. The dimmed
+         sky is also the page backdrop (deck.css body.deck-page), so the screen shows the sky, never a blank, until the deck draws. -->
+    <link rel="preload" href="/deck/art/sky-dim.webp" as="image" type="image/webp" fetchpriority="high" />
+    <link rel="preload" href="/deck/art/clouds-dim.webp" as="image" type="image/webp" />
+    <link rel="preload" href="/deck/art/rocket.webp" as="image" type="image/webp" />
+    <link rel="preload" href="/deck/art/flame.webp" as="image" type="image/webp" />
+    <link rel="preload" href="/deck/art/plate.webp" as="image" type="image/webp" />
   </head>
-  <body>
+  <body class="deck-page">
     <canvas id="world" aria-label="Your factory: a floating deck with one line from the repo to the rocket"></canvas>
-    <button id="zoom" class="zoom" type="button" aria-label="See the whole factory">See all</button>
+    <button id="zoom" class="zoom" type="button" aria-label="See the whole factory" hidden>See all</button>
     <div id="card-host"></div>
     <p id="toast" class="toast" aria-live="polite"></p>
     <script type="module" src="/src/deck2d/main.ts"></script>

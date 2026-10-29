@@ -1,3 +1,4 @@
+import { createTour } from '../src/deck2d/story/tour';
 import { describe, expect, mock, test } from 'bun:test';
 import { deckSignedIn, freshStart, oneAsk, setupFromStations, storyBeforeSignIn } from '../src/deck2d/main';
 import { createStory } from '../src/deck2d/story';
@@ -108,4 +109,29 @@ describe("?fresh=1 replays the first run (staging only)", () => {
     expect(local.has("shiptorio.sound")).toBe(true);
     expect(request).not.toHaveBeenCalled();
   });
+});
+
+test('the guest tour asks "Want to create your own factory?" first; its yes goes straight to GitHub, and closing sign-in asks again', async () => {
+  const went: string[] = [];
+  const connections = createConnections({origin:'https://example.test', path:'/deck?source=live', navigate(url) { went.push(url); }, async copy() {}, fetch:async () => Response.json({guest:true, login:null, githubConfigured:true})});
+  let opens = 0;
+  const story = storyBeforeSignIn(createTour(), {open(target) { opens++; connections.open(target); }, card: connections.card, answer: connections.answer}, {ask: true});
+  story.later(story.view().card!.id); // Skip to the end
+  const ask = story.view().card!;
+  expect(ask.title).toBe('Want to create your own factory?');
+  story.view(); story.view();
+  expect(opens).toBe(0);
+  story.approve(ask.id);
+  expect(story.view().card).toBeNull();
+  expect(opens).toBe(1);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  story.view(); story.view();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(went).toEqual(['/auth/login?next=%2Fdeck%3Fsource%3Dlive']); // one press, no second sign-in card to tap
+  const signIn = connections.card()!;
+  await connections.answer(signIn.id, false); // back from the password or GitHub without signing in
+  const again = story.view().card!;
+  expect(again.title).toBe('Want to create your own factory?');
+  expect(again.id).not.toBe(ask.id);
+  expect(opens).toBe(1);
 });

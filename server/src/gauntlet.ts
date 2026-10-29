@@ -310,7 +310,7 @@ export function proofComment(proof: RegressionProof): string {
   return [`<!-- shiptorio-proof:${proof.headSha} -->`, `### Proof check — ${proof.headSha.slice(0, 8)}`, "", `Base fails: **${proof.failsOnBase}**; head passes: **${proof.passesOnHead}**.`, `Base: ${proof.baseSha}`, "", `Command: ${proof.command}`, "", `${fence}text`, proof.logTail.replace(/`/g, "'"), fence].join("\n");
 }
 
-export function reworkMove(item: Item, now = Date.now(), harness: "codex" | "claude_code" = "codex"): Move {
+export function reworkMove(item: Item, now = Date.now(), harness: "codex" | "claude_code" | "muse_code" = "codex"): Move {
   const scar = item.scars?.at(-1);
   const check = scar?.check ? techById(scar.check) : undefined;
   const station = check?.name ?? GAUNTLET.find((g) => g.kind === scar?.station)?.name ?? "The gauntlet";
@@ -328,7 +328,7 @@ export function reworkMove(item: Item, now = Date.now(), harness: "codex" | "cla
     focus: check ? checkStationId(check.id) : GAUNTLET.find((g) => g.kind === scar?.station)?.id,
     createdAt: now,
     options: [
-      ...(canRework(item) ? [{ id: `rework-${harness}`, label: again ? "Try again" : `Send back to ${harness === "codex" ? "Codex" : "Claude"} with the scar`, recommended: true, actions: [{ tool: "plan_runner_job", args: { harness }, reason: "Re-plan from the latest failed station before another local build." }] }] : []),
+      ...(canRework(item) ? [{ id: `rework-${harness}`, label: again ? "Try again" : `Send back to ${harness === "codex" ? "Codex" : harness === "muse_code" ? "Muse Code" : "Claude"} with the scar`, recommended: true, actions: [{ tool: "plan_runner_job", args: { harness }, reason: "Re-plan from the latest failed station before another local build." }] }] : []),
       { id: "later", label: "Look later", recommended: !canRework(item), actions: [] },
       { id: "overrule", label: "Overrule and launch", recommended: false, actions: [{ tool: "request_merge", args: { pr: item.prNumber, overrule: true }, reason: "You decide at Gate." }] },
     ],

@@ -41,12 +41,13 @@ export async function maintainConnection(pair: Pairing, options: {
 }
 export function authExpired(output: string): boolean {
   // Positive provider evidence only: configd/Seatbelt/network errors are not sign-in errors.
-  return /(?:token|session|authentication|credentials?).{0,35}(?:expired|revoked|invalid)|(?:unauthorized|authentication_required|not logged in|please (?:log|sign) in|run (?:codex login|claude (?:auth )?login))|(?:invalid_grant|invalid_api_key|invalid api key|refresh_token_reused|refresh token.{0,80}already used|(?:sign|log) in again)/i.test(output);
+  return /(?:token|session|authentication|credentials?).{0,35}(?:expired|revoked|invalid)|(?:unauthorized|authentication_required|not logged in|please (?:log|sign) in|run (?:codex login|muse login|claude (?:auth )?login))|(?:invalid_grant|invalid_api_key|invalid api key|refresh_token_reused|refresh token.{0,80}already used|(?:sign|log) in again)/i.test(output);
 }
 export function agentOffline(output: string): boolean {
   return /connection (?:reset|refused|closed)|network (?:unreachable|error)|stream (?:disconnected|closed)|(?:request|connect|connection) timed? ?out|unable to connect|could not resolve (?:host|proxy)|failed to connect|error sending request|dns (?:error|lookup failed)/i.test(output);
 }
-export const loginCommand = (h: Subscription) => `shiptorio-runner login ${h === "codex" ? "codex" : "claude"}`;
+export const agentName = (h: Subscription) => h === "codex" ? "Codex" : h === "muse_code" ? "Muse Code" : "Claude";
+export const loginCommand = (h: Subscription) => `shiptorio-runner login ${h === "codex" ? "codex" : h === "muse_code" ? "muse" : "claude"}`;
 export interface Diagnostic { check: string; ok: boolean; detail: string }
 export async function diagnose(options: {
   harnesses: Job["harness"][]; pairs: Pairing[];
@@ -61,7 +62,7 @@ export async function diagnose(options: {
     try { await run(); results.push({ check: name, ok: true, detail: "OK" }); }
     catch { results.push({ check: name, ok: false, detail: remedy }); }
   };
-  if (!options.harnesses.length) results.push({ check: "auth", ok: false, detail: "Install Codex CLI or Claude Code." });
+  if (!options.harnesses.length) results.push({ check: "auth", ok: false, detail: "Install Codex or Muse Code." });
   for (const h of options.harnesses) {
     await check(`auth:${h}`, async () => { if (!await options.auth(h)) throw Error(); }, h === "local" ? "Check the local model endpoint." : `Sign in again: ${loginCommand(h)}`);
   }
@@ -96,8 +97,8 @@ export class AuthFailures {
 
 /** Fixed public categories only: provider output, paths and credentials never become server copy. */
 export class RunnerExecutionFailure extends Error {
-  constructor(readonly kind: 'timeout' | 'stopped') {
-    super(kind === 'timeout' ? 'Codex timed out before finishing. No code was published.' : 'Codex stopped before finishing. No code was published.');
+  constructor(readonly kind: 'timeout' | 'stopped', readonly agent: 'Codex' | 'Muse Code' = 'Codex') {
+    super(`${agent} ${kind === 'timeout' ? 'timed out' : 'stopped'} before finishing. No code was published.`);
     this.name = 'RunnerExecutionFailure';
   }
 }

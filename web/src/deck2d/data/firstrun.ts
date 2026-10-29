@@ -20,6 +20,7 @@ type Step =
   | { build: StopId; say: string } // the station builds while its line shows
   | { grow: DeckSize }
   | { island: string } // launch/ raises the island, bridge and rocket while its line shows
+  | { boiler: true } // the steam engine rises into place
   | { shippy: ShippyView }
   | { rest: number };
 
@@ -35,7 +36,7 @@ export const FIRST_RUN_LINES = {
   pick: "Pick a repo and I'll build your factory.",
   repo: "Repo: your GitHub issues come in here.",
   planner: "Planner: I read an issue and write a short plan.",
-  engine: "Next, the engine that writes the code.",
+  engine: "Plug your own Codex into the steam engine to power the line.",
   builder: "Builder: Codex writes the code, on your computer.",
   checks: "Checks: your tests run. Broken code stops here.",
   review: "Review: a second look before anything ships.",
@@ -50,7 +51,7 @@ const SCRIPTS: Record<FirstRunStage, Step[]> = {
   hello: [{ rest: 0.4 }, { shippy: { pose: "happy", at: "repo" } }, { say: L.pick, sec: 1.8 }],
   repo: [
     { rest: 0.6 }, { shippy: { pose: "happy", at: "repo" } }, { build: "repo", say: L.repo }, { rest: 0.6 },
-    { build: "planner", say: L.planner }, { rest: 0.6 }, { say: L.engine, sec: 1.6 },
+    { build: "planner", say: L.planner }, { rest: 0.6 }, { boiler: true }, { say: L.engine, sec: 2 },
   ],
   engine: [
     { rest: 0.3 }, { build: "builder", say: L.builder }, { rest: 0.3 }, { grow: "medium" },
@@ -87,6 +88,7 @@ export function createFirstRun(o: FirstRunOptions) {
 
   let stage: FirstRunStage | null = null, script: Step[] = [], stepT = 0, playing = false;
   let built = new Set<StopId>(), size: DeckSize = "small", island: Island = "none", islandProgress: number | undefined;
+  let boiler = 0;
   let caption: string | null = null, focus: StopId | null = null, shippy: ShippyView | null = null;
   let finished = seen.has("engine");
 
@@ -94,6 +96,7 @@ export function createFirstRun(o: FirstRunOptions) {
     stage = next;
     const before = BEFORE[next];
     // A stage that already played (or got skipped past) starts finished.
+    boiler = next === "engine" || (seen.has(next) && next === "repo") ? 1 : 0;
     if (seen.has(next)) { built = new Set(AFTER[next]); size = next === "engine" ? "large" : "small"; island = next === "engine" ? "built" : "none"; script = []; playing = false; caption = null; focus = null; shippy = null; return; }
     built = new Set(before.built); size = before.size; island = "none"; islandProgress = undefined;
     script = SCRIPTS[next].slice(); stepT = 0; playing = true; caption = null; focus = null; shippy = { pose: "folded", at: "corner" };
@@ -121,7 +124,8 @@ export function createFirstRun(o: FirstRunOptions) {
         if (first) { island = "building"; caption = cur.island; focus = "launch"; }
         islandProgress = Math.min(1, stepT / ISLAND_SEC);
         if (islandProgress >= 1) { island = "built"; islandProgress = undefined; built.add("gate").add("launch"); done = true; }
-      } else if ("shippy" in cur) { shippy = cur.shippy; done = true; }
+      } else if ("boiler" in cur) { if (first) { caption = null; focus = "repo"; } boiler = Math.min(1, stepT / 1.6); done = boiler >= 1; }
+      else if ("shippy" in cur) { shippy = cur.shippy; done = true; }
       else done = stepT >= cur.rest;
       if (done) { script.shift(); stepT = 0; }
     }
@@ -132,7 +136,7 @@ export function createFirstRun(o: FirstRunOptions) {
     // The guest's sample factory stays as it is: Shippy only says hello over it before the sign-in card.
     if (stage === "intro") return playing ? { ...base, card: null, caption, jam: null, shippy: shippy ?? base.shippy, focus: shippy?.at === "corner" ? undefined : shippy?.at, attention: [] } : base;
     const stops = base.stops.map(s => built.has(s.id) ? s : { ...s, built: false, state: "idle" as const, automated: false, items: [], waiting: undefined });
-    const v: V = { ...base, stops, jam: null, deck: { size, island, ...(islandProgress != null ? { islandProgress } : {}) } };
+    const v: V = { ...base, stops, jam: null, deck: { size, island, boiler, ...(islandProgress != null ? { islandProgress } : {}) } };
     if (playing) {
       // The script owns the screen: one line, no card, the camera on what's being built.
       Object.assign(v, { card: null, caption, shippy: shippy ?? base.shippy, focus: focus ?? undefined, attention: [] });

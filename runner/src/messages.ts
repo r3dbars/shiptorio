@@ -6,7 +6,7 @@ const sha = z.string().regex(/^[a-f0-9]{40}$/);
 // Pick executable fields; server-only audit metadata is deliberately stripped.
 export const JobAssignment = z.object({
   id: z.string().uuid(), repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/).transform(repo => repo.toLowerCase()),
-  harness: z.enum(["codex", "claude_code", "local"]), baseSha: sha,
+  harness: z.enum(["codex", "claude_code", "muse_code", "local"]), baseSha: sha,
   branch: z.string().regex(/^shiptorio\/runner-[a-f0-9-]{36}$/),
   allowedPaths: z.array(path).min(1).max(10), plan: z.string().min(1).max(50000),
   lease: z.string().uuid(), token: z.string().min(1).max(2048), deadline: z.number().int().positive(),
@@ -40,8 +40,8 @@ export function plainRunnerError(error: unknown): string {
   if (/Shiptorio origin|HTTPS Shiptorio/i.test(text)) return "The factory address is not valid; use the HTTPS address from Shiptorio.";
   if (/private Keychain|Keychain.*unlock/i.test(text)) return "Claude could not unlock its saved sign-in.\nshiptorio-runner doctor";
   if (/grant|paired|pairing|re-pair|connection stopped|connection needs|revoked|receipt repository/i.test(text)) return "This computer needs to reconnect to your factory.\nshiptorio-runner pair";
-  if (/Install Codex|Assigned harness|CLI installed|unavailable.*agent/i.test(text)) return "Codex is not installed on this computer.\nnpm install -g @openai/codex";
-  if (/sign.in|authentication|authorization rejected|invalid_api_key|unauthorized/i.test(text)) return `Sign in to ${/claude/i.test(text) ? "Claude" : "Codex"} again.\nshiptorio-runner login ${/claude/i.test(text) ? "claude" : "codex"}`;
+  if (/Install Codex|Assigned harness|CLI installed|unavailable.*agent/i.test(text)) return "Install Codex or Muse Code on this computer.\nnpm install -g @openai/codex";
+  if (/sign.in|authentication|authorization rejected|invalid_api_key|unauthorized/i.test(text)) { const [name, cmd] = /claude/i.test(text) ? ["Claude", "claude"] : /muse/i.test(text) ? ["Muse Code", "muse"] : ["Codex", "codex"]; return `Sign in to ${name} again.\nshiptorio-runner login ${cmd}`; }
   if (/quota|usage.*limit|rate.*limit|429/i.test(text)) return "Your coding agent has reached its usage limit; try again after it resets.";
   if (/lease expired|deadline/i.test(text)) return "The build ran out of time; approve a new attempt in Shiptorio.";
   if (/scope|approved files|unapproved|history|Non-regular|Unexpected or empty|Regression|base-failing/i.test(text)) return "The build did not pass its safety checks; review it in Shiptorio.";
@@ -57,6 +57,7 @@ export function plainRunnerError(error: unknown): string {
 export function runnerCheckLabel(name: string): string {
   if (name.includes("codex")) return "Codex";
   if (name.includes("claude")) return "Claude";
+  if (name.includes("muse")) return "Muse Code";
   if (/pair|connect/.test(name)) return "Your factory connection";
   if (/sandbox|platform/.test(name)) return "Your computer's safety checks";
   return "The runner";

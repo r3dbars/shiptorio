@@ -34,6 +34,11 @@ export function parseCodexEdits(transcript: string, allowed: string[]): CodexEdi
   if (!completed || !final || Buffer.byteLength(final) > CODEX_EDIT_LIMITS.replyBytes) throw Error("Missing or oversized completed Codex response");
   let value: unknown;
   try { value = JSON.parse(final); } catch { throw Error("Codex final message is not JSON"); }
+  return checkEditProposal(value, allowed);
+}
+
+/** Shared by every subscription adapter: the proposal shape and scope rules never depend on the provider. */
+export function checkEditProposal(value: unknown, allowed: string[]): CodexEdits {
   const parsed = response.parse(value);
   for (const e of parsed.edits) {
     if (!allowed.includes(e.path) || !pathAllowed(e.path)) throw Error("Codex edit outside approved scope");

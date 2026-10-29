@@ -8,8 +8,9 @@ export function createArt(names: readonly string[]): ArtLoader {
     if (imgs.has(name)) return;
     const im = new Image();
     im.decoding = "async";
-    loads.push(new Promise((done) => { im.onload = im.onerror = () => done(); }));
     im.src = art(name);
+    // decode() unpacks the picture off the main thread, so the first frame's drawImage doesn't stall on it
+    loads.push(im.decode().catch(() => undefined));
     imgs.set(name, im);
   };
   names.forEach(add);

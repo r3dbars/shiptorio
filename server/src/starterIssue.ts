@@ -116,7 +116,7 @@ async function repoCall(env: Env, repo: string): Promise<Call> {
 }
 
 /** Null when the planner can take a new job today, otherwise a plain reason it can't. */
-async function plannerRoom(env: Env, repo: string): Promise<string | null> {
+export async function plannerRoom(env: Env, repo: string): Promise<string | null> {
   try {
     const usage = await budgetUsage(env, await budgetAccount(env.DB, repo));
     if (usage.limits.disabled) return "The planner is paused right now.";
