@@ -30,7 +30,7 @@ test('no Spark (budget gone) means the fixed rule answers without calling it', a
 
 test('Spark may pick another safe issue; its reason is cleaned and the answer is cached', async () => {
   const cache = memory(); let asked = 0;
-  const deps: FirstIssueDeps = { plannerRoom: async () => null, cache, ask: async c => { asked++; expect(c.map(x => x.number)).toEqual([2, 1]); return { number: 1, because: 'Because it is <b>tiny</b> and clear. Visit https://evil.example now!' }; } };
+  const deps: FirstIssueDeps = { plannerRoom: async () => null, cache, ask: async c => { asked++; expect(c.map(x => x.number)).toEqual([2, 1]); return { number: 1, because: 'Because it is <tiny> and `clear`. Visit https://evil.example now!' }; } };
   const rows = [issue(1, 'Add a footer link'), issue(2, 'Fix typo in docs')];
   const want = { number: 1, because: 'it is tiny and clear.', by: 'spark' as const };
   expect(await suggestFirstIssue('o/r', rows, deps)).toEqual(want);

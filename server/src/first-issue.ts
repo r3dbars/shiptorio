@@ -46,7 +46,7 @@ export function firstIssueCandidates(issues: StarterIssue[]): (StarterIssue & { 
 
 /** One short sentence, plain text, no links or markup. Null when nothing usable is left. */
 export function plainReason(text: string): string | null {
-  let s = text.replace(/<[^>]*>/g, "").replace(/https?:\/\/\S+/gi, "").replace(/[<>`*_#[\]{}|\\]/g, "").replace(/\s+/g, " ").trim();
+  let s = text.replace(/https?:\/\/\S+/gi, "").replace(/[<>`*_#[\]{}|\\]/g, "").replace(/\s+/g, " ").trim();
   s = s.replace(/^(because|since)\s+/i, "");
   const end = s.search(/[.!?](\s|$)/);
   if (end > 0) s = s.slice(0, end + 1);
