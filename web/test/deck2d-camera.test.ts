@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { anchoredCenter, pixelZoom, settleCamera } from "../src/deck2d/engine/camera";
+import { anchoredCenter, frameShot, pixelZoom, settleCamera, wholeScale } from "../src/deck2d/engine/camera";
 
 test("pixel zoom does not oscillate when a gesture hovers around a rounding threshold", () => {
   let level = 3;
@@ -28,4 +28,28 @@ test("automatic camera approach is monotonic and settles instead of drifting for
     }
     expect(x).toBe(1000);
   }
+});
+
+test("story shots land on a whole-number zoom with the subject above the card", () => {
+  for (const v of [{ w: 1440, h: 900, dpr: 2 }, { w: 390, h: 844, dpr: 3 }, { w: 1280, h: 720, dpr: 1 }]) {
+    const scr = { ...v, artPx: 5, pixel: true };
+    const f = frameShot({ x: 190, y: 270, width: 560 }, scr);
+    const k = f.s * 5 * v.dpr;
+    expect(Math.abs(k - Math.round(k))).toBeLessThan(1e-9);
+    expect(k).toBeGreaterThanOrEqual(1);
+    expect(f.x).toBe(190);
+    // the subject sits above the middle, where the bottom card can't cover it
+    expect(f.y).toBeGreaterThan(270);
+    expect(270 - (f.y - v.h / f.s / 2)).toBeLessThan(v.h / f.s / 2);
+  }
+});
+
+test("pulling back to the whole line never zooms past the fit", () => {
+  const scr = { w: 1440, h: 900, dpr: 2, artPx: 5, pixel: true };
+  for (const s of [0.31, 0.37, 0.39, 0.5]) {
+    const out = wholeScale(s, scr, true);
+    expect(out).toBeLessThanOrEqual(s + 1e-9);
+    expect(Number.isInteger(Math.round(out * 10 * 1e6) / 1e6)).toBe(true);
+  }
+  expect(wholeScale(0.05, scr, true)).toBe(1 / 10); // never below one device px per art px
 });
