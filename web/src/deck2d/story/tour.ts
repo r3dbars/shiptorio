@@ -43,17 +43,23 @@ export const TOUR: Beat[] = [
   { title: "Launch", line: "This is where you actually ship. Merged PRs fly out to your users from here. Want to ship one now?", yes: "Ship one", pose: "point", at: "launch", then: { roll: true } },
   { title: "Ship this fix?", line: "A fix rode through every machine and it's waiting on your call. Press and hold to ship it.", yes: "Hold to ship", at: "gate", hold: true, then: { ship: true } },
   { title: "Shipped!", line: "Your fix is live. Issues come in, shipped code goes out, and you make all the calls.", yes: "Next", at: "launch", pose: "happy" },
-  // Justin's islands story (#725's city), told as cards you click through instead of captions on a clock.
+  // Justin's islands story (#725's city), told as cards you click through, with the camera as the guide (round 2,
+  // 2026-10-30: "more of a cinematic experience"): the line, a slow pull back to the whole city, then one island per card
+  // (Errors, Traffic, Inbox, Customers, Marketing), each lighting as the camera pans to it, then a slow pull back again.
   { title: "Your software factory", line: "This first part is your software factory: your GitHub repo, powered by your coding subscription.", yes: "Next", at: "launch", pose: "point",
     city: { zoom: "line", beat: "line" } },
-  { title: "It's just the start", line: "Later you'll add more islands. Each one connects to your factory and feeds it real work.", yes: "Next", at: "launch", pose: "wave",
+  { title: "It's just the start", line: "Your factory sits in a whole city of islands. Each one will plug into your line and feed it real work.", yes: "Next", at: "launch", pose: "wave",
     city: { zoom: "city", beat: "city" } },
-  { title: "Errors and traffic", line: "Sentry sends in crashes from your real product. Cloudflare shows how people use your app.", yes: "Next", at: "launch", pose: "point",
-    city: { zoom: "city", beat: "islands", light: ["errors", "traffic"] } },
-  { title: "Inbox and customers", line: "Support tickets and email come in as work. PostHog shows where customers drop off.", yes: "Next", at: "launch", pose: "point",
-    city: { zoom: "city", beat: "islands", light: ["inbox", "customers"] } },
-  { title: "The factory must grow", line: "Then marketing, so people find what you ship. Every island makes your factory smarter.", yes: "Next", at: "launch", pose: "happy",
-    city: { zoom: "city", beat: "grow", light: ["marketing"] } },
+  { title: "Errors", line: "Sentry will send in crashes from your real product, so every bug turns into a fix on your line.", yes: "Next", at: "launch", pose: "point",
+    city: { zoom: "city", beat: "islands", light: ["errors"] } },
+  { title: "Traffic", line: "Cloudflare will show how people really use your app, so you build what they need.", yes: "Next", at: "launch", pose: "point",
+    city: { zoom: "city", beat: "islands", light: ["traffic"] } },
+  { title: "Inbox", line: "Support tickets and email will come in here as work, straight onto your line.", yes: "Next", at: "launch", pose: "point",
+    city: { zoom: "city", beat: "islands", light: ["inbox"] } },
+  { title: "Customers", line: "PostHog will show where customers drop off, so you fix what's costing you users.", yes: "Next", at: "launch", pose: "point",
+    city: { zoom: "city", beat: "islands", light: ["customers"] } },
+  { title: "Marketing", line: "Then customer acquisition and marketing, so people find what you ship. The factory must grow.", yes: "Next", at: "launch", pose: "happy",
+    city: { zoom: "city", beat: "islands", light: ["marketing"] } },
 ];
 
 const BUILD_SEC = STAGE_AT.done; // the card comes back as the build lands; its dust settles behind it
@@ -70,6 +76,17 @@ const ROCKET_SEC = 3.5; // the rocket's moment, on camera, before Shippy says wh
 const LIGHT_GAP = 0.9; // the islands story: seconds between two islands lighting on the same card
 const CRATE = "tour-crate";
 const SHIP_BEAT = TOUR.findIndex((b) => b.then && "ship" in b.then);
+/** What each machine is doing while the fix rides through it (Justin 2026-10-30: "a title for each one of these things
+ *  that it's processing through"). Shown as the caption over the deck; no card is up during the ride. */
+export const ROLL_CAPTION: Record<StopId, string> = {
+  repo: "Repo: an issue comes in from GitHub. This crate is one fix.",
+  planner: "Planner: I write a short plan. You say yes before any code.",
+  builder: "Builder: your Codex or Muse Code writes the code and opens a PR.",
+  checks: "Checks: your tests run on the PR. Broken code stops here.",
+  review: "Review: a second look at the change, so nothing odd slips through.",
+  gate: "Gate: it waits here for your call.",
+  launch: "",
+};
 const off = <V>(v: V): Record<CityIsland, V> => ({ errors: v, traffic: v, inbox: v, customers: v, marketing: v });
 
 export interface Tour {
@@ -94,7 +111,7 @@ export function createTour(): Tour {
   }
 
   function card(): CardView | null {
-    if (S.end) return { id: STORY_CARD.connect, title: "Want to create your own factory?", line: "Sign in with GitHub and I'll build your real one, on your real repo. The other islands light up later.", stop: "repo", dots: null, yes: "Build mine", no: "Replay", setup: true, guide: "shippy" }; // a plain card: its press leaves the page
+    if (S.end) return { id: STORY_CARD.connect, title: "Want to build yours?", line: "The other islands are coming soon. For now, sign in with GitHub and I'll start your factory floor on your real repo.", stop: "repo", dots: null, yes: "Build mine", no: "Replay", setup: true, guide: "shippy" }; // a plain card: its press leaves the page
     if (S.playing) return null;
     const b = TOUR[S.beat];
     // Ship it is a real yes on real-looking work, so it shows like one (held); the rest are Shippy talking in the card.
@@ -178,12 +195,13 @@ export function createTour(): Tour {
   /** The islands story's picture for the card that is up: what was lit on earlier cards stays lit, this card's light in turn. */
   function cityView(): CityView | undefined {
     const at = S.end ? -1 : S.beat, b = TOUR[at];
-    if (S.end) return { zoom: "city", beat: "card", lit: off(0), plates: off(true), focus: null, label: CITY_COPY.repo };
+    if (S.end) return { zoom: "city", beat: "card", lit: off(1), plates: off(true), focus: null, label: CITY_COPY.repo, cine: true };
     if (!b?.city) return undefined;
     const lit = off(0);
     for (let i = 0; i < at; i++) for (const id of TOUR[i].city?.light ?? []) lit[id] = 1;
     (b.city.light ?? []).forEach((id, k) => { lit[id] = Math.max(0, Math.min(1, (S.cardT - CITY_TIMING.move - k * LIGHT_GAP) / CITY_TIMING.light)); });
-    return { zoom: b.city.zoom, beat: b.city.beat, lit, plates: off(false), focus: null, label: CITY_COPY.repo }; // the whole ring: the card names what lights
+    const focus = b.city.light?.length === 1 ? b.city.light[0] : null; // the camera pans to the island the card talks about
+    return { zoom: b.city.zoom, beat: b.city.beat, lit, plates: off(false), focus, label: CITY_COPY.repo, cine: true };
   }
 
   function view(): AttentionView {
@@ -204,7 +222,8 @@ export function createTour(): Tour {
       items: S.crate === id ? [{ id: CRATE, title: "Fix the broken docs link", look: id === "gate" && !p ? "glow" : "ok" }] : [],
     }));
     return {
-      stops, jam: null, attention: c && S.beat === SHIP_BEAT && !S.end ? ["gate"] : [], card: c, shippy, shipped: S.shipped, caption: null,
+      stops, jam: null, attention: c && S.beat === SHIP_BEAT && !S.end ? ["gate"] : [], card: c, shippy, shipped: S.shipped,
+      caption: rolling && S.crate ? ROLL_CAPTION[S.crate] : null,
       // the fix's ride: the camera goes station to station with it, at the same framing as the build cards
       focus, ...(rolling && S.crate ? { shot: S.crate } : shot ? { shot } : {}),
       deck: { size: S.size, island: S.island, boiler: S.boiler, ...(S.growing ? { growing: S.growing } : {}), ...(S.islandProgress != null ? { islandProgress: S.islandProgress } : {}) },

@@ -121,7 +121,11 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   const screenInfo = () => screenNow;
   function measureScreen() {
     const s: CityScreen = { w: W, h: H, dpr: DPR, portrait: portrait() };
-    if (s.portrait && city && cityView && cityView.zoom !== "station") {
+    if (city && cityView?.cine && cityView.zoom !== "station") {
+      // the tour's city: the story card owns the bottom, so the city frames itself in the screen above it
+      const top = cardTop();
+      if (top !== null) s.band = Math.max(s.portrait ? 80 : 96, Math.ceil(H - top) + EDGE);
+    } else if (s.portrait && city && cityView && cityView.zoom !== "station") {
       if (!cityView.beat) {
         const button = document.getElementById("zoom")?.getBoundingClientRect();
         if (button && button.height > 0) s.top = Math.ceil(button.bottom) + EDGE;
@@ -263,6 +267,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   }
   { const f = fitAll(); Object.assign(cam, f); }
   let first = true, arrived = false, lastShot: Shot | null | undefined;
+  let shotTween: { from: { x: number; y: number; s: number }; t: number; dur: number } | null = null;
 
   // What a tap can land on, in world units: a built station, the boiler, or the rocket once its island is up.
   type Box = { x0: number; y0: number; x1: number; y1: number };
@@ -727,7 +732,15 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     if (document.body.dataset.cityBeat !== beat) document.body.dataset.cityBeat = beat;
     const shot = v.shot ?? previewShot;
     let shotCut = false;
-    if (shot !== lastShot) { shotCut = shot === "launch" && lastShot !== undefined; lastShot = shot; cam.manual = 0; } // a new story shot takes the camera back from a drag
+    if (shot !== lastShot) {
+      // the reveal's hero rocket cuts in from the story's own camera; a move from one story shot to another glides
+      shotCut = shot === "launch" && lastShot === null;
+      if (shot && lastShot && !shotCut && zoom === "station") {
+        const tg = target(v), hop = Math.hypot(tg.x - cam.x, tg.y - cam.y) * Math.min(cam.s, tg.s);
+        shotTween = { from: { x: cam.x, y: cam.y, s: cam.s }, t: 0, dur: Math.min(2.4, Math.max(0.9, hop / 700)) };
+      } else shotTween = null;
+      lastShot = shot; cam.manual = 0; // a new story shot takes the camera back from a drag
+    }
     if (performance.now() >= cam.manual) {
       // A new zoom level cuts x, y and the scale in the same frame, and so does the story's launch shot (the reveal's rocket
       // climbs inside one fixed whole-number frame). The city glides (city/camera.ts createCityMove); the line glides x and y
@@ -735,8 +748,19 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
       // reveal's cut from the line to the city is a match cut: its first frame keeps the line's middle where the line zoom
       // had it, and the next frames glide to the ring (0.6 s, inside beat 2's hold).
       const tg = target(v);
-      if (first || changed || shotCut || (zoom !== "station" && reduced?.matches)) { Object.assign(cam, spot ? matchCut(spot, tg.s) : tg); cityMove.reset(); }
-      else if (zoom === "city") Object.assign(cam, cityMove.step(cam, tg, dt, screenInfo()).pose);
+      // The tour's city (cine) enters at the line zoom's own scale, matched on the line, and then pulls back one whole k at
+      // a time: a slow zoom out instead of a cut.
+      const cine = !!cityView?.cine && !reduced?.matches;
+      if (first || changed || shotCut || (zoom !== "station" && reduced?.matches)) { Object.assign(cam, spot ? matchCut(spot, cine && changed ? cam.s : tg.s) : tg); cityMove.reset(); shotTween = null; }
+      else if (zoom === "city") Object.assign(cam, cityMove.step(cam, tg, dt, screenInfo(), cine).pose);
+      else if (shotTween && zoom === "station") {
+        // a story shot changed: one eased glide over a fixed time, so a long move (the engine to the launch island) reads
+        // as a pan, not a lurch that starts at full speed
+        shotTween.t = Math.min(shotTween.dur, shotTween.t + dt);
+        const u = shotTween.t / shotTween.dur, e = u * u * (3 - 2 * u), f = shotTween.from;
+        cam.x = f.x + (tg.x - f.x) * e; cam.y = f.y + (tg.y - f.y) * e; cam.s = f.s + (tg.s - f.s) * e;
+        if (u >= 1) shotTween = null;
+      }
       else {
         const rate = zoom === "line" ? CITY_CAM_RATE : shot ? SHOT_RATE : undefined;
         cam.x = settleCamera(cam.x, tg.x, dt, ART_PX / 4, rate);

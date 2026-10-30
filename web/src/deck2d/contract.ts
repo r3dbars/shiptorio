@@ -101,6 +101,9 @@ export interface CityView {
   plates: Record<CityIsland, boolean>;
   /** City zoom camera: frame this island (phone pans to it), or null = fit the whole ring. Ignored at other zooms. */
   focus: CityIsland | null;
+  /** The guest tour's city (Justin 2026-10-30, "cinematic"): every move glides, long hops included, a zoom steps one whole k
+   *  at a time, and the camera keeps the story card's height clear at the bottom. Omitted = the reveal's own rules. */
+  cine?: boolean;
   /** The line's label: the repo name ("your repo" in the story, owner/name live). */
   label: string;
 }
