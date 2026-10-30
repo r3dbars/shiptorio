@@ -107,6 +107,14 @@ export function forget(book: DeckBook, key: string): boolean {
   return true;
 }
 
+/** Start every kind over: nothing learned, no dots. The owner's reset after a scripted run (scripts/e2e/real-loop.ts),
+ * so a filmed take begins at zero. True when there was anything to clear. */
+export function forgetAll(book: DeckBook): boolean {
+  const had = Object.keys(book.auto ?? {}).length + Object.keys(book.learnYes ?? {}).length > 0;
+  book.auto = {}; book.learnYes = {}; book.autoRuns = [];
+  return had;
+}
+
 export function noteAutoRun(book: DeckBook, itemId: string | undefined, key: string): void {
   if (!itemId) return;
   book.autoRuns = [...(book.autoRuns ?? []).filter(r => r.itemId !== itemId), { itemId, key }].slice(-MAX_RUNS);
