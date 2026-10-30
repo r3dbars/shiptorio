@@ -121,6 +121,7 @@ describe("the bottleneck brain in the real factory", () => {
       GITHUB_APP_PRIVATE_KEY: generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey.export({ format: "pem", type: "pkcs8" }).toString(),
     });
     const calls: string[] = [];
+    let filedLabels: unknown;
     const issue = { number: 50, state: "open", title: 'Fix "check" failing on #39', body: "", user: { login: "r3dbars" }, author_association: "OWNER", labels: [], updated_at: "2026-10-30T19:00:00Z", html_url: "https://github.com/r3dbars/demo/issues/50" };
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input instanceof Request ? input.url : input), method = init?.method ?? "GET";
@@ -128,7 +129,7 @@ describe("the bottleneck brain in the real factory", () => {
       if (url.includes("/access_tokens")) return Response.json({ token: "fixture-installation-token", expires_at: new Date(Date.now() + 3600000).toISOString() });
       if (url.endsWith("/pulls/39") && method === "GET") return Response.json({ state: "open", title: "Shipping note", html_url: "https://github.com/r3dbars/demo/pull/39", head: { sha: "h39", repo: { full_name: "r3dbars/demo" } } });
       if (url.includes("/commits/h39/check-runs")) return Response.json({ check_runs: [{ status: "completed", conclusion: "success" }] });
-      if (url.endsWith("/repos/r3dbars/demo/issues") && method === "POST") return Response.json(issue, { status: 201 });
+      if (url.endsWith("/repos/r3dbars/demo/issues") && method === "POST") { filedLabels = JSON.parse(String(init?.body)).labels; return Response.json(issue, { status: 201 }); }
       if (url.endsWith("/issues/50")) return Response.json(issue);
       if (url.includes("/issues/50/comments")) return Response.json([]);
       if (url.endsWith("/pulls/39/update-branch")) return Response.json({ message: "Updating pull request branch." }, { status: 202 });
@@ -144,6 +145,7 @@ describe("the bottleneck brain in the real factory", () => {
     expect(f.saved().deck?.some(m => m.id === `unlock:${red.id}`)).toBe(true);
     await f.send({ type: "choose_move", moveId: `unlock:${red.id}`, optionId: "continue" });
     expect(calls).toContain("POST /repos/r3dbars/demo/issues");
+    expect(filedLabels).toEqual(["shiptorio"]); // so the planner trusts an issue the App filed itself
     expect(f.saved().items.some(i => i.id === "gh-50")).toBe(true);
     expect(f.data.get("fixesPr:50")).toEqual({ pr: 39, sameRepo: true });
 
