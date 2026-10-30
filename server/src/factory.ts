@@ -2314,7 +2314,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const explanation = explain(out);
       if (this.env.DB && this.env.META_API_KEY) {
         const usage = await this.usage();
-        const spend = await factorySpend(this.env.DB, this.meta!.repo);
+        const spend = await factorySpend(this.env.DB, this.meta!.repo, Date.now(), usage.account);
         explanation.reason += ` Planner: ~$${spend.estimatedUsd.toFixed(4)} / $${spend.dailyBudgetUsd.toFixed(2)} today. ${spend.explanation}`;
         explanation.reason += ` Budget: ${usage.calls}/${usage.limits.calls} calls, ${usage.tokens}/${usage.limits.tokens} tokens today (UTC).`;
       }

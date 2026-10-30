@@ -14,7 +14,7 @@ export async function quotaStatus(env: Env, repo: string, viewer: User, readonly
   if (!owner && readonly) owner = {login:viewer.login};
   if (!owner) throw new Error("Quota owner unavailable");
   const [runs, spark, spend, resources, caps] = await Promise.all([
-    runQuotaStatus(env, owner.login), budgetUsage(env, account), factorySpend(env.DB, repo),
+    runQuotaStatus(env, owner.login), budgetUsage(env, account), factorySpend(env.DB, repo, Date.now(), account),
     env.DB.prepare('SELECT kind, COUNT(*) AS used FROM signup_resources WHERE login=? GROUP BY kind').bind(owner.login).all<{kind:string;used:number}>(),
     env.DB.prepare('SELECT factories,repos FROM signup_allowlist WHERE login=?').bind(owner.login).first<{factories:number;repos:number}>(),
   ]);
@@ -27,6 +27,7 @@ export async function quotaStatus(env: Env, repo: string, viewer: User, readonly
     quota('spark-calls', 'Spark calls / day', spark.calls, spark.limits.calls, daily, sparkRaiseUrl),
     quota('spark-tokens', 'Spark tokens / day', spark.tokens, spark.limits.tokens, daily, sparkRaiseUrl),
     ...(account === `user:${viewer.id}` ? [quota('spark-spend', 'Spark dollars / day', spend.estimatedUsd, spend.dailyBudgetUsd, daily, "#planner-budget")] : []),
+    ...(spend.account ? [quota('account-spend', 'AI dollars / day (account)', spend.account.estimatedUsd, spend.account.dailyBudgetUsd, daily, sparkRaiseUrl)] : []),
     quota('factories', 'Connected factories', resources.results.find(r => r.kind === 'factory')?.used ?? 0, isQuotaOwner(env, owner.login) ? 99999 : caps?.factories ?? 3, null, raiseUrl),
     quota('repos', 'Connected repos', resources.results.find(r => r.kind === 'repo')?.used ?? 0, isQuotaOwner(env, owner.login) ? 99999 : caps?.repos ?? 3, null, raiseUrl),
   ] };
