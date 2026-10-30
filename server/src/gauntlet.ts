@@ -289,7 +289,7 @@ export function launchMove(item: Item, now = Date.now()): Move {
     evidence: stamps,
     createdAt: now,
     options: [
-      { id: "launch", label: `Launch #${item.prNumber}`, recommended: true, actions: [{ tool: "request_merge", args: { pr: item.prNumber }, reason: "Every station passed on the current commit." }] },
+      { id: "launch", label: `Launch #${item.prNumber}`, recommended: true, actions: [{ tool: "request_merge", args: { pr: item.prNumber, headSha: item.inspection?.headSha }, reason: "Every station passed on the current commit." }] },
       { id: "later", label: "Later", recommended: false, actions: [] },
     ],
   };
@@ -330,7 +330,7 @@ export function reworkMove(item: Item, now = Date.now(), harness: "codex" | "cla
     options: [
       ...(canRework(item) ? [{ id: `rework-${harness}`, label: again ? "Try again" : `Send back to ${harness === "codex" ? "Codex" : harness === "muse_code" ? "Muse Code" : "Claude"} with the scar`, recommended: true, actions: [{ tool: "plan_runner_job", args: { harness }, reason: "Re-plan from the latest failed station before another local build." }] }] : []),
       { id: "later", label: "Look later", recommended: !canRework(item), actions: [] },
-      { id: "overrule", label: "Overrule and launch", recommended: false, actions: [{ tool: "request_merge", args: { pr: item.prNumber, overrule: true }, reason: "You decide at Gate." }] },
+      { id: "overrule", label: "Overrule and launch", recommended: false, actions: [{ tool: "request_merge", args: { pr: item.prNumber, headSha: item.inspection?.headSha, overrule: true }, reason: "You decide at Gate." }] },
     ],
   };
 }
