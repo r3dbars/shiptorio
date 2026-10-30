@@ -89,7 +89,7 @@ import { foldSignal, matchDistrict, oreWeight } from "./ore";
 import { canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, nextGate, prFiles, referencedFiles, researchMove, reviewComment, reviewDiff, reworkMove, runChecks, setStage, stageOf, stationsPassed, verifyFromDiff, withChecks } from "./gauntlet";
 import { autonomyView, emptyBook, laneOf, mayAutoLaunch, permitMove, permitReady, recordRework, recordShip, setPermit, snooze, earned, type PermitBook } from "./permits";
 import { escape, grantLevel, ladderOf, LEVEL_NAME, levelMove, levelReady, levelTap, lowerLevel, snoozeLevel } from "./levels";
-import { githubStatus, normalizeGitHub, type GitHubPayload } from "./sources/github";
+import { githubStatus, normalizeGitHub, TRUST_LABEL, type GitHubPayload } from "./sources/github";
 import type { Signal } from "./sources";
 import { buildDeck, moveScope, enrichMove } from "./deck";
 import { closeGone, loadTaps, offerCards, offeredRow, openCards, purgeTaps, recordOutcome, recordTap, tapBrief, tapsEnabled, tapsReport, type NeverReason, type TapAction, type TapContext, type TapOutcome } from "./taps";
@@ -629,10 +629,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const pull = await gh<{ state: string; title: string; html_url: string; head: { repo: { full_name: string } | null } }>(`/repos/${repo}/pulls/${pr}`, token);
       if (pull.state !== "open") { this.log("info", `#${pr} isn't open anymore, so there's nothing to fix.`); return false; }
       let issue = await this.ctx.storage.get<number>(`fixIssueFor:${pr}`);
-      if (!issue) {
+      // The trust label lets the planner take an issue the App filed itself (staging's App isn't shiptorio[bot]).
+      if (issue) await gh(`/repos/${repo}/issues/${issue}/labels`, token, { method: "POST", body: JSON.stringify({ labels: [TRUST_LABEL] }) });
+      else {
         const url = typeof args.url === "string" && args.url.startsWith("https://github.com/") ? args.url : pull.html_url;
         issue = (await gh<{ number: number }>(`/repos/${repo}/issues`, token, { method: "POST", body: JSON.stringify({
-          title: `Fix "${workflow}" failing on #${pr}`.slice(0, 200),
+          title: `Fix "${workflow}" failing on #${pr}`.slice(0, 200), labels: [TRUST_LABEL],
           body: [`Shippy found the "${workflow}" check failing on #${pr} (${pull.title.slice(0, 120)}), so it can't ship.`, "", `Failing run: ${url}`, "",
             `Make "${workflow}" pass on the default branch. Fix the code the check exercises; don't weaken or skip the check, and don't change what #${pr} is for.`].join("\n"),
         }) })).number;
