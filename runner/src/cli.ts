@@ -16,7 +16,7 @@ import { loadConnections, persistRenewal, persistGrantRejection } from "./grant-
 
 
 import { atomicJson, Backoff, recoverWorkspace, replayReceipts, retryable } from "./recovery";
-import { AuthFailures, RunnerGrantRejected, runnerFailureSummary, runnerResponseError, maintainConnection, renewalDue, agentOffline, authExpired, diagnose, loginCommand, agentName, type Subscription } from "./health";
+import { AuthFailures, RunnerGrantRejected, runnerFailureSummary, runnerResponseError, maintainConnection, renewalDue, agentOffline, authExpired, usageLimited, RunnerExecutionFailure, diagnose, loginCommand, agentName, type Subscription } from "./health";
 import { tmpdir } from "node:os";
 const blocked = new Set<Subscription>();
 const authFailures = new AuthFailures();
@@ -260,6 +260,8 @@ async function execute(job: Job, pair: Pairing) {
           // The redacted stderr tail stays on this Mac (service-error.log); the server only sees the generic failure.
           if (verbose) console.error(`${job.harness} exited ${result.code}: ${redactText(result.err.trim().slice(-2000))}`);
           if (authExpired(result.err + "\n" + result.out)) throw await signInExpired(job.harness, `Sign-in expired: ${loginCommand(job.harness)}. The build is saved while its lease remains valid.`);
+          const limited = usageLimited(result.err + "\n" + result.out);
+          if (limited) throw new RunnerExecutionFailure("limit", agentName(job.harness as Subscription), limited.until);
           if (result.timedOut || agentOffline(result.err + "\n" + result.out)) throw new TypeError("Agent connection interrupted or timed out; saved build will resume");
           throw new Error(`Agent failed (${result.code}); see the runner log for the agent's error`);
         }

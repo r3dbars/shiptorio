@@ -43,6 +43,12 @@ export function authExpired(output: string): boolean {
   // Positive provider evidence only: configd/Seatbelt/network errors are not sign-in errors.
   return /(?:token|session|authentication|credentials?).{0,35}(?:expired|revoked|invalid)|(?:unauthorized|authentication_required|not logged in|please (?:log|sign) in|run (?:codex login|muse login|claude (?:auth )?login))|(?:invalid_grant|invalid_api_key|invalid api key|refresh_token_reused|refresh token.{0,80}already used|(?:sign|log) in again)/i.test(output);
 }
+/** The provider said the account is out of usage or credits. Returns its "try again at ..." hint when it gave one. */
+export function usageLimited(output: string): { until?: string } | null {
+  if (!/usage limit|hit your (?:\w+ )?limit|purchase more credits|insufficient_quota|quota exceeded|out of credits|credit balance is too low/i.test(output)) return null;
+  const until = /try again (?:at|after|in) ([^.\n]{3,60})/i.exec(output)?.[1]?.trim();
+  return until ? { until } : {};
+}
 export function agentOffline(output: string): boolean {
   return /connection (?:reset|refused|closed)|network (?:unreachable|error)|stream (?:disconnected|closed)|(?:request|connect|connection) timed? ?out|unable to connect|could not resolve (?:host|proxy)|failed to connect|error sending request|dns (?:error|lookup failed)/i.test(output);
 }
@@ -97,8 +103,10 @@ export class AuthFailures {
 
 /** Fixed public categories only: provider output, paths and credentials never become server copy. */
 export class RunnerExecutionFailure extends Error {
-  constructor(readonly kind: 'timeout' | 'stopped', readonly agent: 'Codex' | 'Muse Code' = 'Codex') {
-    super(`${agent} ${kind === 'timeout' ? 'timed out' : 'stopped'} before finishing. No code was published.`);
+  constructor(readonly kind: 'timeout' | 'stopped' | 'limit', readonly agent: 'Codex' | 'Muse Code' | 'Claude' = 'Codex', until?: string) {
+    super(kind === 'limit'
+      ? `${agent} is out of usage${until ? ` until ${until}` : ''}. Add credits or switch agents, then approve again. No code was published.`
+      : `${agent} ${kind === 'timeout' ? 'timed out' : 'stopped'} before finishing. No code was published.`);
     this.name = 'RunnerExecutionFailure';
   }
 }

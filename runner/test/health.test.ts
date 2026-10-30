@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { AuthFailures, agentOffline, authExpired, diagnose } from "../src/health";
+import { AuthFailures, agentOffline, authExpired, diagnose, RunnerExecutionFailure, runnerFailureSummary, usageLimited } from "../src/health";
 
 test("Codex and Claude expired sign-ins are recognized without blaming sandbox/network failures", () => {
   for (const output of ["Your session has expired. Please log in", "OAuth token revoked", "Your access token could not be refreshed because your refresh token was already used. Please log out and sign in again.", "401 Unauthorized", "authentication_required", "Not logged in · Please run claude auth login", '{"is_error":true,"result":"Invalid API key · Please run /login"}']) expect(authExpired(output)).toBe(true);
@@ -84,4 +84,12 @@ test('only fixed controlled failure categories become public runner reasons', as
   const secret='token-private-file-path-and-prompt';
   expect(runnerFailureSummary(new Error(secret))).not.toContain(secret);
   expect(runnerFailureSummary({kind:'timeout',message:secret})).not.toContain('Codex timed out');
+});
+
+test("an out-of-usage provider says so, with its reset time, instead of a generic stop", () => {
+  const codex = "You've hit your usage limit. Visit https://chatgpt.com/settings/usage to purchase more credits or try again at Nov 5th, 2026 10:36 AM.";
+  expect(usageLimited(codex)).toEqual({ until: "Nov 5th, 2026 10:36 AM" });
+  expect(usageLimited("typecheck exited 1")).toBeNull();
+  expect(authExpired(codex)).toBe(false);
+  expect(runnerFailureSummary(new RunnerExecutionFailure("limit", "Codex", "Nov 5th, 2026 10:36 AM"))).toBe("Codex is out of usage until Nov 5th, 2026 10:36 AM. Add credits or switch agents, then approve again. No code was published.");
 });

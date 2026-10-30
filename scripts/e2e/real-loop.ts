@@ -268,7 +268,7 @@ async function ship() {
   const started = await gh<{ title: string; state: string }>(`/issues/${issue}`);
   await note("github_issue", { issue, title: started?.title, state: started?.state });
   await startIssue();
-  let lastState = "", lastStage = "", tapped = new Set<string>(), reloaded = false;
+  let lastState = "", lastStage = "", tapped = new Set<string>(), reloaded = false, failedBuilds = 0;
   while (Date.now() < deadline) {
     await page.waitForTimeout(2000);
     const it = item();
@@ -277,6 +277,8 @@ async function ship() {
       lastState = it.state; lastStage = stage;
       await note("item", { state: it.state, pr: it.prNumber, stage, scars: it.scars?.length ?? 0 });
       await shot(`${it.state}${it.prNumber ? `-pr${it.prNumber}` : ""}-${stage.split(",")[0] ?? ""}`);
+      // Two failed builds in a row is a broken agent (out of usage, signed out), not something more taps fix.
+      if (it.state === "rejected" && ++failedBuilds >= 2) { result = `stopped: the build failed twice: ${it.failure ?? "no reason given"}`; return; }
     }
     if (it?.state === "launched") {
       const pr = it.prNumber ? await gh<{ merged: boolean; merged_at: string; merge_commit_sha: string; html_url: string }>(`/pulls/${it.prNumber}`) : null;
