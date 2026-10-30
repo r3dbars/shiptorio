@@ -167,6 +167,15 @@ five distinct timed rounds per path are mandatory; missing/non-finite milestones
 fail. Evidence is written before evaluating the budget, including on failure.
 These are sampled CI timings, not production. No cause has been demonstrated to account for a ≥200 ms saving yet; no optimization PR is bundled.
 
+An anonymous staging confirmation on 2026-10-30 used the same throttle profile
+and a cold browser context: first deck/card insertion **2,238.8 ms**, visible
+playable card **2,498.6 ms**, with no page errors. This is one sample, not a median
+or a signed-in result. Hashed assets returned `Content-Encoding: zstd` and
+`Cache-Control: private, max-age=31536000, immutable`.
+The check exposed delayed PerformanceObserver delivery to the Node binding;
+both scripts now read current-document marks directly before saving timings,
+retaining marks from the earlier fresh-path navigation.
+
 ## Justin's real-session confirmation (pending)
 
 Justin chose to run this himself. After the instrumentation is deployed:

@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import { benchmarkServer } from './perf-server.mjs';
-import { PROFILE, observePlayable, throttle } from './cold-load-profile.mjs';
+import { PROFILE, observePlayable, collectCurrentMarks, throttle } from './cold-load-profile.mjs';
 import { checkColdLoadBudget } from './cold-load-budget.mjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
@@ -44,6 +44,7 @@ try {
     try {
       await page.goto(host.origin+(live?'/deck?source=live&repo=test-fixture/test-newbie':'/deck?fresh=1'),{waitUntil:'commit'});
       await page.waitForFunction(name=>performance.getEntriesByName(name).length>0,'shiptorio:playable',{timeout:45000});
+      await collectCurrentMarks(page,marks);
       await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
       await page.screenshot({path:join(out,`${name}.png`)});
       if(errors.length)throw Error(errors.join('\n'));
