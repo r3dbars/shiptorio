@@ -8,7 +8,7 @@ production speed claim. No performance optimization has been made in this PR.
 ```sh
 bun install --frozen-lockfile
 bun run build
-COLD_LOAD_OUT=/tmp/shiptorio-cold-load node web/scripts/cold-load.mjs
+COLD_LOAD_OUT=/tmp/shiptorio-cold-load node web/scripts/cold-load.mjs --budget
 ```
 
 Requires the repository's Playwright Chromium and Node 22+. Runs one uncounted
@@ -149,7 +149,7 @@ attribution remain unproven, rather than guessed.
 
 ## Validation and PR ledger
 
-`bun run check`: 2,123 passed, two existing platform skips, zero failures. Focused
+`bun run check` on the final harness head: 2,124 passed, two existing platform skips, zero failures. Focused
 session revocation/failure and timing tests pass. Before/after deterministic
 390×844 and 1280×720 full screenshots **and canvas buffers are byte-identical**;
 both screenshots were inspected. The existing deck pixel/unit suites passed.
@@ -158,10 +158,14 @@ exact comparison was used rather than claiming an absent screenshot test ran.
 
 | PR | Before | After | Measured saving |
 | --- | --- | --- | --- |
-| [#739 measurement harness](https://github.com/r3dbars/shiptorio/pull/739) | No comparable end-to-end fixture timing | Baseline above | None; instrumentation only |
+| [#739 measurement harness](https://github.com/r3dbars/shiptorio/pull/739), merged | No comparable end-to-end fixture timing | Baseline above | None; instrumentation only |
+| CI budget follow-up | Same measured runtime | Enforce 4,000 / 5,000 ms and five samples | None; guard only |
 
-CI budgets follow in their own PR, after #739 is green and merged. No cause has
-been demonstrated to account for a ≥200 ms saving yet; no optimization PR is bundled.
+The `Cold load` CI workflow now runs `--budget`: it fails above **4,000 ms stranger**
+or **5,000 ms live**, using unrounded median playable times. One warm-up and exactly
+five distinct timed rounds per path are mandatory; missing/non-finite milestones
+fail. Evidence is written before evaluating the budget, including on failure.
+These are sampled CI timings, not production. No cause has been demonstrated to account for a ≥200 ms saving yet; no optimization PR is bundled.
 
 ## Justin's real-session confirmation (pending)
 
