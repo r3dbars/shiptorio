@@ -83,6 +83,9 @@ export function memoryBudget(): Pick<SparkEnv, "DB" | "budgetAccount"> {
   const db = new Database(":memory:");
   db.exec("CREATE TABLE spark_usage(account TEXT, day TEXT, calls INTEGER DEFAULT 0, tokens INTEGER DEFAULT 0, PRIMARY KEY(account, day))");
   db.exec("CREATE TABLE admin_controls(scope TEXT PRIMARY KEY, paused INTEGER NOT NULL DEFAULT 0)"); // reserveSpark checks the admin pause (#353)
+  // Every paid call is charged against the dollar ledger too, factory or not.
+  db.exec("CREATE TABLE spark_factory_budgets(repo TEXT PRIMARY KEY, daily_nano_usd INTEGER NOT NULL)");
+  db.exec("CREATE TABLE spark_factory_calls(id TEXT PRIMARY KEY, repo TEXT, day TEXT, model TEXT, input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0, cached_tokens INTEGER DEFAULT 0, nano_usd INTEGER, settled INTEGER DEFAULT 0, account TEXT)");
   return {
     budgetAccount: async () => "brain-eval",
     DB: { prepare(sql: string) {
