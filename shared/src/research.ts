@@ -124,7 +124,6 @@ export const TECHS: Tech[] = [
 export const techById = (id: string) => TECHS.find((t) => t.id === id);
 export const CHECK_PREFIX = "check-";
 export const checkStationId = (tech: string) => `${CHECK_PREFIX}${tech}`;
-export const techOfStation = (id: string | undefined) => (id?.startsWith(CHECK_PREFIX) ? techById(id.slice(CHECK_PREFIX.length)) : undefined);
 
 export const emptyResearch = (): Research => ({ done: [], spent: 0 });
 export const packs = (s: Science) => s.red + s.green + s.grey + s.blue;
@@ -273,12 +272,6 @@ const STATION_WORD: Record<string, string> = { ci: "Checks", verify: "Checks", r
 
 /** The researched check stations, in line order (the order they were researched). */
 export const researchedChecks = (state: Pick<FactoryState, "research">) => (state.research?.done ?? []).filter((id) => !techById(id)?.soon);
-
-/** Pending checks for an item entering the gauntlet. Undefined when nothing is researched. */
-export function pendingChecks(state: Pick<FactoryState, "research">): NonNullable<Item["inspection"]>["checks"] {
-  const ids = researchedChecks(state);
-  return ids.length ? ids.map((id) => ({ id, state: "pending" as const, reason: "Waiting for its turn" })) : undefined;
-}
 
 const STEP = 3; // grid cells between stations on the line
 
