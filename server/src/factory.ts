@@ -154,6 +154,17 @@ const rollUpYes = (yes?: Record<string, number>) => {
   return out;
 };
 
+/** Player words for background work that failed (the card once showed "offerRunnerPlan failed"). */
+const RELIABILITY_WORDS = {
+  alarm: "The factory's clock", tick: "Background work", watchdog: "Checking for stuck work", orbitExpire: "Wrapping up a launch",
+  offerRunnerPlan: "Preparing the next plan", planRunnerJobs: "Preparing plans", planComment: "Posting the plan on GitHub",
+  reconcileGitHub: "Catching up with GitHub", reconcile: "Catching up with GitHub", retryReviewComments: "Posting review notes",
+  runGauntlet: "Running checks", offerGauntletMove: "Preparing the next check", runLearned: "Running work you taught it",
+  runLevel: "Running automatic work", autoLaunchPermitted: "An automatic launch", offerGoalMove: "Suggesting a goal",
+  offerLevelMove: "Suggesting the next level", offerPermitMove: "Suggesting a launch permit", offerResearchMove: "Suggesting research",
+  pollPostHog: "Reading PostHog", reconnectMines: "Reconnecting your sources", tickSupport: "Reading support messages",
+} as const;
+
 class FactoryBase extends DurableObject<FactoryEnv> {
   /** Dedicated probe object: storage read only, never initializes a repo or schedules work. */
   async health(): Promise<{ ok: boolean }> {
@@ -1133,6 +1144,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.scheduleTick();
     this.log("info", "Review queued again for the same PR commit. Earlier review evidence is retained; nothing is approved or merged.", itemId);
     return true;
+  }
+
+  /** Issue numbers already past Repo (anything but fresh ore or launched), so the inbox stops offering them. */
+  async lineIssues(): Promise<number[]> {
+    if (!(await this.load())) return [];
+    return this.state!.items.filter(i => !["ore", "launched"].includes(i.state)).map(i => Number(/^gh-(\d+)$/.exec(i.id)?.[1])).filter(n => n > 0);
   }
 
   async startInboxIssue(number: number, requestedBy: string) {
@@ -3622,7 +3639,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   private async reliabilityFailure(operation: string, error: unknown, itemId?: string): Promise<void> {
     this.log("error", `${operation}: ${String(error)}`, itemId);
     await this.accountPut(`reliabilityFailure:${operation}`, { at: Date.now(), error: String(error).slice(0, 500), itemId });
-    if (this.state && this.meta) await this.publishDecision({ id: `reliability:${operation}`, itemId, title: "Factory work needs attention", why: `${operation} failed. Check the connection or worker before trying again.`, stage: "inspect", kind: "unblock", createdAt: Date.now(), options: [{ id: "later", label: "Look later", recommended: true, actions: [] }] });
+    if (this.state && this.meta) await this.publishDecision({ id: `reliability:${operation}`, itemId, title: "Factory work needs attention", why: `${RELIABILITY_WORDS[operation.split(":")[0] as keyof typeof RELIABILITY_WORDS] ?? "Background work"} failed. Check the connection or worker before trying again.`, stage: "inspect", kind: "unblock", createdAt: Date.now(), options: [{ id: "later", label: "Look later", recommended: true, actions: [] }] });
   }
 
   private async watchdog(): Promise<void> {
