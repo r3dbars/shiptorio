@@ -147,6 +147,16 @@ describe("CI collector: reading cheaply", () => {
     expect(calls).toBe(2);
   });
 
+  it("a forced look reads GitHub again, but not twice in 15 seconds", async () => {
+    let calls = 0;
+    const c = ctx({ fetchRuns: async () => { calls++; return healthyRuns; } });
+    await ciCollector.read(c, now);
+    await ciCollector.read({ ...c, force: true }, now + 10_000);
+    expect(calls).toBe(1);
+    await ciCollector.read({ ...c, force: true }, now + 16_000);
+    expect(calls).toBe(2);
+  });
+
   it("keeps the last runs when GitHub hiccups, and backs off a full poll", async () => {
     const c = ctx({ fetchRuns: async () => cloggedRuns });
     await ciCollector.read(c, now);

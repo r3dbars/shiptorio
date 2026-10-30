@@ -23,10 +23,10 @@ export interface Play {
 const gh = (repo: string | undefined, path: string) => repo && /^[\w-][\w.-]*\/[\w-][\w.-]*$/.test(repo) && !repo.includes("..") ? `https://github.com/${repo}/${path}` : undefined;
 const inspect = (s: BrainSignal) => ({ tool: "inspect_bottleneck", args: { signalId: s.id } });
 const connect = (kind: string) => () => ({ tool: "connect_source", args: { kind } });
-/** A red PR: Continue files a fix issue and puts it on the line (the plan still waits for its own yes). */
+/** A red PR: Continue files a fix issue for the newest one (likely what the player is on) and puts it on the line. */
 const fixPr = (s: BrainSignal) => {
-  const pr = Number(/#(\d+)/.exec(s.evidence[0]?.label ?? "")?.[1]);
-  return pr ? { tool: "fix_failing_pr", args: { pr, workflow: s.scope ?? "CI", url: s.evidence[0]?.url } } : inspect(s);
+  const failing = s.evidence.map(e => ({ pr: Number(/#(\d+)/.exec(e.label)?.[1]), url: e.url })).filter(e => e.pr > 0).sort((a, b) => b.pr - a.pr);
+  return failing[0] ? { tool: "fix_failing_pr", args: { pr: failing[0].pr, workflow: s.scope ?? "CI", url: failing[0].url } } : inspect(s);
 };
 
 export const PLAYBOOK: readonly Play[] = [

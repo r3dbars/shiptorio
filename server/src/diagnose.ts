@@ -61,6 +61,7 @@ export const BRAIN = {
 } as const;
 
 const utcDay = (now: number) => new Date(now).toISOString().slice(0, 10);
+const NEAR_TIE = 0.05;
 const bucket = (w: number) => Math.round(Math.min(1, Math.max(0, w)) * 4);
 
 /** Fresh signals the player hasn't parked (or that got clearly heavier since), heaviest first, above the floor. */
@@ -127,9 +128,10 @@ export function shouldDiagnose(memory: BrainMemory, signals: readonly BrainSigna
 /** docs/BRAIN.md fallback: heaviest eligible signal, its source's default area, its kind's first play. */
 export function ruleDiagnosis(signals: readonly BrainSignal[], memory: BrainMemory, now: number, ctx: PlayContext = {}): { bottleneck: BrainBottleneck; unlock: BrainUnlock } | null {
   const open = eligible(signals, memory, now);
-  // On a near-tie keep the current card, so the deck doesn't flip between two equal problems.
+  // On a near-tie keep the current card, so the deck doesn't flip between two equal problems. A clearly
+  // heavier signal still wins: a red PR at 0.7 beats an advice card at 0.5.
   const cur = memory.current && open.find(s => s.id === memory.current!.bottleneck.id);
-  const main = cur && bucket(signalWeight(cur, now)) === bucket(signalWeight(open[0], now)) ? cur : open[0];
+  const main = cur && signalWeight(open[0], now) - signalWeight(cur, now) < NEAR_TIE ? cur : open[0];
   if (!main || signalWeight(main, now) < BRAIN.ruleFloor) return null;
   const bottleneck: BrainBottleneck = { id: main.id, area: DEFAULT_AREA[main.source], title: main.title.slice(0, 80), why: (main.evidence[0]?.label ?? main.title).slice(0, 200), signalIds: [main.id], confidence: main.confidence, by: "rule", decidedAt: now };
   return { bottleneck, unlock: unlockFor(playsFor(main.kind)[0], main, main.id, ctx) };

@@ -18,6 +18,8 @@ import { tapsCollector } from "./taps";
 
 /** What every collector gets. Read-only: collectors look, they never change the factory. */
 export interface SignalContext {
+  /** A forced look (the deck's Look button): collectors with their own cache read GitHub again. */
+  force?: boolean;
   state: FactoryState;
   repo?: string;
   env: FactoryEnv;
@@ -83,7 +85,7 @@ export const COLLECTORS: Collector[] = [
   bind(postHogCollector, async c => ({ creds: c.posthogCreds ? await c.posthogCreds() : {}, fake: c.env.FAKE_POSTHOG === "1", items: c.state.items, connectUrl: `${c.publicUrl ?? "https://shiptorio.com"}/connect/posthog` })),
   bind(sentryCollector, async c => ({ items: c.state.items, pulses: await c.storage.get<SentryPulse[]>(SENTRY_PULSES_KEY), connected: !!await c.storage.get<boolean>("sentryLinked"), connectUrl: `${c.publicUrl ?? "https://shiptorio.com"}/connect/sentry` })),
   bind(goalsCollector, c => ({ state: c.state, yes: c.yes })),
-  bind(ciCollector, async c => ({ repo: c.repo ?? c.state.repo, defaultBranch: c.state.baseBranch, token: c.githubToken ? await c.githubToken() : undefined, cache: kvCiCache(c.env.CACHE) })),
+  bind(ciCollector, async c => ({ repo: c.repo ?? c.state.repo, defaultBranch: c.state.baseBranch, token: c.githubToken ? await c.githubToken() : undefined, cache: kvCiCache(c.env.CACHE), force: c.force })),
   bind(tapsCollector, c => ({ db: c.env.DB, repo: c.repo })),
 ];
 
