@@ -23,11 +23,15 @@ can see, and rewards you for adding more of them. The more you verify, the more 
 
 ## Meet Shippy
 
+<img src="docs/readme/shippy-idle.gif" alt="Shippy, the robot, standing by: he blinks, looks around, takes a step, hops and waves" width="186" align="left">
+
 Shippy is the robot who runs your line. **Meta Muse Wonder is Shippy's brain.** It reads your issues, plans the
 change, spots the bottleneck, reviews the result and tells you what to do next. It never writes code.
 
 The code is written by your own **Muse Code subscription**, or another coding subscription like Codex, through a
 small runner on your machine. Your sign-ins are the power plants. Nothing runs on our servers but the game.
+
+<br clear="left">
 
 ## How a fix ships
 
