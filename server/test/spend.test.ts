@@ -10,6 +10,9 @@ async function cap(db: D1Database, repo: string, dollars: number) {
 it("prices measured input/output and cached tokens with integer precision; rejects malformed usage", () => {
   expect(measuredCost({ prompt_tokens: 1_000_000, completion_tokens: 1_000_000, prompt_tokens_details: { cached_tokens: 100_000 } }))
     .toEqual({ input: 1_000_000, output: 1_000_000, cached: 100_000, cost: 5_390_000_000 });
+  // Muse Wonder: $4/M in, $0.20/M cached, $20/M out.
+  expect(measuredCost({ prompt_tokens: 1_000_000, completion_tokens: 1_000_000, prompt_tokens_details: { cached_tokens: 100_000 } }, "muse-wonder-1.0")?.cost).toBe(23_620_000_000);
+  expect(measuredCost({ prompt_tokens: 1, completion_tokens: 1 }, "unknown-model")).toBeNull();
   for (const usage of [undefined, {}, { prompt_tokens: -1, completion_tokens: 1 }, { prompt_tokens: 1.1, completion_tokens: 1 }, { prompt_tokens: 1, completion_tokens: 1, prompt_tokens_details: { cached_tokens: 2 } }]) expect(measuredCost(usage)).toBeNull();
 });
 it("atomically reserves concurrent calls up to 100%, isolates factories and stops at zero", async () => {
