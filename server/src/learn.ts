@@ -9,6 +9,7 @@
 
 import type { Item, Learned, Move } from "@shiptorio/shared";
 import type { DeckBook } from "./deck-decisions";
+import { pathAllowed } from "./injection-policy";
 
 export const LEARN_NEED = 3;
 const SAFE_TOOLS = new Set(["plan_runner_job", "approve_runner_job"]);
@@ -43,16 +44,19 @@ export function learnKey(card: Move, scope: string): string {
 
 /** Scope documentation-only build approvals by their reviewed file list, not a triage guess.
  * A README at the repo root and docs/ prose belong to the same earned permission.
- * Code/config/mixed plans keep their district scope. Planning remains a separate permission.
+ * The old docs key is reserved for prose, including when a code plan is triaged into docs.
+ * Missing or invalid reviewed paths cannot teach or consume approval authority.
+ * Other code districts and planning retain their separate permissions.
  */
-export function learnScope(card: Move, scope: string, jobs: readonly { approvalMoveId?: string; allowedPaths?: readonly string[] }[]): string {
-  if (!card.options.find(o => o.recommended)?.actions.every(a => a.tool === "approve_runner_job")) return scope;
+export function learnScope(card: Move, scope: string, jobs: readonly { approvalMoveId?: string; allowedPaths?: readonly string[] }[]): string | null {
+  const actions = card.options.find(o => o.recommended)?.actions;
+  if (!actions?.some(a => a.tool === "approve_runner_job")) return scope;
+  if (actions.length !== 1) return null;
   const files = jobs.find(j => j.approvalMoveId === card.id)?.allowedPaths;
-  if (!files?.length) return scope;
-  const doc = (path: string) => !path.split("/").some(part => part === ".." || part === "." || !part)
-    && (/^(?:README|CHANGELOG|CONTRIBUTING)(?:\.[^/]*)?\.(?:md|txt|rst|adoc)$/i.test(path)
-      || /^docs\/[^\\]*\.(?:md|txt|rst|adoc)$/i.test(path));
-  return files.every(doc) ? "district:docs" : scope;
+  if (!files?.length || files.length > 10 || files.some(path => !pathAllowed(path) || path.split("/").some(part => !part))) return null;
+  const doc = (path: string) => /^(?:README|CHANGELOG|CONTRIBUTING)(?:\.[^/]*)?\.(?:md|txt|rst|adoc)$/i.test(path)
+    || /^docs\/[^\\]*\.(?:md|txt|rst|adoc)$/i.test(path);
+  return files.every(doc) ? "district:docs" : scope === "district:docs" ? "code:docs" : scope;
 }
 
 const TOOL_WORD: Record<string, string> = { plan_runner_job: "Starting plans", approve_runner_job: "Approving plans" };
@@ -62,6 +66,7 @@ export function learnLabel(key: string): string {
   const [, scope = "", tool = ""] = key.split("|");
   const [what, where] = scope.split(":");
   const word = TOOL_WORD[tool] ?? "These cards";
+  if (what === "code" && where === "docs" && tool === "approve_runner_job") return "Approving code plans in /docs";
   const folder = what === "district" ? (where ?? "").replace(/^\/+/, "") : "";
   return folder ? `${word} in /${folder}` : word;
 }
@@ -69,8 +74,8 @@ export function learnLabel(key: string): string {
 export const isLearned = (book: DeckBook, key: string) => !!book.auto?.[key];
 
 /** The dots on a card: yeses so far, out of LEARN_NEED. Undefined before the first yes, and for cards that can't be learned or already are. */
-export function learnMeter(book: DeckBook, card: Move, scope: string, fresh: boolean): Move["learn"] {
-  if (!fresh || !learnOption(card)) return undefined;
+export function learnMeter(book: DeckBook, card: Move, scope: string | null, fresh: boolean): Move["learn"] {
+  if (scope === null || !fresh || !learnOption(card)) return undefined;
   const key = learnKey(card, scope);
   const have = book.learnYes?.[key] ?? 0;
   // No dots before the first yes: a brand-new player's first card stays plain.
@@ -79,8 +84,8 @@ export function learnMeter(book: DeckBook, card: Move, scope: string, fresh: boo
 }
 
 /** A Continue on the suggested option, as is: one more dot. Learns the class on the last one; true when it just learned. */
-export function learnFromYes(book: DeckBook, card: Move, scope: string, now: number, fresh: boolean, by: string): boolean {
-  if (!fresh || !learnOption(card)) return false;
+export function learnFromYes(book: DeckBook, card: Move, scope: string | null, now: number, fresh: boolean, by: string): boolean {
+  if (scope === null || !fresh || !learnOption(card)) return false;
   const key = learnKey(card, scope);
   if (isLearned(book, key)) return false;
   const yes = book.learnYes ??= {};
@@ -90,7 +95,8 @@ export function learnFromYes(book: DeckBook, card: Move, scope: string, now: num
 }
 
 /** Later, Edit or a dismiss on any card of this kind and place: the dots empty. */
-export function resetLearn(book: DeckBook, kind: string, scope: string): void {
+export function resetLearn(book: DeckBook, kind: string, scope: string | null): void {
+  if (scope === null) return;
   const keys = new Set([...Object.keys(book.learnYes ?? {}), ...Object.keys(book.auto ?? {})]);
   for (const key of keys) if (key.startsWith(`${kind}|${scope}|`)) {
     forget(book, key);

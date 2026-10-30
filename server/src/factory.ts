@@ -3274,7 +3274,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (await flagOptedOut(this.env, "autonomy")) return;
     for (const card of [...this.openMoves!]) {
       const optionId = learnOption(card);
-      const key = learnKey(card, learnScope(card, moveScope(card, s), await this.runnerJobs()));
+      const scope = learnScope(card, moveScope(card, s), await this.runnerJobs());
+      if (scope === null) continue;
+      const key = learnKey(card, scope);
       if (!optionId || !isLearned(book, key) || suppressed(book, card)) continue;
       // The player who taught it decides: their own opt-out of learning or autonomy stops it.
       const by = book.auto![key].by;

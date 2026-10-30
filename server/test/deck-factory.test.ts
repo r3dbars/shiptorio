@@ -682,6 +682,22 @@ describe("the factory learns what the player approves (docs/LEARN.md)", () => {
     expect(await fourth()).toMatchObject({ status: "ready", approvedBy: "autonomy", allowedPaths: ["docs/setup.md"] });
   });
 
+  for (const files of [["docs/worker.ts"], ["docs/page.mdx"], ["docs/package.json"], ["server/index.ts"], ["README.md", "server/index.ts"], [], ["docs/../server/guide.md"]]) {
+    it(`prose permission cannot approve ${JSON.stringify(files)} in the docs district after restart`, async () => {
+      const { f, fourth } = await taught(true);
+      await fourth({ allowedPaths: files }, { district: "docs" }, true);
+      const current = f.factory as unknown as { ctx: unknown; env: unknown };
+      const restarted = new Factory(current.ctx as never, current.env as never);
+      await restarted.exportState();
+      await (restarted as unknown as { runLearned(): Promise<void> }).runLearned();
+      const stored = f.data.get("runnerJob:job-4") as Job;
+      expect(stored.status).toBe("awaiting_approval");
+      expect(stored.approvedAt).toBeUndefined();
+      expect(stored.approvedBy).toBeUndefined();
+      expect(await f.taps.prepare("SELECT action FROM card_taps WHERE card_id = 'approval-4'").bind().first()).toBeNull();
+    });
+  }
+
   it("a runner reconnect auto-approves the fourth plan, takes one lease, and never merges", async () => {
     const { generateKeyPairSync } = await import("node:crypto");
     const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });

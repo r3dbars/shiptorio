@@ -872,3 +872,4 @@ Verified whole-App regressions: Hono response assignment replaced appended App t
 - 2026-10-30 Codex cold-load budgets: after merged #739, guard five-round sampled CI medians at 4 s stranger / 5 s signed-in fixture. Missing or invalid samples fail; no runtime optimization or production timing claim. Justin runs the separate real-session confirmation.
 
 - 2026-10-30 Codex security: orbit watch consumes revert metadata only after a confirmed merge into the tracked base branch; regression coverage preserves unmerged proposals, unrelated branches, legitimate fork-authored merges, and replay accounting.
+- 2026-10-30 Codex security: learned prose approvals remain limited to canonical prose paths; code plans triaged into docs use a separate permission, and missing or invalid reviewed paths cannot teach or consume automatic approval. Persisted docs grants stay narrowed to prose.
