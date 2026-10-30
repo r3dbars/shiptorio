@@ -63,6 +63,10 @@ starts doing that step without asking. Ship it always waits for a human.
 - **Build your own:** sign in with GitHub, pick a repo, install the runner with one line, and your first issue
   becomes your first launch. Runner setup: [docs/site/runner.md](docs/site/runner.md).
 
+<p align="center">
+  <img src="docs/readme/tour-first-card.png" alt="The tour's first card on a small empty platform: Hi, I'm Shippy! Great to meet you." width="740">
+</p>
+
 ## Run it yourself
 
 Needs [Bun](https://bun.sh) and Node 22+.
