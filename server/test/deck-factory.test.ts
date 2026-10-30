@@ -532,6 +532,27 @@ describe("runner approval survives concurrent deck selection changes", () => {
     expect(f.data.get("runnerJob:job-once")).toEqual(stored);
     expect(f.data.get("approvalEvents")).toHaveLength(1);
   });
+  for (const jobRepo of ["r3dbars/DEMO", "R3DBARS/demo", "other/demo"]) it(`matches the approved repository identity for ${jobRepo}`, async () => {
+    const { issueRevision } = await import("../src/runner-job");
+    const item = { id: "gh-30", kind: "cleanup" as const, source: "github_issue" as const, title: "Fix a docs typo", body: "Only docs/STORE.md", district: "docs", state: "queued" as const, attempts: 0, updatedAt: 1 };
+    const approval = card("approval-case", { kind: "build", stage: "build", itemId: item.id, options: [{ id: "approve", label: "Start build", recommended: true, actions: [{ tool: "approve_runner_job", args: { jobId: "job-case" }, reason: "Approve this plan" }] }] });
+    const f = fixture([approval], { items: [item] });
+    f.data.set("runnerJob:job-case", { id: "job-case", repo: jobRepo, itemId: item.id, harness: "codex", allowedPaths: ["docs/STORE.md"], branch: "shiptorio/runner-case", status: "awaiting_approval", approvalMoveId: approval.id,
+      inputRevision: await issueRevision(item.title, JSON.stringify({ body: item.body, failure: "", scars: [] })) });
+    await f.checkin();
+    await f.send({ type: "choose_move", moveId: approval.id, optionId: "approve" });
+    const stored = structuredClone(f.data.get("runnerJob:job-case"));
+    if (jobRepo === "other/demo") {
+      expect(stored).toMatchObject({ status: "awaiting_approval" });
+      expect(stored).not.toHaveProperty("approvedAt");
+      return;
+    }
+    expect(stored).toMatchObject({ status: "ready", approvedAt: expect.any(Number), approvedBy: "player", allowedPaths: ["docs/STORE.md"] });
+    const reloaded = f.reload(); await f.checkin(reloaded);
+    await f.send({ type: "choose_move", moveId: approval.id, optionId: "approve" }, reloaded);
+    expect(f.data.get("runnerJob:job-case")).toEqual(stored);
+    expect(f.data.get("approvalEvents")).toHaveLength(1);
+  });
   for (const boundary of ["before-handler", "real-refresh", "inside-lock", "revised-item", "rebound-job"] as const) it(`binds the selected plan at ${boundary} and preserves unrelated cards`, async () => {
     const { issueRevision } = await import("../src/runner-job");
     const item = { id: "gh-58", kind: "bug" as const, source: "github_issue" as const, title: "Fix the guard", body: "A scoped fix", district: "/", state: "queued" as const, attempts: 0, updatedAt: 1 };

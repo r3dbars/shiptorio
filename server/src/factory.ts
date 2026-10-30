@@ -889,11 +889,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const refreshMove = move.options.some(o => o.actions.some(a => a.tool === "plan_runner_job" && a.args.refreshBase === true)) || (await this.runnerJobs()).some(j => j.approvalMoveId === moveId && !!j.refreshBase);
     const available = (candidate: Item) => refreshMove ? !!candidate.prNumber && ["on_pad", "passed", "inspecting", "rejected"].includes(candidate.state) : (!candidate.prNumber || candidate.state === "rejected") && ["ore", "queued", "rejected"].includes(candidate.state);
     if (!item || !available(item)) return false;
-    const job = (await this.runnerJobs()).find(j => j.approvalMoveId === moveId && j.itemId === move.itemId && j.repo === this.meta?.repo && j.status === "awaiting_approval");
+    // GitHub names are case-insensitive; a browser visit can refresh metadata casing after planning.
+    const job = (await this.runnerJobs()).find(j => j.approvalMoveId === moveId && j.itemId === move.itemId && j.repo.toLowerCase() === this.meta?.repo.toLowerCase() && j.status === "awaiting_approval");
     if (job) {
       return this.ctx.blockConcurrencyWhile(async () => {
         const stored = await this.ctx.storage.get<RunnerJob>(`runnerJob:${job.id}`);
-        if (!stored || stored.status !== "awaiting_approval" || stored.approvalMoveId !== moveId || stored.itemId !== move.itemId || stored.repo !== this.meta?.repo) return false;
+        if (!stored || stored.status !== "awaiting_approval" || stored.approvalMoveId !== moveId || stored.itemId !== move.itemId || stored.repo.toLowerCase() !== this.meta?.repo.toLowerCase()) return false;
         const currentItem = this.state?.items.find(i => i.id === stored.itemId);
         if (!currentItem || !available(currentItem)) return false;
         if (stored.inputRevision !== await workRevision(currentItem)) {
