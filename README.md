@@ -43,6 +43,13 @@ small runner on your machine. Your sign-ins are the power plants. Nothing runs o
 6. **Gate.** You hold **Ship it**. The PR merges for real.
 7. **Launch.** Rocket.
 
+<p align="center">
+  <img src="docs/readme/fix-rides-the-line.gif" alt="One fix rides the line: Repo, Planner, Builder, Checks, Review, Gate, with each station named as the crate stops there" width="940">
+</p>
+<p align="center">
+  <img src="docs/readme/hold-to-ship.gif" alt="Hold to ship: the card at the Gate, the fix rides out to the pad, Shippy hits launch, the rocket goes" width="940">
+</p>
+
 The first few times, you approve everything. Approve the same kind of change a few times and the factory
 starts doing that step without asking. Ship it always waits for a human.
 
