@@ -557,12 +557,13 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const before = force ? { ...stored, lastAt: undefined, mainKey: undefined, quiet: false } : stored;
       const feedback = plannerFeedback(this.deckBook!, this.deckRules!);
       const budget = await this.brainBudget();
+      const steps: { tool: string; reason: string; result: string }[] = [];
       const permits = await this.ctx.storage.get<PermitBook>("permits");
       const result = await runDiagnose({
         signals: tiltByGoals(cache.signals, s.goals), memory: before, now, goal: s.goal, playerFeedback: feedback, ctx: { repo: meta.repo }, budget,
         think: sparkConfigured(this.env) ? brief => this.think("diagnose", { title: `${brief.signals.length} ${brief.signals.length === 1 ? "signal" : "signals"}, heaviest: ${brief.signals[0]?.title ?? "none"}`, target: derived.bottleneck?.stationId },
-          () => modelDiagnose(this.sparkEnv(), brief, { repo: meta.repo }, { factory: () => factoryBrief(s, undefined, permits, feedback) }),
-          out => "quiet" in out ? { outcome: "Nothing worth a card right now", reason: out.reason } : { outcome: `${out.bottleneck.title} → ${out.unlock.title}`, reason: out.reason }) : undefined,
+          () => modelDiagnose(this.sparkEnv(), brief, { repo: meta.repo }, { factory: () => factoryBrief(s, undefined, permits, feedback) }, async step => { steps.push(step); }),
+          out => ({ ...("quiet" in out ? { outcome: "Nothing worth a card right now", reason: out.reason } : { outcome: `${out.bottleneck.title} → ${out.unlock.title}`, reason: out.reason }), steps })) : undefined,
       });
       result.memory = await this.confirmFixes(result.memory, now);
       await this.accountPut("brainMemory", result.memory);
@@ -2432,7 +2433,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
    * One Spark decision: the drone flies to what it's thinking about, and the call lands in the decision
    * log with Spark's own reason. A failed call is logged too, then rethrown so the caller's fallback runs.
    */
-  private async think<T>(decision: ThoughtDecision, about: { title: string; itemId?: string; target?: string }, ask: () => Promise<T>, explain: (out: T) => { outcome: string; reason: string }): Promise<T> {
+  private async think<T>(decision: ThoughtDecision, about: { title: string; itemId?: string; target?: string }, ask: () => Promise<T>, explain: (out: T) => { outcome: string; reason: string; steps?: Thought["steps"] }): Promise<T> {
     const start = Date.now();
     this.foreman(about.target ?? about.itemId, decision, true);
     try {

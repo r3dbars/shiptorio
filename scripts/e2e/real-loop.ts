@@ -213,6 +213,30 @@ await page.waitForSelector("body[data-deck-ready]", { timeout: 30_000 }).catch((
 await page.waitForTimeout(2500);
 await shot("opened");
 
+// Every card the deck shows is a recommendation: screenshot it once, with the thoughts (and agent tool calls)
+// that led there, into recommendations.jsonl. scripts/e2e/story.ts turns a run folder into one page.
+const seenCards = new Set<string>(), seenThoughts = new Set<string>();
+async function recordCard() {
+  const card = await cardOnScreen().catch(() => null);
+  if (!card || !card.id || seenCards.has(card.id)) return;
+  seenCards.add(card.id);
+  const thoughts = (state?.brain?.thoughts ?? []).filter(t => !seenThoughts.has(t.id));
+  for (const t of thoughts) seenThoughts.add(t.id);
+  const file = `${String(++shotN).padStart(2, "0")}-card-${card.id.replace(/[^\w-]+/g, "-").slice(0, 40)}.png`;
+  await page.screenshot({ path: `${out}/shots/${file}` }).catch(() => {});
+  const move = state?.deck?.find(m => m.id === card.id) ?? (state?.move?.id === card.id ? state.move : undefined);
+  await appendFile(`${out}/recommendations.jsonl`, JSON.stringify({
+    t: since(), at: new Date().toISOString(), shot: file, card,
+    why: move?.why, actions: move?.options.map(o => ({ label: o.label, actions: o.actions.map(a => ({ tool: a.tool, args: a.args })) })),
+    holdingBack: state?.holdingBack ?? null,
+    thoughts: thoughts.map(t => ({ at: new Date(t.at).toISOString(), decision: t.decision, by: t.by, model: t.model, ms: t.ms, title: t.title, outcome: t.outcome, reason: t.reason, steps: t.steps ?? [] })),
+  }) + "\n");
+  await note("recommendation", { card: card.id, title: card.title, shot: file });
+}
+for (const t of state?.brain?.thoughts ?? []) seenThoughts.add(t.id); // only new thinking counts toward a card
+const recorder = setInterval(() => void recordCard(), 1500);
+await recordCard();
+
 const item = (): FactoryItem | undefined => state?.items.find(i => i.id === itemId);
 const openCards = (): Move[] => state ? [...(state.deck ?? []), ...(state.move ? [state.move] : [])].filter((m, i, all) => all.findIndex(x => x.id === m.id) === i) : [];
 const TAP = new Set(["plan_runner_job", "approve_runner_job", "request_merge", "approve_review", "approve_human_review", "human_approve"]);
@@ -383,6 +407,7 @@ try {
   result = `failed: ${e instanceof Error ? e.message : String(e)}`;
   await shot("failed");
 } finally {
+  clearInterval(recorder); await recordCard();
   await note("result", { result, pageErrors: errors.length });
   await writeFile(`${out}/state.json`, JSON.stringify(state, null, 1));
   await context.close();
