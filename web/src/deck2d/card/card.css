@@ -201,3 +201,13 @@
 .ironcard.px .ic-story > .ic-title { margin-bottom: calc(var(--p) * 4); }
 /* the phone plate is narrow: tighten the gap so the words keep their room */
 @media (max-width: 420px) { .ic-story { column-gap: calc(var(--p, 2px) * 3); } }
+
+/* a story line typing in: the untyped rest holds its place, so the words never re-wrap or jump (card/story.ts) */
+.ic-untyped { visibility: hidden; }
+
+/* a hold card's Approve says it fills (Justin 2026-10-30: Ship it "doesn't look like something you have to hold"):
+   while it waits, the fill creeps in and drains again, a slow hint that pressing fills it the rest of the way */
+.hold .ic-btn.approve:not(.holding) .ic-fill { animation: ic-hold-hint 2.4s ease-in-out infinite; }
+@keyframes ic-hold-hint { 0%, 30%, 100% { transform: scaleX(0); } 60% { transform: scaleX(.22); } }
+.ironcard.px .hold .ic-btn.approve:not(.holding) .ic-fill { animation-timing-function: steps(4); }
+@media (prefers-reduced-motion: reduce) { .hold .ic-btn.approve:not(.holding) .ic-fill { animation: none; transform: scaleX(.12); } }

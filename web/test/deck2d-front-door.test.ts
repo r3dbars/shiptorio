@@ -116,7 +116,7 @@ test('the guest tour asks "Want to create your own factory?" first; its yes goes
   const connections = createConnections({origin:'https://example.test', path:'/deck?source=live', navigate(url) { went.push(url); }, async copy() {}, fetch:async () => Response.json({guest:true, login:null, githubConfigured:true})});
   let opens = 0;
   const story = storyBeforeSignIn(createTour(), {open(target) { opens++; connections.open(target); }, card: connections.card, answer: connections.answer}, {ask: true});
-  story.later(story.view().card!.id); // Skip to the end
+  for (let i = 0; i < 4000 && story.view().card?.title !== 'Want to create your own factory?'; i++) { const c = story.view().card; if (c) story.approve(c.id); else story.step?.(0.1); } // play to the end (no Skip)
   const ask = story.view().card!;
   expect(ask.title).toBe('Want to create your own factory?');
   story.view(); story.view();

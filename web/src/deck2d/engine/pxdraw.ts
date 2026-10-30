@@ -217,3 +217,18 @@ export function beacon(cx: CanvasRenderingContext2D, x: number, top: number, t: 
   px(cx, ax + 3, ay + 1, 1, 4, C.soot[0]); // cage bar
   px(cx, ax, ay + 6, 7, 2, C.soot[0]); px(cx, ax + 1, ay + 6, 5, 1, C.brass[3]); px(cx, ax + 5, ay + 6, 1, 1, C.brass[5]); // brass collar
 }
+
+/** The launch button on the rocket island, 9 x 12, at world (x, base): a riveted iron post with a red mushroom button
+ * under a brass guard. Shippy presses it to send the rocket (story/ship.ts "press"); down = pressed, lit = ready. */
+export function launchButton(cx: CanvasRenderingContext2D, x: number, base: number, mode: "up" | "down" | "lit") {
+  const ax = g(x) - 4, ay = g(base) - 12;
+  px(cx, ax + 1, ay + 5, 7, 7, C.soot[0]); // the post
+  px(cx, ax + 2, ay + 6, 5, 5, C.iron[1]); px(cx, ax + 6, ay + 6, 1, 5, C.iron[3]); px(cx, ax + 2, ay + 6, 5, 1, C.iron[2]);
+  px(cx, ax + 3, ay + 8, 1, 1, C.brass[3]); px(cx, ax + 5, ay + 8, 1, 1, C.brass[3]); // rivets
+  px(cx, ax, ay + 4, 9, 2, C.soot[0]); px(cx, ax + 1, ay + 4, 7, 1, C.brass[3]); px(cx, ax + 6, ay + 4, 2, 1, C.brass[5]); // the brass guard
+  const k = C.jam, dy = mode === "down" ? 2 : 0;
+  px(cx, ax + 2, ay + 1 + dy, 5, 3 - dy, C.soot[0]);
+  px(cx, ax + 3, ay + 1 + dy, 3, 2 - Math.min(1, dy), mode === "up" ? k[0] : k[1]);
+  if (mode !== "down") px(cx, ax + 5, ay + 1, 1, 1, k[2]);
+  if (mode === "lit") halo(cx, ax + 4, ay + 2, 5, k[2], 0.22);
+}

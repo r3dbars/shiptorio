@@ -205,7 +205,8 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
       const actor = shippy as ShippyModule & { readonly state?: { x: number } };
       return { x: actor.state?.x ?? STOP_X.repo - 150, y: FLOOR_Y + (px ? 38 : 22) - 45, width: 560 };
     }
-    if (shot === "boiler") return { x: BOILER.x, y: BOILER.base, width: 900 }; // framed low, so the engine sits above the card
+    // framed low, so the engine sits above the card; a looser shot than a station (Justin 2026-10-30: "zooms in a little too much")
+    if (shot === "boiler") return { x: BOILER.x + 120, y: BOILER.base, width: 1300, rows: 320 };
     if (shot === "launch") return { x: STOP_X.launch - 70, y: LAUNCH_Y - 150, width: 1100 };
     return { x: STOP_X[shot], y: FLOOR_Y - 90, width: 900 };
   }
@@ -702,6 +703,11 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
       }
     }
     leverDraw(v);
+    // the launch button by the pad (pixel mode): Shippy presses it to send a rocket; it glows while a crate waits on the pad
+    if (px && islandUp) {
+      const pad = v.stops.find((x) => x.id === "launch");
+      pd.launchButton(cx, STOP_X.launch + 150 - 60, FLOOR_Y + 38, v.shippy.at === "launch" && v.shippy.pose === "poke" ? "down" : pad?.items.length ? "lit" : "up");
+    }
     shippy.drawWorld(cx);
     puffsDraw(dt);
     if (!px) clouds(600, 1.6, 12, 0.95); // pixel mode keeps every cloud behind the deck, so nothing ever touches it

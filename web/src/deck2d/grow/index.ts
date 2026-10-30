@@ -12,8 +12,9 @@
 //   rails   back rail drops down, front rail rises
 //   glow    the new seams glow gold, then cool
 //   done    one dust puff as it locks in (the story caption says what changed)
-import { PALETTE, snap, type ArtLoader, type CreateLayer, type DeckBus, type DeckLayer, type DeckView, type LayerSlot, HULL } from "../contract";
+import { ART_PX, PALETTE, snap, type ArtLoader, type CreateLayer, type DeckBus, type DeckLayer, type DeckView, type LayerSlot, HULL } from "../contract";
 import { pixelOn } from "../../flags";
+import { hullCols } from "../props/width";
 
 export type DeckSize = "small" | "medium" | "large";
 export type GrowPhase = "beams" | "plates" | "rocks" | "rails" | "glow" | "done";
@@ -71,6 +72,7 @@ export interface GrowLayer extends DeckLayer {
 export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
   let size: DeckSize | null = null; // null until the first view says where we start (no grow on page load)
   let g: Growth | null = null;
+  let growK = 0; // view.deck.growing: pixel mode grows the hull a column at a time (props/)
   let puffs: Puff[] = [];
   const queue: DeckSize[] = [];
   // Pixel mode (?px=1, contract "the pixel canvas"): the hulls are deck-<size>-px.webp, the same art downscaled to
@@ -142,6 +144,7 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
   function update(dt: number, v: DeckView) {
     const d = v.deck;
     const target: DeckSize = d?.size ?? "large";
+    growK = d?.growing ?? 0;
     if (size === null) size = target;
     else want(target);
     tick(dt);
@@ -359,6 +362,8 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
     },
     bounds() {
       // pixel mode's wide layout (contract DECK_DX): the full deck runs to HULL.x1, drawn by props/
+      // pixel mode: props/ draws the hull a column at a time while view.deck.growing runs; the belt ends where it does
+      if (PX) return { x0: -20, x1: hullCols(g ? g.to : now(), growK) * ART_PX + 20 };
       const deckEnd = g ? capX() + capW(g.to) : now() === "large" ? Math.max(endAt("large"), HULL.x1) : endAt(now());
       return { x0: -20, x1: deckEnd + 20 }; // just the deck; the engine frames the island itself once it's up
     },

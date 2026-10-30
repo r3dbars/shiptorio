@@ -113,13 +113,15 @@ class SoundEngine {
 
   // Call once; waits for the first real gesture before creating the AudioContext.
   install() {
+    // Browsers only let audio start inside a real gesture, and Safari/Chrome don't agree on which event counts, so every
+    // gesture tries until the context is actually running (Justin 2026-10-30: the button said "on" while nothing played).
+    const gestures = ["pointerdown", "pointerup", "keydown", "touchend", "click"] as const;
     const unlock = () => {
       this.start();
-      window.removeEventListener("pointerdown", unlock, true);
-      window.removeEventListener("keydown", unlock, true);
+      if (this.ctx && this.ctx.state !== "running" && !this.off && !document.hidden) void this.ctx.resume();
+      if (this.ctx?.state === "running") gestures.forEach((g) => window.removeEventListener(g, unlock, true));
     };
-    window.addEventListener("pointerdown", unlock, true);
-    window.addEventListener("keydown", unlock, true);
+    gestures.forEach((g) => window.addEventListener(g, unlock, true));
     // UI clicks on any button or link
     document.addEventListener("click", (e) => {
       // buttons with their own sound (card Continue / Later, the launch hold) say data-sfx and skip the generic click
@@ -145,6 +147,9 @@ class SoundEngine {
     if (!Ctor) return;
     const ctx = new Ctor();
     this.ctx = ctx;
+    this.wokeAt = performance.now();
+    // the mute button shows what you actually hear, so it repaints whenever the context starts or stops
+    ctx.addEventListener?.("statechange", () => this.listeners.forEach((f) => f()));
     this.master = ctx.createGain();
     this.master.connect(ctx.destination);
     this.floorLp = ctx.createBiquadFilter();
@@ -219,6 +224,14 @@ class SoundEngine {
   get canPlay() {
     return this.live;
   }
+
+  /** The audio context is running: something you'd hear would actually play. */
+  get awake() {
+    return !!this.ctx && this.ctx.state === "running";
+  }
+
+  /** When the first gesture created the context (0 = not yet). */
+  wokeAt = 0;
 
   // ---------- music ----------
 
