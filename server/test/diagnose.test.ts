@@ -77,6 +77,19 @@ describe("throttle", () => {
     expect(shouldDiagnose(emptyMemory(), [ci], T, { used: 199, limit: 400 }).run).toBe(true);
   });
 
+  it("out of budget, a new main signal still moves the card by the rule, with no model call", async () => {
+    const backlog = sig("repo", "backlog_growing", 0.6);
+    const red = sig("ci", "ci_blocking", 0.7, { title: '"check" is failing on #39, so it can\'t ship.' });
+    const think = async (): Promise<ModelDiagnosis> => { throw new Error("should not be asked"); };
+    const spent = { used: 300, limit: 400 };
+    const a = await runDiagnose({ ...base, signals: [backlog], memory: emptyMemory(), now: T, budget: spent, think });
+    expect(a.diagnosis.bottleneck?.id).toBe(backlog.id);
+    const same = await runDiagnose({ ...base, signals: [backlog], memory: a.memory, now: T + 60_000, budget: spent, think });
+    expect(same.decided).toBe(false);
+    const b = await runDiagnose({ ...base, signals: [backlog, red], memory: a.memory, now: T + 60_000, budget: spent, think });
+    expect(b).toMatchObject({ thought: false, decided: true, diagnosis: { bottleneck: { id: red.id, by: "rule" } } });
+  });
+
   it("backs off after model failures", () => {
     const m = { ...emptyMemory(), lastAt: T, fails: 3 };
     expect(shouldDiagnose(m, [ci], T + BRAIN.minGapMs * 4, null).run).toBe(false);

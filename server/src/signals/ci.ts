@@ -188,7 +188,8 @@ export function deriveCiSignals(runs: readonly WorkflowRun[], { repo, defaultBra
       title: (list.length === 1
         ? `"${workflow}" is failing on ${shown}, so it can't ship.`
         : `"${workflow}" is failing on ${list.length} open PRs (${shown}). One fix could unblock all of them.`).slice(0, 160),
-      severity: clamp(0.3 + Math.min(0.5, list.length * 0.12)),
+      // A red check stops a finished PR from shipping, so even one outweighs a growing backlog.
+      severity: clamp(0.6 + Math.min(0.3, (list.length - 1) * 0.1)),
       metric: { value: list.length, unit: "PRs" },
       evidence: list.slice(0, 3).map((b) => ({ label: `Failing on #${b.pr}`, url: b.run.html_url })),
     });
