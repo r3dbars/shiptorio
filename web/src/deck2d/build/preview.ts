@@ -44,7 +44,6 @@ const shippyMods = import.meta.glob<Record<string, unknown>>("../shippy/index.ts
   const lock = document.createElement("button");
   lock.className = "lock"; lock.textContent = "Lock all"; lock.onclick = lockAll;
   bar.append(lock);
-  bus.on((e) => { if (e.type === "build-stage" || e.type === "station-built") console.debug("[build]", e); });
 
   const auto = params.get("stop") as StopId | null;
   let autoT = 0.8;
