@@ -3,6 +3,9 @@
 // sharp human lead would name: an area (or null, "nothing's wrong, stay quiet"), the main signal, and what an
 // acceptable unlock talks about. A source that isn't plugged in is simply absent.
 //
+// A red main or a red check stops every merge, so "ship" is an equally fair label for it as "speed": those cases
+// accept both, and the main signal and the move are what really grade them.
+//
 // Severities are what a calibrated collector would say. On purpose, several cases make the loudest signal the
 // wrong answer (loud-vs-stuck, goal-customers, spike-plus-mail): that's where the model has to beat the rule.
 
@@ -88,7 +91,7 @@ export const CASES: EvalCase[] = [
     id: "ci-collector-clogged", title: "Real CI collector: main red 5 h, CI 23 min, flaky retries, 4 runs queued, Lint failing on PRs",
     signals: humWithCi(fromRuns(cloggedRuns),
       sig("sentry", "errors_piling", 0.35, "22 open errors, steady; 30 users hit one this week.", ["22 unresolved, 300 events/24h (310 the day before)"])),
-    expect: { area: "speed", signal: "ci:ci_red_main:CI" }, unlock: /green|main|fix|revert|red/i, plays: ["fix_red_main"],
+    expect: { area: "speed", signal: "ci:ci_red_main:CI" }, alsoOk: ["ship"], unlock: /green|main|fix|revert|red/i, plays: ["fix_red_main"],
     why: "Five CI problems at once all point the same way, and red main is the one that stops every ship. Fix it first.",
   },
   {
@@ -100,7 +103,7 @@ export const CASES: EvalCase[] = [
   {
     id: "red-ci-quiet-sentry", title: "Main has been red for 5 hours, production is calm",
     signals: humBut(sig("ci", "ci_red_main", 0.85, "Main has been red for 5 hours; 4 PRs can't merge.", ["Run #4812 failed: checkout.test.ts", "4 PRs blocked on a red base"])),
-    expect: { area: "speed", signal: "ci:ci_red_main:repo" }, unlock: /fix|failing|main|green|revert|checkout\.test/i,
+    expect: { area: "speed", signal: "ci:ci_red_main:repo" }, alsoOk: ["ship"], unlock: /fix|failing|main|green|revert|checkout\.test/i,
     why: "Nothing can ship while main is red, and nothing else is burning.",
   },
   {
@@ -197,7 +200,7 @@ export const CASES: EvalCase[] = [
     signals: humBut(
       sig("ci", "ci_red_main", 0.8, "Main has been red for 3 hours; nothing can merge.", ["Run #4830 failed: orders.test.ts"]),
       sig("sentry", "error_spike", 0.9, "Timeout on /api/orders hit 498 users today.", ["2,900 events, 498 users, first seen 9 h ago"], { scope: "api" })),
-    expect: { area: "speed", signal: "ci:ci_red_main:repo" }, alsoOk: ["quality"], unlock: /green|main|fix|revert|orders|timeout/i,
+    expect: { area: "speed", signal: "ci:ci_red_main:repo" }, alsoOk: ["quality", "ship"], unlock: /green|main|fix|revert|orders|timeout/i,
     why: "The crash matters more, but its fix can't ship until main is green. Green main first is the sharper call.",
   },
   {
@@ -410,7 +413,7 @@ export const CASES: EvalCase[] = [
     signals: humBut(
       sig("posthog", "usage_flat", 0.4, "6 people a day, flat for a month.", ["DAU 6, last month 6"]),
       sig("ci", "ci_red_main", 0.9, "Main has been red for 7 hours; nothing can merge.", ["Run #4901 failed: auth.test.ts"])),
-    expect: { area: "speed", signal: "ci:ci_red_main:repo" }, unlock: /main|green|fix|revert|auth/i,
+    expect: { area: "speed", signal: "ci:ci_red_main:repo" }, alsoOk: ["ship"], unlock: /main|green|fix|revert|auth/i,
     why: "A goal tilts the pick at most 1.5x; a real fire still wins.",
   },
   {
@@ -429,7 +432,7 @@ export const CASES: EvalCase[] = [
   {
     id: "testing-39-red-pr", title: "Testing #39: a human PR is red because of the cents bug, main is green",
     signals: humBut(sig("ci", "ci_blocking", 0.7, "PR #39 fails `test` on a cents rounding bug; it can't merge.", ["PR #39: test failed (expected 1999, got 1998.9999)", "Main is green"])),
-    expect: { area: "speed", signal: "ci:ci_blocking:repo" }, alsoOk: ["quality"], plays: ["fix_blocking_check"], unlock: /fix|failing|check|test|cents|round|#39/i,
+    expect: { area: "speed", signal: "ci:ci_blocking:repo" }, alsoOk: ["quality", "ship"], plays: ["fix_blocking_check"], unlock: /fix|failing|check|test|cents|round|#39/i,
     why: "One red check is the only thing between that PR and a merge.",
   },
   {
@@ -466,7 +469,7 @@ export const CASES: EvalCase[] = [
     signals: humBut(
       sig("ci", "ci_red_main", 0.8, "Main has been red for 3 hours.", ["Run #5120 failed: cart.test.ts"]),
       sig("repo", "prs_waiting_on_you", 0.55, "2 PRs wait on your review.", ["PR #61, #62 review requested"])),
-    expect: { area: "speed", signal: "ci:ci_red_main:repo" }, unlock: /main|green|fix|revert|cart/i,
+    expect: { area: "speed", signal: "ci:ci_red_main:repo" }, alsoOk: ["ship"], unlock: /main|green|fix|revert|cart/i,
     why: "Reviewing PRs into a red main lands nothing. Fix main first.",
   },
   {
