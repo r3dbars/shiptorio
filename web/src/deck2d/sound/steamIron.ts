@@ -49,6 +49,7 @@ type ToneOpts = { t: number; f: number; to?: number; glide?: number; dur: number
 type NoiseOpts = { t: number; dur: number; vol: number; a?: number; lp?: number; hp?: number; bp?: number; q?: number; sweepTo?: number; sweepT?: number; rate?: number; out?: AudioNode };
 
 export class SteamKit {
+  private shift = 0; // semitones the pitched part of the one-shot being played is moved by (play's last argument)
   constructor(private ctx: BaseAudioContext, private noiseBuf: AudioBuffer, private out: AudioNode) {}
 
   private vca(t: number, peak: number, a: number, dur: number, out: AudioNode) {
@@ -231,13 +232,18 @@ export class SteamKit {
   }
 
   // ---------- the picked one-shots ----------
-  play(s: SteamSfx, t: number, out?: AudioNode) {
+  /** semitones moves the pitched part of a one-shot up or down; only the bell chord (merged) listens, and it
+   *  keeps its level: the city reveal plays it an octave down (-12) when every island is lit. */
+  play(s: SteamSfx, t: number, out?: AudioNode, semitones = 0) {
     const home = this.out;
+    const homeShift = this.shift;
     if (out) this.out = out;
+    this.shift = Number.isFinite(semitones) ? semitones : 0;
     try {
       this.oneShot(s, t);
     } finally {
       this.out = home;
+      this.shift = homeShift;
     }
   }
   private oneShot(s: SteamSfx, t: number) {
@@ -334,8 +340,8 @@ export class SteamKit {
         this.tone({ t: t + 0.4, f: 110, dur: 1.2, type: "sawtooth", vol: 0.03, a: 0.3, lp: 400 });
         break;
       case "merged": // three rings of a big brass bell over a warm brass chord
-        [0, 0.35, 0.7].forEach((d) => this.bell(t + d, 784, 2.2, 0.13, 2.4, 1.4));
-        [60, 64, 67, 72].forEach((m) => this.brass(t + 0.7, m, 1.8, 0.6));
+        [0, 0.35, 0.7].forEach((d) => this.bell(t + d, 784 * 2 ** (this.shift / 12), 2.2, 0.13, 2.4, 1.4));
+        [60, 64, 67, 72].forEach((m) => this.brass(t + 0.7, m + this.shift, 1.8, 0.6));
         break;
       case "caught": // the ram slams the lid shut, a low brass blat, a little "got it" tick
       case "caught_ram": { // the verify bay's ram lands 0.62s in, on its FAIL animation

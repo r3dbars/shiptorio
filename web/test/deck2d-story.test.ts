@@ -83,12 +83,13 @@ test("the story plays all four beats and ends on the connect card", () => {
   expect(s.view().stops.some((x) => x.items.some((c) => c.id === hero))).toBe(false);
   expect(s.view().shipped).toBe(before + 1);
 
-  // the next jam, then the last card
-  t += run(s, () => s.view().card?.id === STORY_CARD.connect, 20);
-  expect(s.view().focus).toBe("checks");
-  expect(s.view().attention).toEqual(["checks"]);
+  // the city reveal (web/test/deck2d-story-city.test.ts walks it beat by beat), then the last card
+  t += run(s, () => s.view().card?.id === STORY_CARD.connect, 40);
+  expect(s.phase()).toBe("end");
+  expect(s.view().city?.beat).toBe("card");
+  expect(Object.values(s.view().city!.plates).every(Boolean)).toBe(true);
   expect(s.view().stops.some((x) => x.state === "jammed")).toBe(false);
-  expect(s.view().card).toMatchObject({ yes: "See my repo", no: "Replay", setup: true });
+  expect(s.view().card).toMatchObject({ title: "Start with your repo.", yes: "Sign in with GitHub", no: "Replay", setup: true });
   s.approve(STORY_CARD.connect);
   expect(connected).toBe(1);
   expect(t).toBeLessThan(120);

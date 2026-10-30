@@ -67,7 +67,7 @@ export interface SfxEvent {
 export type { Focus };
 type Settings = { muted: boolean; volume: number; music: boolean; musicVolume: number };
 const KEY = "shiptorio.sound";
-const MIN_GAP_MS = 90; // same effect can't stack faster than this
+export const MIN_GAP_MS = 90; // same effect can't stack faster than this
 
 function load(): Settings {
   try {
@@ -508,7 +508,8 @@ class SoundEngine {
     if (i === 0) window.dispatchEvent(new CustomEvent<SfxEvent>(SFX_EVENT, { detail: { sfx: "hold_start", delayMs: 0 } }));
     if (this.live && this.kit && this.steamBus) this.kit.holdTick(i, this.ctx!.currentTime, this.steamBus.ui);
   }
-  play(s: Sfx, delay = 0, near = false) {
+  /** semitones moves the bell chord (shipped) up or down at the same level; every other sound ignores it. */
+  play(s: Sfx, delay = 0, near = false, semitones = 0) {
     // captions hear every sound, even muted or before the first click (ui/SoundCaptions.tsx)
     window.dispatchEvent(new CustomEvent<SfxEvent>(SFX_EVENT, { detail: { sfx: s, delayMs: delay * 1000 } }));
     if (!this.live) return;
@@ -519,7 +520,7 @@ class SoundEngine {
     let t = this.ctx!.currentTime + delay;
     const steam = STEAM_FOR[s] ?? (STEAM.has(s) ? (s as SteamSfx) : null);
     if (steam && this.kit && this.steamBus) {
-      this.kit.play(steam, t, UI_SFX.has(s) ? this.steamBus.ui : this.out === this.near ? this.steamBus.near : this.steamBus.floor);
+      this.kit.play(steam, t, UI_SFX.has(s) ? this.steamBus.ui : this.out === this.near ? this.steamBus.near : this.steamBus.floor, semitones);
       return;
     }
     switch (s) {

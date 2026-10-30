@@ -1,7 +1,7 @@
 import { ART_PX, DECK_DX, LAUNCH, PALETTE, type ArtLoader, type DeckBus, type DeckLayer, type DeckView, type LayerSlot } from "../contract";
 import type { Preview } from "./preview";
 import { LAUNCH_BUILD_SECONDS, clamp01, crossed, easeInOut, easeOut, phaseAt, span, through } from "./timeline";
-import { flightPose, FLIGHT_SECONDS } from "./flight";
+import { FLIGHT, flightPose, FLIGHT_SECONDS } from "./flight";
 
 // launch/ on the pixel deck (?px=1, contract "the pixel canvas"). Same timeline and events as index.ts, drawn at
 // whole art px in the 48 colors:
@@ -165,6 +165,10 @@ export function createPixelLaunch(_art: ArtLoader, bus: DeckBus, preview: Previe
   // the launch the engine starts (it still emits { type: "launch" }; this layer draws it)
   const reduced = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
   const fly = { active: false, t: 0, queued: 0, touched: false };
+  // The city reveal (view.city.beat): the hero rocket climbs out of the frame and stays away, with no landing, no landing
+  // clouds or jets and no settle puff under the city; the tower stops venting, and at city zoom no steam is drawn (halved,
+  // it reads as a cream slab). When the story lets go (Replay, reset) the rocket is back on its pad, silently.
+  let held = false, reveal = false, revealCity = false;
   let nextVent = 3.5;
   const puffs: { x: number; y: number; t: number; vx: number; vy: number; life: number; size: number }[] = [];
   const jets: { x: number; y: number; side: number; age: number }[] = [];
@@ -223,7 +227,14 @@ export function createPixelLaunch(_art: ArtLoader, bus: DeckBus, preview: Previe
       bus.emit({ type: "launch-stage", stage: c.stage });
       if (c.stage === "rocket-seated" || c.stage === "island-up") puff(c.stage === "island-up" ? RING.x : RING.x, c.stage === "island-up" ? ISLAND.y + 60 : SEAT, 4);
     }
-    if (fly.active) {
+    const beat = !!view.city?.beat;
+    if (reveal && !beat) { fly.active = false; fly.queued = 0; fly.t = 0; fly.touched = false; }
+    reveal = beat; revealCity = beat && view.city?.zoom === "city";
+    if (revealCity) { puffs.length = 0; jets.length = 0; }
+    // Gated on the beat, not on view.city: a live launch at the manual city still flies (and lands).
+    held = fly.active && beat && fly.t >= FLIGHT.ignition + FLIGHT.ascent;
+    if (held) fly.t = FLIGHT.ignition + FLIGHT.ascent; // away at the top of its climb (if it was already landing: back up there, unseen)
+    if (fly.active && !held) {
       fly.t += dt;
       const f = flightPose(fly.t);
       if ((f.stage === "ignition" || (f.stage === "ascent" && f.u < 0.35) || (f.stage === "landing" && f.u > 0.7)) && step(t) !== step(t - dt)) {
@@ -239,7 +250,7 @@ export function createPixelLaunch(_art: ArtLoader, bus: DeckBus, preview: Previe
       }
     }
     // Infrequent tower pressure release, separate from the launch exhaust.
-    if (!reduced && p >= 1 && t >= nextVent) {
+    if (!reduced && !beat && p >= 1 && t >= nextVent) {
       nextVent = t + 3.5 + Math.random() * 4;
       const side = Math.random() < 0.5 ? 1 : -1;
       for (let i = 0; i < 3; i++) cloud(RING.x + side * 24, RING.y - 45, side * (5 + i), -4, 1.5, 2);
@@ -250,6 +261,7 @@ export function createPixelLaunch(_art: ArtLoader, bus: DeckBus, preview: Previe
     for (let i = jets.length - 1; i >= 0; i--) if (jets[i].age >= 0.14) jets.splice(i, 1);
   }
   function cloud(x: number, y: number, vx: number, vy: number, life: number, size: number) {
+    if (revealCity) return;
     if (puffs.length < (reduced ? 16 : 100)) puffs.push({ x, y, vx, vy, t: 0, life, size });
   }
   function puff(x: number, y: number, n: number) {
@@ -348,7 +360,8 @@ export function createPixelLaunch(_art: ArtLoader, bus: DeckBus, preview: Previe
       const l = Math.min(1, step(r * LAUNCH_BUILD_SECONDS * 0.26) / (0.86 * LAUNCH_BUILD_SECONDS * 0.26));
       y = top - Math.round(120 * (1 - easeOut(l)));
       line = l < 1;
-    } else if (fly.active) {
+    } else if (held) return; // away, out of the frame, until the story lets go
+    else if (fly.active) {
       const flight = flightPose(fly.t);
       y = top + flight.y;
     }
