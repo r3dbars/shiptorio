@@ -64,6 +64,9 @@ describe("card tap log", () => {
     expect(signals.find(s => s.kind === "later_streak")).toMatchObject({ title: "You set aside the last 3 verify cards.", source: "taps", freshUntil: now + 30 * 60000 });
     expect(signals.every(s => s.evidence.length >= 1 && s.title.length <= 160)).toBe(true);
     expect(tapSignals(rows.slice(0, 2), now)).toEqual([]);
+    // 28 untapped cards is advice about the deck, never louder than a red PR (ci_blocking starts at 0.7).
+    const many = Array.from({ length: 28 }, (_, h) => row({ card_id: `m${h}`, kind: "input", shown_at: at(h % 100 + 1), action: "gone", decided_at: at(h % 100) }));
+    expect(tapSignals(many, now).find(s => s.kind === "card_ignored")!.severity).toBe(0.5);
   });
 
   it("reads one factory's last week through the collector registry shape", async () => {

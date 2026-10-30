@@ -204,7 +204,7 @@ export interface CiCache {
   put<T>(key: string, value: T): Promise<void>;
 }
 /** at = when runs were read, triedAt = last fetch attempt. runs null = never read. denied = no Actions access. */
-interface CiSnapshot { at: number; triedAt: number; runs: WorkflowRun[] | null; denied?: boolean; dirty?: boolean }
+interface CiSnapshot { at: number; triedAt: number; runs: WorkflowRun[] | null; denied?: boolean; dirty?: boolean; fromChecks?: boolean }
 const cacheKey = (repo: string) => `ci:runs:v1:${repo}`;
 
 /** KV-backed cache (the Worker's CACHE binding), with a per-isolate map when there's no binding. */
@@ -283,13 +283,15 @@ export async function readCiSignals(ctx: CiContext, now: number): Promise<BrainS
       // No Actions access: fall back to check runs. Otherwise keep the old runs (they age out on freshUntil) and
       // don't retry until the next poll.
       const checks = denied ? await (ctx.fetchChecks ?? fetchCheckRuns)(repo, token, ctx.defaultBranch).catch(() => null) : null;
-      snapshot = checks ? { at: now, triedAt: now, runs: checks } : denied ? { at: now, triedAt: now, runs: null, denied } : { at: snapshot?.at ?? now, triedAt: now, runs: snapshot?.runs ?? null };
+      snapshot = checks ? { at: now, triedAt: now, runs: checks, fromChecks: true } : denied ? { at: now, triedAt: now, runs: null, denied } : { at: snapshot?.at ?? now, triedAt: now, runs: snapshot?.runs ?? null };
     }
     await cache.put(cacheKey(repo), snapshot);
   }
   if (snapshot.denied) return [cantRead(repo, snapshot.at)];
   if (!snapshot.runs) return [];
-  return deriveCiSignals(snapshot.runs, { repo, defaultBranch: ctx.defaultBranch, observedAt: snapshot.at, openPrs: ctx.openPrs });
+  // Check runs are read only on open PRs' heads, so every PR they name is open.
+  const openPrs = ctx.openPrs ?? (snapshot.fromChecks ? [...new Set(snapshot.runs.flatMap(r => r.pull_requests?.map(p => p.number) ?? []))] : undefined);
+  return deriveCiSignals(snapshot.runs, { repo, defaultBranch: ctx.defaultBranch, observedAt: snapshot.at, openPrs });
 }
 
 export const ciCollector: SignalCollector<CiContext> = { source: "ci", everyMs: POLL_MS, read: readCiSignals };

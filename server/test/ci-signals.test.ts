@@ -174,5 +174,6 @@ describe("CI collector: reading cheaply", () => {
     expect(signals.map(s => s.kind)).toContain("ci_blocking");
     expect(signals.find(s => s.kind === "ci_blocking")!.title).toContain("#39");
     expect(signals.find(s => s.kind === "ci_blocking")!.severity).toBeGreaterThan(0.6); // louder than any backlog
+    expect(signals.find(s => s.kind === "ci_blocking")!.confidence).toBe(1); // check runs are read on open PRs only
   });
 });
