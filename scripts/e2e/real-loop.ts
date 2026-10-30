@@ -193,6 +193,7 @@ async function startIssue() {
   // The deck's own inbox: Codex engine card → issues, "Next issue" until #N, then Plan.
   for (let i = 0; i < 60 && Date.now() < deadline; i++) {
     const card = await cardOnScreen();
+    // Queued counts as on the line: its Plan card is on the deck, and the ship loop presses it.
     if (item() && item()!.state !== "ore") return note("issue_on_line", { state: item()!.state });
     if (!card) { await page.waitForTimeout(1000); continue; }
     if (card.title.startsWith(`#${issue}:`) && card.yes === "Plan") { await shot(`inbox-${issue}`); await press("approve"); return note("tapped", { card: card.title, yes: card.yes, via: "deck inbox" }); }
@@ -213,7 +214,7 @@ async function ship() {
   const started = await gh<{ title: string; state: string }>(`/issues/${issue}`);
   await note("github_issue", { issue, title: started?.title, state: started?.state });
   await startIssue();
-  let lastState = "", lastStage = "", tapped = new Set<string>();
+  let lastState = "", lastStage = "", tapped = new Set<string>(), reloaded = false;
   while (Date.now() < deadline) {
     await page.waitForTimeout(2000);
     const it = item();
@@ -238,11 +239,20 @@ async function ship() {
       if (!tools.length || !tools.every(t => TAP.has(t))) { if (!tapped.has(`skip:${move.id}`)) { tapped.add(`skip:${move.id}`); await note("left_for_human", { card: move.title, tools }); await shot("needs-human"); } continue; }
       if (move.locked) continue;
       const hold = tools.includes("request_merge");
-      // Wait for the deck to show this exact card, then press its real button.
+      // Wait for the deck to show this exact card, then press its real button. The deck shows one card at a time:
+      // another card on top gets Later (the player's own "not now"), and a page still showing the onboarding inbox is
+      // reloaded once on the plain live deck. A card that never shows is tried again on the next pass.
       let onScreen = false;
-      for (let i = 0; i < 20 && !onScreen; i++) { onScreen = (await cardOnScreen())?.id === move.id; if (!onScreen) await page.waitForTimeout(1000); }
-      tapped.add(move.id);
+      for (let i = 0; i < 30 && !onScreen; i++) {
+        const showing = await cardOnScreen();
+        onScreen = showing?.id === move.id;
+        if (onScreen) break;
+        if (showing && openCards().some(m => m.id === showing.id) && i >= 3) { await note("later", { card: showing.title, why: `ahead of ${itemId}` }); await press("later"); await page.waitForTimeout(1200); continue; }
+        if (showing && !reloaded && i >= 5) { reloaded = true; await note("reload", { showing: showing.title }); await page.goto(deckUrl); await page.waitForSelector("body[data-deck-ready]", { timeout: 30_000 }).catch(() => {}); await page.waitForTimeout(2500); continue; }
+        await page.waitForTimeout(1000);
+      }
       if (!onScreen) { await note("card_not_on_screen", { card: move.title, showing: await cardOnScreen() }); await shot("card-missing"); continue; }
+      tapped.add(move.id);
       await shot(`card-${tools[0]}`);
       await press("approve", hold);
       await note("tapped", { card: move.title, tools, option: option.label, hold });
