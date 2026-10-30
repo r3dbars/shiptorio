@@ -37,7 +37,7 @@ function fixture(items = [item()]) {
   return { data, reload, saved: () => data.get("state") as FactoryState, credits: () => [...data.keys()].filter(k => k.startsWith("launchCredit:")), alarm: () => alarm, consumeAlarm: () => { alarm = null; }, setAlarm: (at: number) => { alarm = at; }, failAt: (key?: string) => { failAt = key; } };
 }
 async function revert(f: ReturnType<typeof fixture>, factory: InstanceType<typeof Factory>) {
-  await factory.enqueueGitHub("revert-delivery", "pull_request", { action: "opened", repository: { full_name: "r3dbars/demo" }, installation: { id: 1 }, pull_request: { number: 50, title: 'Revert "Fix checkout"', body: "Reverts r3dbars/demo#41" } });
+  await factory.enqueueGitHub("revert-delivery", "pull_request", { action: "closed", repository: { full_name: "r3dbars/demo" }, installation: { id: 1 }, pull_request: { number: 50, title: 'Revert "Fix checkout"', body: "Reverts r3dbars/demo#41", merged: true, base: { ref: "main" } } });
   f.consumeAlarm(); await factory.alarm();
 }
 

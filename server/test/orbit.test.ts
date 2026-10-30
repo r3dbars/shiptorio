@@ -114,11 +114,55 @@ describe("orbit watch in the Factory", () => {
     expect(x.events.some((e) => e.type === "autonomy_unlocked" && e.district === "checkout" && /came back in orbit/.test(e.text ?? ""))).toBe(true);
   });
 
-  it("a revert PR and a red check on the merge commit both trip it", async () => {
+  for (const [action, merged, ref] of [
+    ["opened", false, "main"],
+    ["reopened", false, "main"],
+    ["opened", true, "main"],
+    ["reopened", true, "main"],
+    ["closed", false, "main"],
+    ["closed", undefined, "main"],
+    ["closed", true, "another-branch"],
+    ["closed", true, undefined],
+    ["edited", true, "main"],
+  ] as const) {
+    it(`keeps a launch and its authority for revert metadata (${action}, ${merged}, ${ref})`, async () => {
+      const now = Date.now();
+      const item = launched();
+      item.orbit = { ...item.orbit!, since: now - 60_000, until: now + WATCH_MS };
+      const x = fixture([item], permitted());
+      const before = structuredClone({ item: x.saved().items[0], trust: x.saved().trust, metrics: x.saved().metrics, permits: x.book() });
+      await x.f.enqueueGitHub("unconfirmed-revert", "pull_request", {
+        action, repository: { full_name: "r3dbars/demo" }, installation: { id: 1 },
+        pull_request: { number: 50, title: 'Revert "Fix total (#41)"', body: action === "reopened" ? "Reverts #41" : "Reverts r3dbars/demo#41", merged, base: ref ? { ref } : undefined, author_association: "NONE" },
+      });
+      await x.f.alarm();
+      expect({ item: x.saved().items[0], trust: x.saved().trust, metrics: x.saved().metrics, permits: x.book() }).toEqual(before);
+    });
+  }
+
+  it("accepts a merged outsider-authored revert on a non-main base once", async () => {
+    const now = Date.now();
+    const item = launched();
+    item.orbit = { ...item.orbit!, since: now - 60_000, until: now + WATCH_MS };
+    const x = fixture([item], permitted());
+    x.data.set("state", { ...x.saved(), baseBranch: "dev" });
+    const payload = { action: "closed", repository: { full_name: "r3dbars/demo" }, installation: { id: 1 }, pull_request: { number: 50, title: "Revert checkout", body: "Reverts #41", merged: true, base: { ref: "dev" }, author_association: "NONE", head: { repo: { fork: true } } } };
+    await x.f.enqueueGitHub("merged-revert", "pull_request", payload);
+    await x.f.alarm();
+    expect(x.saved().items[0].orbit).toMatchObject({ state: "regressed", signal: "revert" });
+    expect(x.book().lanes.checkout).toMatchObject({ permit: false, streak: 0 });
+    expect(x.saved().metrics?.escapedDefects).toBe(1);
+    const after = structuredClone({ scars: x.saved().items[0].scars, trust: x.saved().trust, metrics: x.saved().metrics, permits: x.book() });
+    await x.f.enqueueGitHub("merged-revert-again", "pull_request", payload);
+    await x.f.alarm();
+    expect({ scars: x.saved().items[0].scars, trust: x.saved().trust, metrics: x.saved().metrics, permits: x.book() }).toEqual(after);
+  });
+
+  it("a merged revert on the tracked branch and a red check on the merge commit both trip it", async () => {
     const now = Date.now();
     const watching = (o: Partial<Item>) => { const i = launched(o); return { ...i, orbit: { ...i.orbit!, since: now - 60_000, until: now + WATCH_MS } }; };
     const x = fixture([watching({}), watching({ id: "gh-2", prNumber: 42, lane: "docs", district: "docs", ore: undefined })], permitted());
-    await x.f.enqueueGitHub("d1", "pull_request", { action: "opened", repository: { full_name: "r3dbars/demo" }, installation: { id: 1 }, pull_request: { number: 50, title: 'Revert "Fix total (#41)"', body: "Reverts r3dbars/demo#41", html_url: "https://github.com/r3dbars/demo/pull/50" } });
+    await x.f.enqueueGitHub("d1", "pull_request", { action: "closed", repository: { full_name: "r3dbars/demo" }, installation: { id: 1 }, pull_request: { number: 50, title: 'Revert "Fix total (#41)"', body: "Reverts r3dbars/demo#41", merged: true, base: { ref: "main" }, html_url: "https://github.com/r3dbars/demo/pull/50" } });
     await x.f.enqueueGitHub("d2", "check_suite", { action: "completed", repository: { full_name: "r3dbars/demo" }, installation: { id: 1 }, check_suite: { head_sha: "2".repeat(40), conclusion: "failure", pull_requests: [], app: { name: "GitHub Actions" } } });
     await x.f.alarm();
     const [a, b] = x.saved().items;

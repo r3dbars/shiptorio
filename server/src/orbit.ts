@@ -1,6 +1,6 @@
 // Orbit watch (docs/LOOP.md, station 5): checks don't stop at merge. For 24 hours after a launch, orbit watch
 // looks at the real world. A comeback trips it: the same Sentry error fires again, new Sentry errors spike on
-// the folder the fix touched, someone opens a revert PR, or CI/deploy goes red on the merge commit.
+// the folder the fix touched, a revert PR merges into the tracked branch, or CI/deploy goes red on the merge commit.
 // A trip scars the item, puts it back on the rework belt and costs its lane the launch permit.
 // Pure rules; the Factory DO wires them to webhooks and storage.
 
