@@ -7,6 +7,8 @@
 //   bun scripts/e2e/real-loop.ts watch 10            record 10 minutes of what Shippy notices (cards, bottleneck, thoughts)
 //   bun scripts/e2e/real-loop.ts look              ~30s: make Shippy look at the repo now, print what he flags and suggests
 //                                                    (E2E_EXPECT="#39" exits 1 unless his card names it)
+//   bun scripts/e2e/real-loop.ts park              set aside queued items nobody started (no plan job, 6h+ old), the deck's own
+//                                                    Park; `unpark` puts back exactly what park set aside
 //   bun scripts/e2e/real-loop.ts forget              start learned trust over (every yes this script tapped counts), so a
 //                                                    filmed take begins at zero dots
 //
@@ -33,7 +35,7 @@ const ORIGINS = new Set(["https://shiptorio.dev", "https://shiptorio.com", "http
 if (new URL(base).origin !== base || !ORIGINS.has(new URL(base).origin)) throw new Error("Unsupported SHIPTORIO_URL"); // an exact origin, nothing around it
 if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error("Set SHIPTORIO_REPO=owner/repo");
 if (repo === "r3dbars/shiptorio") throw new Error("The driver ships real merges; point it at a test repo");
-if (!["status", "ship", "watch", "look", "forget"].includes(mode)) throw new Error("Use status, ship ISSUE, watch MINUTES, look or forget");
+if (!["status", "ship", "watch", "look", "park", "unpark", "forget"].includes(mode)) throw new Error("Use status, ship ISSUE, watch MINUTES, look, park, unpark or forget");
 const issue = mode === "ship" ? Number(arg) : 0;
 if (mode === "ship" && !(Number.isInteger(issue) && issue > 0)) throw new Error("Usage: real-loop.ts ship ISSUE");
 const itemId = `gh-${issue}`;
@@ -89,18 +91,36 @@ const runner = (await api<Record<string, unknown>>(`/api/repos/${repo}/runner/st
 await note("signed_in", { login: me?.login, base, repo });
 await note("runner", { runner });
 
-/** Sends one message on its own socket once the snapshot is in, the way the deck would; returns that snapshot. */
-async function sendOnce(message: Record<string, unknown>): Promise<FactoryState> {
+/** Sends messages on their own socket once the snapshot is in, the way the deck would; returns that snapshot. */
+async function sendOnce(message: Record<string, unknown> | ((s: FactoryState) => Record<string, unknown>[])): Promise<FactoryState> {
   const socket = new WebSocket(`${base.replace(/^http/, "ws")}/api/repos/${repo}/factory`, { headers: { cookie, origin: base } } as unknown as string[]);
   const snapshot = await new Promise<FactoryState>((ok, fail) => {
     const timer = setTimeout(() => fail(new Error("no snapshot in 20s")), 20_000);
     socket.onmessage = e => { const msg = JSON.parse(String(e.data)); if (msg.type === "snapshot") { clearTimeout(timer); ok(msg.state); } };
     socket.onerror = () => fail(new Error("socket error"));
   });
-  socket.send(JSON.stringify(message));
+  for (const m of typeof message === "function" ? message(snapshot) : [message]) { socket.send(JSON.stringify(m)); await Bun.sleep(400); }
   await Bun.sleep(3000);
   socket.close();
   return snapshot;
+}
+
+if (mode === "park" || mode === "unpark") {
+  // The cart callout's Park: off the line, no plan card, not counted as anyone's pile. Reversible with unpark.
+  const parkedFile = `${work}/parked.json`;
+  const jobs = (await api<{ itemId: string; status: string }[] | { jobs: { itemId: string; status: string }[] }>(`/api/repos/${repo}/runner/jobs`)).body;
+  const active = new Set((Array.isArray(jobs) ? jobs : jobs?.jobs ?? []).filter(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status)).map(j => j.itemId));
+  const before = existsSync(parkedFile) ? JSON.parse(await readFile(parkedFile, "utf8")) as string[] : [];
+  let ids: string[] = [];
+  await sendOnce(s => {
+    ids = mode === "park"
+      ? s.items.filter(i => i.state === "queued" && !i.priority && !active.has(i.id) && Date.now() - i.updatedAt > 6 * 3_600_000).map(i => i.id)
+      : before.filter(id => s.items.some(i => i.id === id && i.priority === "park"));
+    return ids.map(itemId => ({ type: "set_priority", itemId, priority: mode === "park" ? "park" : "none" }));
+  });
+  await writeFile(parkedFile, JSON.stringify(mode === "park" ? [...new Set([...before, ...ids])] : before.filter(id => !ids.includes(id))));
+  await note(mode === "park" ? "parked" : "unparked", { items: ids });
+  process.exit(0);
 }
 
 if (mode === "forget") {
