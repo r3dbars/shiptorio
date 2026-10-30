@@ -95,6 +95,23 @@ factory state, ticks on an alarm and streams to the browser over a websocket. Gi
 GitHub App. The runner dials out from your machine, works in a git worktree, and pushes a branch; the server
 opens the PR. Secrets are encrypted per repo and never reach the browser or the logs.
 
+## Coming soon: the rest of the city
+
+Your software factory is the first island. It sits in a city of them, and each one will plug into your line
+and feed it real work.
+
+<p align="center">
+  <img src="docs/readme/city.png" alt="The city: your repo's island lit in the middle, with the dark islands Errors, Traffic, Inbox, Customers and Marketing around it, joined by sky bridges" width="940">
+</p>
+
+- **Errors.** Sentry sends in crashes from your real product, so every bug turns into a fix on your line.
+- **Traffic.** Cloudflare shows how people really use your app, so you build what they need.
+- **Inbox.** Support tickets and email come in as work, straight onto your line.
+- **Customers.** PostHog shows where customers drop off, so you fix what's costing you users.
+- **Marketing.** Then customer acquisition and marketing, so people find what you ship.
+
+The factory must grow.
+
 ## Built at the Meta AI Developer Hackathon
 
 Everything here was built between Oct 26 and Nov 4, 2026, from an empty repo. Muse Wonder makes every
