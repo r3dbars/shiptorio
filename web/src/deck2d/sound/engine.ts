@@ -88,6 +88,7 @@ class SoundEngine {
   private musicBus: GainNode | null = null;
   private music: MusicPlayer | FoundryPlayer | SoundtrackPlayer = new MusicPlayer(this);
   private firstRun = false;
+  private city = false;
   private musicLevel: GainNode | null = null;
   private musicLoading = false;
   private musicAttached = false;
@@ -254,6 +255,7 @@ class SoundEngine {
         if (this.off || !this.settings.music || this.settings.musicVolume <= 0 || document.hidden) return;
         this.music = player;
         if ("setFocus" in player) { player.setFocus(this.focus); player.setFirstRun(this.firstRun); }
+        if ("setCity" in player) player.setCity(this.city);
       }
       this.music.setInput(this.musicInput);
       this.music.attach(this.musicBus);
@@ -283,6 +285,12 @@ class SoundEngine {
   setFirstRun(on: boolean) {
     this.firstRun = on;
     if ("setFirstRun" in this.music) this.music.setFirstRun(on);
+  }
+
+  // The tour's city of islands: Skyline swells in over the lift-off lap.
+  setCity(on: boolean) {
+    this.city = on;
+    if ("setCity" in this.music) this.music.setCity(on);
   }
 
   // For tests and the dev overlay: what the score is doing right now.

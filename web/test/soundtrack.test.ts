@@ -13,9 +13,10 @@ describe("Justin's soundtrack picks", () => {
       orbit: { track: "aether", knobs: k(70, 0, 30, 70) },
       mine: { track: "deepshaft", knobs: k(70, 0, 20, 60) },
       title: { track: "waltz", knobs: k(75, 0, 25, 35) },
+      city: { track: "skyline", knobs: { ...k(100, 0, 60, 60), volume: 85 } }, // the tour's islands (2026-10-30)
     });
     expect(Object.values(PICKS).map((p) => trackById(p.track).name)).toEqual(
-      ["Iron Lullaby", "Night Shift", "Pressure", "Liftoff", "Aether Drift", "Deep Shaft", "Boiler Waltz"]);
+      ["Iron Lullaby", "Night Shift", "Pressure", "Liftoff", "Aether Drift", "Deep Shaft", "Boiler Waltz", "Skyline"]);
   });
 
   test("intensity turns layers on like the soundboard did", () => {
@@ -44,6 +45,8 @@ describe("which track plays", () => {
     expect(nextRole("orbit", "idle", 0)).toBe("idle");
     expect(nextRole("stuck", "launch", 1)).toBe("launch");
     expect(nextRole(null, "idle", 0)).toBe("idle");
+    expect(nextRole("launch", "city", 1)).toBe("city"); // the tour's islands swell in on the next bar
+    expect(roleFor({ state: "idle", focus: null, firstRun: false, launching: true, city: true })).toBe("city");
   });
 
   test("the orbit watch and the mines have their own tracks", () => {

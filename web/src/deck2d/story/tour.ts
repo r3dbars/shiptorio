@@ -195,7 +195,7 @@ export function createTour(): Tour {
   /** The islands story's picture for the card that is up: what was lit on earlier cards stays lit, this card's light in turn. */
   function cityView(): CityView | undefined {
     const at = S.end ? -1 : S.beat, b = TOUR[at];
-    if (S.end) return { zoom: "city", beat: "card", lit: off(1), plates: off(true), focus: null, label: CITY_COPY.repo, cine: true };
+    if (S.end) return { zoom: "city", beat: "card", lit: off(1), plates: off(false), focus: null, label: CITY_COPY.repo, cine: true };
     if (!b?.city) return undefined;
     const lit = off(0);
     for (let i = 0; i < at; i++) for (const id of TOUR[i].city?.light ?? []) lit[id] = 1;
