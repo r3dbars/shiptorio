@@ -1752,9 +1752,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     }
     if (!(await this.load())) return;
     if (event === "push" && p.ref === `refs/heads/${p.repository?.default_branch}`) await this.refreshDistricts();
-    const pr = p.pull_request as { number?: number; merged?: boolean; merge_commit_sha?: string; title?: string; body?: string | null; html_url?: string; head?: { sha: string; ref: string } } | undefined;
+    const pr = p.pull_request as { number?: number; merged?: boolean; merge_commit_sha?: string; title?: string; body?: string | null; html_url?: string; head?: { sha: string; ref: string }; base?: { ref: string } } | undefined;
     if (event === "pull_request" && p.action === "closed" && pr?.number) await this.onPullClosed(pr.number, !!pr.merged, pr.merge_commit_sha);
-    if (event === "pull_request" && pr && ["opened", "reopened", "closed"].includes(p.action ?? "") && (p.action !== "closed" || pr.merged)) await this.orbitRevert(pr);
+    if (event === "pull_request" && p.action === "closed" && pr) await this.orbitRevert(pr);
     const check = (p.check_run ?? p.check_suite) as { pull_requests?: { number: number }[]; head_sha?: string; conclusion?: string; name?: string; html_url?: string; app?: { name?: string } } | undefined;
     if (["check_run", "check_suite"].includes(event) && p.action === "completed" && check?.head_sha && ["failure", "timed_out", "startup_failure"].includes(check.conclusion ?? "")) await this.orbitDeploy(check.head_sha, check.name ?? check.app?.name ?? "CI", check.html_url);
     if (["check_run", "check_suite"].includes(event) && ["completed", "queued", "in_progress", "requested", "rerequested"].includes(p.action ?? "") && check) await this.onCheckSuite((check.pull_requests ?? []).map((pr) => pr.number), check.conclusion === "success", check.conclusion ?? "pending", check.head_sha);
@@ -3109,8 +3109,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     }
   }
 
-  /** Someone opened or merged a revert of a watched launch. */
-  private async orbitRevert(pr: { number?: number; title?: string; body?: string | null; html_url?: string }): Promise<void> {
+  /** Only a confirmed merge into the tracked branch can undo a watched launch. */
+  private async orbitRevert(pr: { number?: number; title?: string; body?: string | null; html_url?: string; merged?: boolean; base?: { ref: string } }): Promise<void> {
+    // Signed delivery authenticates GitHub, not the author's title/body claim.
+    if (pr.merged !== true || !pr.base?.ref || pr.base.ref !== this.state!.baseBranch) return;
     const reverted = this.meta && revertedPr(pr, this.meta.repo);
     const watched = reverted ? watchForRevert(this.state!.items, reverted) : undefined;
     if (watched) await this.orbitTrip(watched, "revert", `Revert PR #${pr.number} undoes it`, pr.html_url);
