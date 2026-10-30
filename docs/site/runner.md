@@ -146,7 +146,7 @@ Uninstall does not delete your usual coding-agent settings or your repositories.
 Legacy macOS service users should first run `bun run runner:service stop` from
 their checkout. That service has a separate install under
 `~/Library/Application Support/Shiptorio` and a launch agent at
-`~/Library/LaunchAgents/com.shiptorio.runner.plist`; after stopping it, remove those
+`com.shiptorio.runner.plist` in `~/Library/LaunchAgents/`; after stopping it, remove those
 files to uninstall the legacy service. To keep existing standalone pairings running
 in the background, run `bun run runner:service install` from a checkout. It imports
 unexpired same-server pairings without deleting their standalone copies or replacing
