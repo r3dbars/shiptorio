@@ -6,7 +6,7 @@ order: 1
 ---
 # Shiptorio docs
 
-Shiptorio shows your software as a factory. GitHub issues ride a conveyor through seven stations, AI agents do the work, and every rocket that launches is a real merged pull request.
+Shiptorio is a game over your GitHub repo, played on one 2D pixel deck with Shippy. GitHub issues ride a conveyor through seven stations, AI agents do the work, and in a live factory each rocket is a confirmed merged pull request. The tutorial uses sample work.
 
 There's always a bottleneck, and it's usually waiting on one of your calls. Shippy the robot parks on it and a card shows up at the bottom of the screen. Swipe it and the line moves. Approve the same kind of thing three times and the factory does that kind on its own, so you're free for the next jam.
 
@@ -15,10 +15,10 @@ There's always a bottleneck, and it's usually waiting on one of your calls. Ship
 **Repo → Planner → Builder → Checks → Review → Gate → Launch**
 
 1. **Repo.** Your open GitHub issues wait here. You pick one to start.
-2. **Planner.** Shippy's brain, Meta Muse Spark, reads the issue and the code and writes a small plan: which files, what changes.
-3. **Builder.** Your own coding agent (Codex or Claude Code, on your own machine) builds it and opens a PR.
+2. **Planner.** Shippy, powered by Meta Muse Spark, reads the issue and the code and writes a small plan: which files, what changes.
+3. **Builder.** Your own coding agent (Codex or Muse Code, on your own machine) builds it and opens a PR.
 4. **Checks.** CI runs, plus a proof check that the fix really fixes the issue.
-5. **Review.** Spark reviews the diff.
+5. **Review.** Shippy reviews the diff.
 6. **Gate.** You hold **Ship it** to merge.
 7. **Launch.** GitHub merges it and the rocket goes up.
 

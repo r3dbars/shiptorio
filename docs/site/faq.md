@@ -8,19 +8,19 @@ order: 2
 
 ## Is this a real game or a dashboard?
 
-A game. A pixel-art factory deck, a robot named Shippy, rockets. The difference is that every move ends as a real PR, a real merge or a real fix. If something on screen doesn't end in something real, it's decoration.
+A game over your GitHub repo: a pixel deck, Shippy the robot, and a line from issue to merged PR. The live factory ships real work; the scripted tutorial is a preview.
 
 ## Does Shiptorio write my code?
 
-No. Spark plans. Your own agents (Claude Code or Codex) write the code, on your machine, on your subscription. See [Connect your machine](/docs/runner).
+No. Shippy plans. Your own agents (Codex or Muse Code) write the code, on your machine, on your subscription. See [Connect your machine](/docs/runner).
 
 ## Which agents work?
 
-Codex and Claude Code today, signed in on your own machine through the [runner](/docs/runner).
+Codex and Muse Code today, signed in on your own machine through the [runner](/docs/runner).
 
 ## Who pays for what?
 
-Spark's thinking runs on Shiptorio's Meta API key. The building runs on your own Claude or ChatGPT subscription through the runner. GitHub is your existing account.
+Shippy's thinking runs on Shiptorio's Meta API key. The building runs on your own Codex or Muse Code subscription through the runner. GitHub is your existing account.
 
 ## Why is my factory paused at a quota?
 
@@ -36,7 +36,7 @@ waits until the next day. A new plan still needs your approval.
 
 ## Can it merge without me?
 
-Merging needs your hold on **Ship it**. The server has an older launch-permit mechanism that only turns on if you say yes; see [Trust](/docs/trust).
+Merging needs your hold on **Ship it**. Learned approvals never grant automatic merging; see [Trust](/docs/trust).
 
 ## Can it push to main?
 
@@ -48,7 +48,7 @@ Checks wants proof the fix works, not just that it builds. A code change needs a
 
 ## Why does nothing build?
 
-Probably no agent connected. Spark can read and plan, but something has to build: connect a runner with Codex or Claude Code signed in. See [Connect your machine](/docs/runner).
+Probably no agent connected. Shippy can read and plan, but something has to build: connect a runner with Codex or Muse Code signed in. See [Connect your machine](/docs/runner).
 
 ## Why can't I sign in?
 

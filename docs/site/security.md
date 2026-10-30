@@ -12,13 +12,13 @@ Shiptorio sits between your repo, your AI agents and an AI planner. Here's exact
 
 - **Your code is written on your machine**, by your own agent, on your own subscription. Shiptorio's servers never run a coding agent.
 - **Agents only open PRs.** Never a push to `main`, only `shiptorio/runner-*` branches.
-- **A merge needs you**: you hold **Ship it** at the Gate. (An older launch-permit option exists only if you turn it on; see [Trust](/docs/trust).)
+- **A merge needs you**: you hold **Ship it** at the Gate. Learned approvals do not authorize merges; see [Trust](/docs/trust).
 - **Your subscription sign-ins never leave your machine.**
-- **Spark reads issue text, files and diffs** to plan and review. That goes to Meta's API.
+- **Shippy reads issue text, files and diffs** to plan and review. That goes to Meta's API.
 
 ## Signing in
 
-GitHub is the only login. No passwords.
+GitHub identifies your account. During private preview, a separate preview password unlocks sign-in.
 
 - Your GitHub token is used once, at sign-in, to see which repos you can reach. It isn't stored.
 - Your session is a random id in a cookie that's `HttpOnly`, `Secure` and `SameSite=Lax`, and lasts 14 days. Shiptorio only keeps a SHA-256 hash of it. Signing out deletes it.
@@ -39,7 +39,7 @@ Sentry user emails and IPs are only used to count affected users. They aren't st
 
 ## What goes to Meta's API
 
-Spark runs on the Meta Model API. To do its job it sends:
+Shippy is powered by Meta Muse Spark through the Meta Model API. To do its job it sends:
 
 - issue titles, bodies, labels and the latest comment (up to 8,000 characters)
 - your repo's file list (up to 600 paths)
@@ -52,13 +52,13 @@ Prompts treat all of that as untrusted evidence, never as instructions.
 ## What your runner and agent can do
 
 - The agent gets a minimal environment, not your shell's secrets, and signs in from its own dedicated folder, not your normal config.
-- Codex runs in `workspace-write` sandbox mode. Claude Code gets only Read, Edit, Write, Glob and Grep.
+- Codex and Muse Code return structured edit proposals inside an OS sandbox. The supervisor applies only validated edits to approved files.
 - It may only change the files you approved in the plan: at most 10 files and 500 changed lines.
 - `.env*`, `.git*`, CI config, key files (`.pem`, `.key`, `.p12`, `.pfx`), `node_modules` and anything outside the repo are never in scope.
-- Shell tools are off. The agent edits files, and the runner runs the checks.
+- Shell tools are off. The agent proposes edits, and the runner applies them and runs the checks.
 - The finished patch is scanned for secret-looking strings before anything is pushed.
-- Checks run inside the macOS sandbox, with no network except a locked-down dependency install.
-- The runner's GitHub token only covers one repo and lasts eight hours.
+- Checks run inside the macOS or Linux OS sandbox, without the agent's subscription credentials; network access is restricted.
+- The runner's installation token only covers one repo. Its separate pairing grant expires and is renewed while connected.
 
 More in [Connect your machine](/docs/runner#what-your-agent-can-and-cant-touch).
 
@@ -68,14 +68,14 @@ GitHub and Sentry webhooks are checked against their HMAC signatures with a cons
 
 ## Merging
 
-Shiptorio's App does the actual squash-merge when you hold **Ship it**, or on its own for a lane with a permit you turned on. Right before merging, it checks the PR hasn't changed since the checks ran and that CI is still green.
+Shiptorio's App does the actual squash-merge when you hold **Ship it**. Right before merging, it checks the PR hasn't changed since the checks ran and that CI is still green.
 
 Protect `main` with GitHub's branch rules anyway. A repo-scoped token can't be limited to one branch, so branch protection is the backstop.
 
 ## Removing your data
 
-The repo owner can download a factory's whole state as JSON from `/api/repos/owner/name/export`. Uninstall the GitHub App from a repo and Shiptorio drops that repo and its access rows. Self-serve account deletion is being built.
+The repo owner can download a factory's whole state as JSON from `/api/repos/owner/name/export`. Uninstall the GitHub App from a repo and Shiptorio drops that repo and its access rows. Account export and deletion are available on the separate `/settings` page; deletion asks you to confirm every owned repository.
 
-Found a security problem? Open an issue on the repo, or tell the maintainer directly if it's sensitive.
+For security reporting instructions, see [SECURITY.md](https://github.com/r3dbars/shiptorio/blob/dev/SECURITY.md).
 
 Owner-only archived factory exports and deletion use verified numeric GitHub installation ownership. Renaming a login keeps verified ownership; reusing a former login does not transfer it. Legacy rows with no verified owner ID cannot grant those rights until authenticated installation metadata is refreshed.
