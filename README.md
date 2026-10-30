@@ -95,6 +95,10 @@ factory state, ticks on an alarm and streams to the browser over a websocket. Gi
 GitHub App. The runner dials out from your machine, works in a git worktree, and pushes a branch; the server
 opens the PR. Secrets are encrypted per repo and never reach the browser or the logs.
 
+<p align="center">
+  <img src="docs/readme/under-the-hood.png" alt="Diagram: your machine runs the runner with Muse Code or Codex and pushes a branch; Cloudflare runs one Worker and one Durable Object per repo; GitHub sends issues and checks in and receives the PR; Meta Muse Wonder is Shippy's brain above; the deck in your browser below over a websocket" width="940">
+</p>
+
 ## Coming soon: the rest of the city
 
 Your software factory is the first island. It sits in a city of them, and each one will plug into your line
