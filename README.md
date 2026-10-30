@@ -17,10 +17,6 @@ AI writes the code now. The slow part is the person: deciding what gets built, w
 what's safe to merge. Shiptorio puts those decisions on one card at a time, makes a yes safe with checks you
 can see, and rewards you for adding more of them. The more you verify, the more the factory runs on its own.
 
-<p align="center">
-  <img src="docs/readme/why-card.png" alt="One card at the bottom of the deck: Approve fix for broken docs link? Later on the left, Approve on the right" width="720">
-</p>
-
 ## Meet Shippy
 
 Shippy is the robot who runs your line. **Meta Muse Wonder is Shippy's brain.** It reads your issues, plans the
