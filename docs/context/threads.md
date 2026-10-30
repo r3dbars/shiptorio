@@ -869,6 +869,8 @@ Verified whole-App regressions: Hono response assignment replaced appended App t
 - 2026-10-30 Codex (`codex/submission-public-docs`): reviewed all public docs for the current deck, Shippy and Codex/Muse Code runner; corrected trust, setup, security and fixture claims and verified docs links/build.
 - 2026-10-30 Codex cold-load: measurement-only harness uses the real local Worker/Factory, signed test persona and fixture runner with compressed assets, iPhone 13 throttling, cold contexts, HAR/Chrome traces and passive marks. Baseline, validation and hosted confirmation tracked in cold-load.md; no optimization or real-account action claimed.
 
+- 2026-10-30 Codex security: proof exemptions and docs launch permits share a prose-only filename policy with the local runner; executable docs and MDX follow code checks, and stale docs permits cannot authorize them.
+
 - 2026-10-30 Codex cold-load budgets: after merged #739, guard five-round sampled CI medians at 4 s stranger / 5 s signed-in fixture. Missing or invalid samples fail; no runtime optimization or production timing claim. Justin runs the separate real-session confirmation.
 
 - 2026-10-30 Codex security: orbit watch consumes revert metadata only after a confirmed merge into the tracked base branch; regression coverage preserves unmerged proposals, unrelated branches, legitimate fork-authored merges, and replay accounting.
