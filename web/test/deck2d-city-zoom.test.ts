@@ -124,7 +124,7 @@ describe("the Zoom button steps aside for the whole reveal (zoomHidden)", () => 
     const main = readFileSync(join(import.meta.dir, "../src/deck2d/main.ts"), "utf8");
     expect(main).toContain("let storyRun: { phase(): string } | null = null;");
     expect(main).toMatch(/\n\s+storyRun = run;\n/);
-    expect(main).toContain("paintZoom(zoomHidden(view, storyCity, storyRun, firstRun));");
+    expect(main).toContain("paintZoom(zoomHidden(view, storyCity, storyRun, firstRun) || guestTour);"); // and never during the guest tour, which frames every shot itself
     // a player who zoomed out by hand before the rocket gets the rocket's own camera, not the manual city, from reveal t = 0
     expect(main).toContain('if (storyCity || storyRun?.phase() === "reveal") manual = "station";');
   });

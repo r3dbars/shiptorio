@@ -2,7 +2,8 @@ import {
   ART_PX, BELT_Y, CITY_COPY, CITY_PX, DECK_DX, DECK_END, HULL, snap, FLOOR_Y, LAUNCH_Y, LOOK, PALETTE, PALETTE_48, STOPS, STOP_X,
   type ArtLoader, type CityView, type CityZoom, type DeckBus, type DeckLayer, type DeckView, type Item, type LayerSlot, type Shot, type ShippyModule, type Stop, type StopId,
 } from "../contract";
-import { cityLabel, manualCity, parseCityShot, type CityModule } from "../city";
+import { cityLabel, manualCity, parseCityShot } from "../city/zoom";
+import type { CityModule } from "../city";
 import { EDGE, createCityMove, type CityScreen } from "../city/camera";
 import { LINE_BOX } from "../city/layout";
 import { pixelOn } from "../../flags";
