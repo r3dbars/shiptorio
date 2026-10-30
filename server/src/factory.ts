@@ -94,7 +94,7 @@ import type { Signal } from "./sources";
 import { buildDeck, moveScope, enrichMove } from "./deck";
 import { closeGone, loadTaps, offerCards, offeredRow, openCards, purgeTaps, recordOutcome, recordTap, tapBrief, tapsEnabled, tapsReport, type NeverReason, type TapAction, type TapContext, type TapOutcome } from "./taps";
 import { deriveBottleneck, stageForItem, type StageHistory, type StageMetrics } from "./bottleneck";
-import { emptyMemory as emptyBrainMemory, modelDiagnose, runDiagnose, tapBrain, type BrainMemory } from "./diagnose";
+import { eligible as brainEligible, emptyMemory as emptyBrainMemory, modelDiagnose, runDiagnose, tapBrain, type BrainMemory } from "./diagnose";
 import { collect, emptyCache as emptySignalCache, type SignalCache } from "./signals";
 import { dismissNote, resetLearn, forget, forgetAll, forgetOnComeback, freshWork, isLearned, learnedList, learnFromYes, learnKey, learnMeter, learnOption, learnScope, noteAutoRun } from "./learn";
 import { hasDeferReceipt, beginCheckin, deferCard, emptyDeckBook, moveKey, noteYes, plannerFeedback, resetYes, suppressed, thirdDefer, yesKey, type DeckBook, type DeckRule } from "./deck-decisions";
@@ -578,7 +578,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       // A forced look says what it weighed, so a "why didn't he notice X" is answerable from the deck's log.
       // Top four, plus any CI signal below them, since a red PR is what the Look button is usually for.
       const seen = freshSignals(cache.signals, now), shown = [...seen.slice(0, 4), ...seen.slice(4).filter(x => x.source === "ci")];
-      if (force) this.log("info", `Shippy looked: ${shown.map(x => `${x.title.slice(0, 60)} (${signalWeight(x, now).toFixed(2)})`).join("; ") || "nothing to flag"}. ${result.why}`.slice(0, 600));
+      // "set aside" marks what memory skips (Later, or acted on), so a pass over a heavy signal is readable.
+      const open = new Set(brainEligible(cache.signals, before, now).map(x => x.id));
+      if (force) this.log("info", `Shippy looked: ${shown.map(x => `${x.title.slice(0, 60)} (${signalWeight(x, now).toFixed(2)}${open.has(x.id) ? "" : ", set aside"})`).join("; ") || "nothing to flag"}. ${result.why}`.slice(0, 600));
       if (result.decided) {
         const log = await this.ctx.storage.get<Diagnosis[]>("brainDiagnoses") ?? [];
         await this.accountPut("brainDiagnoses", [result.diagnosis, ...log].slice(0, 50));
