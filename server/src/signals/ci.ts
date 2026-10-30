@@ -224,6 +224,8 @@ export interface CiContext {
   openPrs?: readonly number[];
   /** Test seam. Defaults to the GitHub App installation client. */
   fetchRuns?: (repo: string, token: string, sinceIso: string) => Promise<WorkflowRun[]>;
+  /** Test seam for the fallback when the App can't read Actions. Defaults to check runs (checks: read). */
+  fetchChecks?: (repo: string, token: string, defaultBranch: string) => Promise<WorkflowRun[]>;
 }
 
 export async function fetchRuns(repo: string, token: string, sinceIso: string): Promise<WorkflowRun[]> {
@@ -234,6 +236,23 @@ export async function fetchRuns(repo: string, token: string, sinceIso: string): 
     created_at: r.created_at, updated_at: r.updated_at, html_url: r.html_url,
     pull_requests: (r.pull_requests ?? []).map((p) => ({ number: p.number })),
   }));
+}
+
+/** Our GitHub App asks for checks: read, not Actions, so /actions/runs is a 403 on a real install. Check runs on the
+ * open PRs' heads and on the default branch say the same things that matter most (red main, a check blocking PRs),
+ * shaped as runs so one derive serves both. Found by the real-loop proof: a red PR never reached Shippy. */
+export async function fetchCheckRuns(repo: string, token: string, defaultBranch: string): Promise<WorkflowRun[]> {
+  type CheckRun = { id: number; name: string; head_sha: string; status: string; conclusion: string | null; started_at: string | null; completed_at: string | null; html_url: string };
+  const checks = async (ref: string) => (await gh<{ check_runs?: CheckRun[] }>(`/repos/${repo}/commits/${encodeURIComponent(ref)}/check-runs?per_page=50`, token)).check_runs ?? [];
+  const asRun = (c: CheckRun, branch: string, event: string, prs: { number: number }[]): WorkflowRun => ({
+    id: c.id, name: c.name, head_branch: branch, head_sha: c.head_sha, event, status: c.status, conclusion: c.conclusion,
+    run_started_at: c.started_at ?? undefined, created_at: c.started_at ?? c.completed_at ?? new Date(0).toISOString(),
+    updated_at: c.completed_at ?? c.started_at ?? new Date(0).toISOString(), html_url: c.html_url, pull_requests: prs,
+  });
+  const pulls = await gh<{ number: number; head: { sha: string; ref: string } }[]>(`/repos/${repo}/pulls?state=open&per_page=10&sort=updated&direction=desc`, token);
+  const onPrs = await Promise.all(pulls.map(async p => (await checks(p.head.sha)).map(c => asRun(c, p.head.ref, "pull_request", [{ number: p.number }]))));
+  const onMain = (await checks(defaultBranch)).map(c => asRun(c, defaultBranch, "push", []));
+  return [...onMain, ...onPrs.flat()];
 }
 
 function cantRead(repo: string, now: number): BrainSignal {
@@ -260,8 +279,10 @@ export async function readCiSignals(ctx: CiContext, now: number): Promise<BrainS
       snapshot = { at: now, triedAt: now, runs: await (ctx.fetchRuns ?? fetchRuns)(repo, token, new Date(now - WINDOW_MS).toISOString()) };
     } catch (error) {
       const denied = error instanceof OutboundError && (error.status === 403 || error.status === 404);
-      // Keep the old runs (they age out on freshUntil) and don't retry until the next poll.
-      snapshot = denied ? { at: now, triedAt: now, runs: null, denied } : { at: snapshot?.at ?? now, triedAt: now, runs: snapshot?.runs ?? null };
+      // No Actions access: fall back to check runs. Otherwise keep the old runs (they age out on freshUntil) and
+      // don't retry until the next poll.
+      const checks = denied ? await (ctx.fetchChecks ?? fetchCheckRuns)(repo, token, ctx.defaultBranch).catch(() => null) : null;
+      snapshot = checks ? { at: now, triedAt: now, runs: checks } : denied ? { at: now, triedAt: now, runs: null, denied } : { at: snapshot?.at ?? now, triedAt: now, runs: snapshot?.runs ?? null };
     }
     await cache.put(cacheKey(repo), snapshot);
   }

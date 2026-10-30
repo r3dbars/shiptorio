@@ -155,6 +155,11 @@ describe("the 2D deck's view of a factory", () => {
     expect(v.jam).toBeNull();
   });
 
+  test("a ready Ship it comes before older Plan cards", () => {
+    const plans = [7, 8, 9].map(n => card(`plan-${n}`, "plan_runner_job", { itemId: `gh-${n}` }));
+    expect(deckView(base({ deck: [...plans, card("ship", "request_merge", { itemId: "gh-30" })] }), { now: 1e12 }).card?.id).toBe("ship");
+  });
+
   test("a busy bottleneck is not an error, but reported failures are red", () => {
     const v = deckView(base({ items: [item("a", "on_pad")], bottleneck: { stage: "inspect", stationId: "review-1", wip: 2, ageMs: 1, throughputPerHour: 0, valueAtRisk: 1, summary: "" } }), { now: 1e12 });
     expect(v.jam).toBeNull();

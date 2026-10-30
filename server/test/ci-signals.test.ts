@@ -163,8 +163,15 @@ describe("CI collector: reading cheaply", () => {
 
   it("never throws for not connected: no token or no Actions access is ci_missing", async () => {
     expect((await ciCollector.read(ctx({ token: undefined }), now)).map((s) => s.kind)).toEqual(["ci_missing"]);
-    const denied = await ciCollector.read(ctx({ fetchRuns: async () => { throw new GitHubError(403, "/x", "GET"); } }), now);
+    const denied = await ciCollector.read(ctx({ fetchRuns: async () => { throw new GitHubError(403, "/x", "GET"); }, fetchChecks: async () => { throw new GitHubError(403, "/y", "GET"); } }), now);
     expect(denied.map((s) => s.kind)).toEqual(["ci_missing"]);
     expect(denied[0].title).toContain("can't read");
+  });
+
+  it("without Actions access, check runs on open PRs still show a check blocking a PR", async () => {
+    const failing = { id: 1, name: "check", head_branch: "seed", head_sha: "a".repeat(40), event: "pull_request", status: "completed", conclusion: "failure", created_at: new Date(now - 3_600_000).toISOString(), updated_at: new Date(now - 3_500_000).toISOString(), html_url: "https://github.com/x/y/runs/1", pull_requests: [{ number: 39 }] };
+    const signals = await ciCollector.read(ctx({ fetchRuns: async () => { throw new GitHubError(403, "/x", "GET"); }, fetchChecks: async (_r, _t, branch) => { expect(branch).toBe("main"); return [failing]; } }), now);
+    expect(signals.map(s => s.kind)).toContain("ci_blocking");
+    expect(signals.find(s => s.kind === "ci_blocking")!.title).toContain("#39");
   });
 });
