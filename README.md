@@ -1,11 +1,15 @@
-# Shiptorio
+<p align="center">
+  <img src="web/public/brand/wordmark-brass-rocket-transparent.png" alt="Shiptorio" width="560">
+</p>
 
-**A game you play on top of your GitHub repo. Every move ships something real.**
+<p align="center"><strong>A game you play on top of your GitHub repo. Every move ships something real.</strong></p>
+
+<p align="center">
+  <img src="docs/site/img/readme/hero.gif" alt="The Shiptorio deck: the whole line, then the rocket lifts off" width="900">
+</p>
 
 Your issues are the raw material. They ride a pixel conveyor through a planner, a builder, the checks and a
 review, and stop at the Gate. You hold **Ship it**. A real pull request merges, and a rocket goes up.
-
-![The Shiptorio deck: Shippy, the conveyor line, and the launch pad](docs/site/img/deck.png)
 
 ## Why
 
