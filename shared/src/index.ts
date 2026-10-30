@@ -12,3 +12,5 @@ export * from "./signals";
 export * from "./goals";
 
 export * from "./pipeline";
+
+export * from "./prose";

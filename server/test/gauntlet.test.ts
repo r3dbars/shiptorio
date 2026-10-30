@@ -3,7 +3,7 @@ import { authorizedDB, membershipCache, authorizedSocket, browserEnv, browserCoo
 import { describe, expect, it, mock } from "bun:test";
 import { FactoryState, type Item } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
-import { freshInspection, liveStations, migrateGauntlet, nextGate, parseVerdict, setStage, verifyFromDiff } from "../src/gauntlet";
+import { changedPaths, freshInspection, liveStations, migrateGauntlet, nextGate, parseVerdict, setStage, verifyFromDiff } from "../src/gauntlet";
 
 mock.module("cloudflare:workers", () => ({ DurableObject: class {
   ctx: unknown; env: unknown;
@@ -61,6 +61,21 @@ describe("gauntlet rules", () => {
     expect(verifyFromDiff(["server/src/a.ts", "server/test/a.test.ts"], false).passed).toBe(true);
     expect(verifyFromDiff(["docs/LOOP.md", "README.md"], false).passed).toBe(true);
     expect(verifyFromDiff([], true).passed).toBe(false);
+  });
+  it("requires proof for executable docs and MDX, while preserving plain prose", () => {
+    for (const files of [["docs/install.sh"], ["docs/App.mdx"], ["web/docs/a.ts", "server/docs/b.ts"], ["docs/config.json"], ["docs/guide.md", "docs/run.ts"]]) {
+      expect(verifyFromDiff(files, true).passed).toBe(false);
+    }
+    expect(verifyFromDiff(["README.md", "docs/guide.txt"], false).passed).toBe(true);
+    expect(verifyFromDiff(["docs/run.ts", "docs/run.test.ts"], true).passed).toBe(true);
+  });
+  it("proof exemptions include the old rename path without treating a removed test as attached proof", () => {
+    for (const previous_filename of ["src/code.ts", "server/test/old.test.ts", undefined]) {
+      const files = [{ filename: "docs/retired.md", previous_filename, status: "renamed" }];
+      expect(verifyFromDiff(files.map(f => f.filename), false, undefined, changedPaths(files)).passed).toBe(false);
+    }
+    const prose = [{ filename: "docs/new.md", previous_filename: "docs/old.md", status: "renamed" }];
+    expect(verifyFromDiff(prose.map(f => f.filename), false, undefined, changedPaths(prose)).passed).toBe(true);
   });
   it("reads a review verdict defensively", () => {
     expect(parseVerdict('```json\n{"verdict":"pass","reason":"Fixes the null","findings":["ok"]}\n```')).toEqual({ verdict: "pass", reason: "Fixes the null", findings: ["ok"] });

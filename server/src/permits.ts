@@ -2,10 +2,9 @@
 // right to launch on its own. Clean = every gauntlet station passed with zero rework. One rework or failure
 // in the lane revokes its permit and resets the streak. Pure rules; the Factory DO stores the book.
 
-import type { Autonomy, DistrictTrust, Item, Move } from "@shiptorio/shared";
+import { isProsePath, type Autonomy, type DistrictTrust, type Item, type Move } from "@shiptorio/shared";
 import { countClean, ladderOf, nextStep, type Ladder } from "./levels";
 
-const DOCS_FILE = /\.(md|mdx|txt)$|(^|\/)docs\//i;
 
 export interface LaneRecord {
   lane: string;
@@ -32,9 +31,9 @@ export const emptyBook = (): PermitBook => ({ lanes: {}, launches: 0, autoLaunch
  */
 export function laneOf(files: string[]): string | null {
   if (!files.length) return null;
-  if (files.every((f) => DOCS_FILE.test(f))) return "docs";
+  if (files.every(isProsePath)) return "docs";
   const tops = new Set(files.map((f) => (f.includes("/") ? f.split("/")[0] : "")));
-  if (tops.size !== 1 || tops.has("")) return null;
+  if (tops.size !== 1 || tops.has("") || tops.has("docs")) return null;
   return [...tops][0];
 }
 

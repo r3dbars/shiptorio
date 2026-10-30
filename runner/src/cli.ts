@@ -1,3 +1,4 @@
+import { isProsePath } from "../../shared/src/prose";
 import { fetchApprovedSource } from "./approved-source";
 import { runnerOrigin } from "./origin";
 import { freeSubscriptions, prepareAgentHome, subscriptionArgs, subscriptionSignedIn, subscriptionCredentialVersion } from "./subscriptions";
@@ -296,7 +297,7 @@ async function execute(job: Job, pair: Pairing) {
     const checks = ["typecheck", "test", "build"] as const;
     for (const check of checks) { console.log(`Checking ${check === "typecheck" ? "types" : check === "test" ? "tests" : check}.`); await checkCommand([process.execPath, "run", check]); }
     const verifyPaths = [...new Set([...paths, ...(job.prTestFiles ?? [])])].filter(p => TEST_PATH.test(p));
-    const docsOnly = !job.reworkPr && paths.every(p => /\.(md|mdx|txt)$|(^|\/)docs\//i.test(p));
+    const docsOnly = !job.reworkPr && paths.every(isProsePath);
     const proof = docsOnly ? undefined : await verifyRegression(work, job.verifyBaseSha ?? job.baseSha, verifyPaths, cleanEnv, jobRoot);
     if (proof) {
       await Bun.write(resolve(root, ".work", `${job.id}.verify.log`), proof.logTail, { mode: 0o600 });

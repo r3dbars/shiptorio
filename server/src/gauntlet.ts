@@ -4,7 +4,7 @@ import { suspiciousDiff, injectionAttempt, pathAllowed } from "./injection-polic
 // Pure rules plus the two station runs. The Factory DO calls these; nothing here holds state.
 // Agent output is untrusted until it shows evidence. Spark judges, it never writes code.
 
-import { checkStationId, researchedChecks, runCheck, techById, type Belt, type DiffFile, type FactoryState, type Inspection, type Item, type Machine, type Move, type ScarTag, type Station, type StationKind } from "@shiptorio/shared";
+import { isProsePath, checkStationId, researchedChecks, runCheck, techById, type Belt, type DiffFile, type FactoryState, type Inspection, type Item, type Machine, type Move, type ScarTag, type Station, type StationKind } from "@shiptorio/shared";
 import { gh } from "./github";
 import { parseJsonReply, sparkChat, type SparkEnv } from "./spark";
 import { reviewWithTools, type SparkStep, type Toolbox } from "./spark-tools";
@@ -163,7 +163,6 @@ export function researchMove(tech: string, why: string, now = Date.now()): Move 
 // ---------- the verify bay (v1) ----------
 
 const TEST_FILE = /(^|\/)(test|tests|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$|_test\.(go|py)$|(^|\/)test_[^/]+\.py$/i;
-const DOCS_FILE = /\.(md|mdx|txt)$|(^|\/)docs\//i;
 
 /**
  * v1 proof, from what the PR carries: the local runner already refused to push unless typecheck, tests
@@ -171,9 +170,9 @@ const DOCS_FILE = /\.(md|mdx|txt)$|(^|\/)docs\//i;
  * Docs-only changes have nothing to reproduce. The real bay (the PR's test fails on base, passes on head)
  * runs in the local runner next (docs/context/archive/live-loop.md).
  */
-export function verifyFromDiff(files: string[], runnerReceipts: boolean, proof?: RegressionProof): { passed: boolean; reason: string } {
+export function verifyFromDiff(files: string[], runnerReceipts: boolean, proof?: RegressionProof, touchedPaths = files): { passed: boolean; reason: string } {
   if (!files.length) return { passed: false, reason: "The PR has no changed files to verify." };
-  if (files.every((f) => DOCS_FILE.test(f)) && !proof) return { passed: true, reason: "Docs-only change, nothing to reproduce." };
+  if (touchedPaths.length && touchedPaths.every(isProsePath) && !proof) return { passed: true, reason: "Docs-only change, nothing to reproduce." };
   const tests = files.filter((f) => TEST_FILE.test(f));
   if (!tests.length) return { passed: false, reason: "No proof: the PR changes code but adds no test that shows the fix works." };
   if (proof) {
@@ -189,7 +188,12 @@ export function verifyFromDiff(files: string[], runnerReceipts: boolean, proof?:
 
 export interface ReviewVerdict { verdict: "pass" | "rework"; reason: string; findings: string[]; steps?: SparkStep[] }
 
-interface PrFile { filename: string; status: string; patch?: string }
+interface PrFile { filename: string; status: string; patch?: string; previous_filename?: string }
+
+/** Privileges cover both sides of a rename; absent rename evidence cannot be treated as prose. */
+export function changedPaths(files: Pick<PrFile, "filename" | "status" | "previous_filename">[]): string[] {
+  return files.flatMap(file => file.status === "renamed" ? [file.filename, file.previous_filename ?? ""] : [file.filename]);
+}
 
 export async function prFiles(token: string, repo: string, pr: number): Promise<PrFile[]> {
   const path = `/repos/${repo}/pulls/${pr}/files?per_page=100`;
