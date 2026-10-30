@@ -10,6 +10,8 @@ PR #598 (`codex/dev-deck-default`) makes authorized bare visits to shiptorio.dev
 - #52 (Claude, 2026-10-29): deck first load on a throttled phone 11.0s → ~5.0s, 3.8 MB → 1.0 MB before the first frame. tube() in props/boiler2d.ts only checks nearby samples (byte-identical), the pixel deck preloads only the pictures it draws, and web/public art/fonts/sound get `private, max-age=300` instead of no-store.
 - 2026-10-29 Claude ("City reveal", claude/city-reveal): the Zoom button cycles station -> line -> city in every source; the city is five scenery islands (palette-only lit/dark webps made by `scripts/city-art.py`, in `web/public/deck/art/city/`) joined to the line by truss sky bridges with runway lamps, a dotted rocket arc to Customers, COMING SOON plates and DOM labels. The full story ends on it (rocket, line, city, each island lights, "The factory must grow.", all dim, then the sign-in card; `?reveal=1` starts there), with quiet lamp/tap/chord/thud cues. `web/src/deck2d/city/`, `engine/halve.ts`, `story/reveal.ts`; tests `deck2d-city*`, `deck2d-story-city`, `deck2d-juice-city`, `city-art`; shots `CITY=1 node scripts/shots/deck.mjs`.
 
+- 2026-10-30 Codex (`codex/cleanup-orphaned-exports`): removed the unused Empire re-export, React/WebGL crash callback and orphaned station drawing helper; recorded ambiguous sound, telemetry, route and stored-state candidates in papercuts.md.
+
 ## Deck visual iteration (Codex, 2026-10-28)
 
 2026-10-29 · Codex #57 (`codex/shippy-calm`): stable floor anchors, one-shot reactions and still waiting poses; preserve purposeful work and charging, with no new moves.
