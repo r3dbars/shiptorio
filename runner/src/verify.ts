@@ -18,7 +18,7 @@ export function testOutcome(result: Result): { passed: boolean; reproduced: bool
 export async function resetVerifyBase(sandbox: CheckSandbox, work: string) {
   const base = resolve(work, ".shiptorio-verify-base");
   await sandbox.run(["git", "worktree", "remove", "--force", base], work);
-  const cleanup = await sandbox.run([process.execPath, "--no-env-file", "-e", 'import {rmSync} from "node:fs";rmSync(".shiptorio-verify-base",{recursive:true,force:true});'], work);
+  const cleanup = await sandbox.run([process.execPath, "--no-env-file", "--config=/dev/null", "-e", 'import {rmSync} from "node:fs";rmSync(".shiptorio-verify-base",{recursive:true,force:true});'], work);
   if (cleanup.code) throw new Error("Unable to clean interrupted verify base");
   const prune = await sandbox.run(["git", "worktree", "prune"], work);
   if (prune.code) throw new Error("Unable to prune interrupted verify base");
@@ -52,7 +52,7 @@ export async function verifyRegression(work: string, baseSha: string, paths: str
         if (install.code) throw new Error("Verify base dependency setup failed");
       }
       const recipes = await snapshotApproved(sandbox, tests);
-      const overlay = await baseSandbox.run([process.execPath, "--no-env-file", "-e", `
+      const overlay = await baseSandbox.run([process.execPath, "--no-env-file", "--config=/dev/null", "-e", `
         import {mkdirSync,writeFileSync} from "node:fs";import {dirname} from "node:path";
         for(const [path,content] of Object.entries(JSON.parse(process.argv[1]))){mkdirSync(dirname(path),{recursive:true});writeFileSync(path,Buffer.from(content,"base64"));}
       `, JSON.stringify(recipes)], base);

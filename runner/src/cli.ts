@@ -129,7 +129,7 @@ if (process.argv[2] === "doctor") {
       try {
         boundary = await checkSandbox(dir, h ? { home: authHome, executable: harnessPath(h)! } : undefined);
         // Exercise CLI startup, managed preferences and HTTPS inside the agent boundary (#235), without inference.
-        const probe = h ? [harnessPath(h)!, ...subscriptionArgs(h)] : [process.execPath, "--no-env-file", "-e", "console.log('sandbox OK')"];
+        const probe = h ? [harnessPath(h)!, ...subscriptionArgs(h)] : [process.execPath, "--no-env-file", "--config=/dev/null", "-e", "console.log('sandbox OK')"];
         const result = await boundary.run(probe, dir, { timeout: 30000 });
         if (result.code && !(h && authExpired(result.err + result.out))) { if (verbose) console.error(redactText(result.err.slice(-2000))); throw Error("Sandbox probe failed"); }
         if (h) {
@@ -138,7 +138,7 @@ if (process.argv[2] === "doctor") {
             // An empty preference domain is valid; Seatbelt/config sync failures are not.
             if (/not permitted|failed to synchronize|sandbox.*deny/i.test(preferences.err)) throw Error("Managed preferences unavailable in sandbox");
           }
-          const network = await boundary.run([process.execPath, "--no-env-file", "-e", 'await fetch("https://shiptorio.com/api/version",{signal:AbortSignal.timeout(10000)});console.log("HTTPS OK")'], dir, { timeout: 15000 });
+          const network = await boundary.run([process.execPath, "--no-env-file", "--config=/dev/null", "-e", 'await fetch("https://shiptorio.com/api/version",{signal:AbortSignal.timeout(10000)});console.log("HTTPS OK")'], dir, { timeout: 15000 });
           if (network.code) { if (verbose) console.error(redactText(network.err.slice(-2000))); throw Error("Sandbox HTTPS probe failed"); }
         }
       } finally { await boundary?.close(); await rm(dir, { recursive: true, force: true }); }
@@ -287,7 +287,7 @@ async function execute(job: Job, pair: Pairing) {
     validateChanges(paths, job.allowedPaths, diff);
     const frozen = await snapshotApproved(sandbox, paths);
     await workspace.freeze(frozen);
-    const manifest = await sandbox.run([process.execPath, "--no-env-file", "-e", 'console.log(JSON.stringify(Object.keys((await Bun.file("package.json").json()).scripts ?? {})))'], work);
+    const manifest = await sandbox.run([process.execPath, "--no-env-file", "--config=/dev/null", "-e", 'console.log(JSON.stringify(Object.keys((await Bun.file("package.json").json()).scripts ?? {})))'], work);
     if (manifest.code) throw new Error("Cannot read repository scripts");
     const scripts = JSON.parse(manifest.out) as string[];
     const checkCommand = async (args: string[], install = false) => { assertCheckCommand(args, process.execPath, scripts); return checked(args, install); };

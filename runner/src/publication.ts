@@ -12,7 +12,7 @@ export async function assemblerContext(sandbox: CheckSandbox, paths: string[]): 
   const program = `import {lstatSync,readFileSync,realpathSync} from "node:fs";
 const root=realpathSync(process.cwd());const paths=JSON.parse(process.argv[1]);const result=[];
 for(const path of paths){try{const target=realpathSync(path);if(!target.startsWith(root+"/")||!lstatSync(path).isFile())throw Error("Unsafe source file");result.push({path,content:readFileSync(target,"utf8").slice(0,12000)});}catch(error){if(error.code!=="ENOENT")throw error;result.push({path,content:"File does not exist yet"});}}console.log(JSON.stringify(result));`;
-  const result = await sandbox.run([process.execPath, "--no-env-file", "-e", program, JSON.stringify(paths)]);
+  const result = await sandbox.run([process.execPath, "--no-env-file", "--config=/dev/null", "-e", program, JSON.stringify(paths)]);
   if (result.code) throw new Error("Unable to read approved assembler context");
   const files = JSON.parse(result.out) as { path: string; content: string }[];
   if (files.length !== paths.length || files.some(f => !paths.includes(f.path) || typeof f.content !== "string" || f.content.length > 12000)) throw new Error("Invalid assembler context");
@@ -24,7 +24,7 @@ export async function snapshotApproved(sandbox: CheckSandbox, paths: string[]): 
   const program = `import {lstatSync,readFileSync,realpathSync} from "node:fs";
 const paths=JSON.parse(process.argv[1]);const root=realpathSync(process.cwd());const result={};let size=0;
 for(const path of paths){const target=realpathSync(path);if(!target.startsWith(root+"/")||!lstatSync(path).isFile())throw Error("Unsafe approved path");const bytes=readFileSync(target);size+=bytes.length;if(size>2000000)throw Error("Approved patch files exceed 2MB");result[path]=bytes.toString("base64");}console.log(JSON.stringify(result));`;
-  const result = await sandbox.run([process.execPath, "--no-env-file", "-e", program, JSON.stringify(paths)]);
+  const result = await sandbox.run([process.execPath, "--no-env-file", "--config=/dev/null", "-e", program, JSON.stringify(paths)]);
   if (result.code) throw new Error("Unable to freeze approved files inside the verification sandbox");
   const files = JSON.parse(result.out) as ApprovedFiles;
   if (Object.keys(files).length !== paths.length || paths.some(path => typeof files[path] !== "string") || Object.values(files).reduce((size, value) => size + Buffer.from(value, "base64").length, 0) > 2_000_000) throw new Error("Invalid approved file snapshot");
