@@ -97,7 +97,7 @@ export async function sparkChat(env: SparkEnv, messages: ChatMessage[], effort: 
     if (!res.ok) throw new OutboundError(res.status);
     const data = (await res.json()) as { usage?: TokenUsage; choices?: { message?: { content?: string } }[] };
     try {
-      if (spendId) await settleFactorySpend(env.DB!, spendId, data.usage);
+      if (spendId) await settleFactorySpend(env.DB!, spendId, data.usage, sparkModel(env));
       await settleSpark(env, reservation, data.usage?.total_tokens);
     } catch { throw new BudgetError("Planner accounting unavailable; paid calls paused with reservation retained"); }
     const text = data.choices?.[0]?.message?.content;

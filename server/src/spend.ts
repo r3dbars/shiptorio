@@ -1,21 +1,29 @@
 import { BudgetError, utcDay } from "./budget";
 
-// Meta standard rates, checked 2026-10-26: https://dev.meta.ai/docs/pricing-rate-limits
-// Cached input $0.15/M, input $1.25/M, output $4.25/M. Estimates, not a provider invoice.
+// Meta standard rates, nano-USD per token: https://dev.meta.ai/docs/pricing-rate-limits
+// Spark checked 2026-10-26 ($1.25/M in, $0.15/M cached, $4.25/M out). Wonder from third-party reports of Meta's
+// list price, 2026-10-16 ($4/M in, $0.20/M cached, $20/M out). Estimates, not a provider invoice.
 export const NANO_USD = 1_000_000_000;
+export const MODEL_PRICES: Record<string, { input: number; cached: number; output: number }> = {
+  "muse-spark-1.3": { input: 1250, cached: 150, output: 4250 },
+  "muse-wonder-1.0": { input: 4000, cached: 200, output: 20000 },
+};
+const priceOf = (model: string) => MODEL_PRICES[model];
 export const DEFAULT_DAILY_BUDGET = 5 * NANO_USD;
 export interface TokenUsage { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } }
 const count = (n: unknown): n is number => typeof n === "number" && Number.isSafeInteger(n) && n >= 0;
-export function measuredCost(usage?: TokenUsage) {
-  if (!usage || !count(usage.prompt_tokens) || !count(usage.completion_tokens)) return null;
+export function measuredCost(usage?: TokenUsage, model = "muse-spark-1.3") {
+  const price = priceOf(model);
+  if (!price || !usage || !count(usage.prompt_tokens) || !count(usage.completion_tokens)) return null;
   const input = usage.prompt_tokens, output = usage.completion_tokens, cached = usage.prompt_tokens_details?.cached_tokens ?? 0;
   if (!count(cached) || cached > input || !Number.isSafeInteger(input + output)) return null;
-  const cost = (input - cached) * 1250 + cached * 150 + output * 4250;
+  const cost = (input - cached) * price.input + cached * price.cached + output * price.output;
   return Number.isSafeInteger(cost) ? { input, output, cached, cost } : null;
 }
 export async function reserveFactorySpend(db: D1Database, repo: string, input: number, output: number, model: string, now = Date.now()) {
-  if (model !== "muse-spark-1.3") throw new BudgetError("Planner spend pricing unavailable for this model; paid calls paused");
-  const cost = input * 1250 + output * 4250;
+  const price = priceOf(model);
+  if (!price) throw new BudgetError("Planner spend pricing unavailable for this model; paid calls paused");
+  const cost = input * price.input + output * price.output;
   if (!count(input) || !count(output) || !count(cost)) throw new BudgetError("Invalid Planner cost reservation");
   const id = crypto.randomUUID(), day = utcDay(now);
   // One statement checks and reserves: concurrent requests cannot both spend the remaining balance.
@@ -26,8 +34,8 @@ export async function reserveFactorySpend(db: D1Database, repo: string, input: n
   if (!row) throw new BudgetError("Planner daily dollar budget reached or too little remains for this call. I paused paid thinking to protect your budget. Raise the factory budget or wait until 00:00 UTC; existing PR checks and human merges can continue.");
   return id;
 }
-export async function settleFactorySpend(db: D1Database, id: string, usage?: TokenUsage) {
-  const measured = measuredCost(usage);
+export async function settleFactorySpend(db: D1Database, id: string, usage?: TokenUsage, model?: string) {
+  const measured = measuredCost(usage, model);
   if (!measured) return; // Missing/malformed usage and transport errors retain the full cost reservation.
   await db.prepare(`UPDATE spark_factory_calls SET input_tokens = ?, output_tokens = ?, cached_tokens = ?, nano_usd = ?, settled = 1 WHERE id = ? AND settled = 0`)
     .bind(measured.input, measured.output, measured.cached, measured.cost, id).run();
