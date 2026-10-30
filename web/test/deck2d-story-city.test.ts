@@ -591,7 +591,7 @@ describe("reduced motion", () => {
 
   test("everything before the rocket is identical to normal motion", () => {
     const a = createStory({ seed: 5 }), b = createStory({ seed: 5, reducedMotion: true });
-    for (let i = 0; i < 700; i++) {
+    for (let i = 0; i < 900; i++) {
       a.step!(DT); b.step!(DT);
       for (const s of [a, b]) { const c = s.view().card; if (c?.id.startsWith(STORY_CARD.call)) s.approve(c.id); }
       if (a.phase() === "reveal") break;

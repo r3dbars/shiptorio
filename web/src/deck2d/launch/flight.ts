@@ -1,5 +1,6 @@
 // Visual flight choreography in seconds. No simulation or launch-permit decisions.
-export const FLIGHT = { ignition: 1.4, ascent: 5.5, coast: 2, landing: 8, settle: 1.3 } as const;
+// Snappy (Justin's pick, feel test 2026-10-30): short ignition, quick climb.
+export const FLIGHT = { ignition: 0.8, ascent: 3.5, coast: 2, landing: 8, settle: 1.3 } as const;
 export const FLIGHT_SECONDS = Object.values(FLIGHT).reduce((a, b) => a + b, 0);
 export function flightPose(age: number) {
   if (age >= FLIGHT_SECONDS) return { stage: "ready", u: 1, y: 0, x: 0, lean: 0, legs: 1 };
