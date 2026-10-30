@@ -27,7 +27,8 @@ import { ownerProof } from "../../server/src/session";
 const base = process.env.SHIPTORIO_URL || "https://shiptorio.dev";
 const repo = (process.env.SHIPTORIO_REPO || "r3dbars/testing").toLowerCase();
 const [mode = "status", arg] = process.argv.slice(2);
-if (!["https://shiptorio.dev", "https://shiptorio.com", "http://localhost:8787"].includes(base)) throw new Error("Unsupported SHIPTORIO_URL");
+const ORIGINS = new Set(["https://shiptorio.dev", "https://shiptorio.com", "http://localhost:8787"]);
+if (new URL(base).origin !== base || !ORIGINS.has(new URL(base).origin)) throw new Error("Unsupported SHIPTORIO_URL"); // an exact origin, nothing around it
 if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error("Set SHIPTORIO_REPO=owner/repo");
 if (repo === "r3dbars/shiptorio") throw new Error("The driver ships real merges; point it at a test repo");
 if (!["status", "ship", "watch", "forget"].includes(mode)) throw new Error("Use status, ship ISSUE, watch MINUTES or forget");
