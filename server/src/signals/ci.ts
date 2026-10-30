@@ -223,6 +223,8 @@ export interface CiContext {
   token?: string;
   cache: CiCache;
   openPrs?: readonly number[];
+  /** A forced look: read GitHub again unless the snapshot is under 15s old. */
+  force?: boolean;
   /** Test seam. Defaults to the GitHub App installation client. */
   fetchRuns?: (repo: string, token: string, sinceIso: string) => Promise<WorkflowRun[]>;
   /** Test seam for the fallback when the App can't read Actions. Defaults to check runs (checks: read). */
@@ -251,9 +253,11 @@ export async function fetchCheckRuns(repo: string, token: string, defaultBranch:
     updated_at: c.completed_at ?? c.started_at ?? new Date(0).toISOString(), html_url: c.html_url, pull_requests: prs,
   });
   const pulls = await gh<{ number: number; head: { sha: string; ref: string } }[]>(`/repos/${repo}/pulls?state=open&per_page=10&sort=updated&direction=desc`, token);
-  const onPrs = await Promise.all(pulls.map(async p => (await checks(p.head.sha)).map(c => asRun(c, p.head.ref, "pull_request", [{ number: p.number }]))));
-  const onMain = (await checks(defaultBranch)).map(c => asRun(c, defaultBranch, "push", []));
-  return [...onMain, ...onPrs.flat()];
+  // One PR's checks failing to load mustn't hide the others' red ones.
+  const ok = <T,>(r: PromiseSettledResult<T[]>) => r.status === "fulfilled" ? r.value : [];
+  const onPrs = await Promise.allSettled(pulls.map(async p => (await checks(p.head.sha)).map(c => asRun(c, p.head.ref, "pull_request", [{ number: p.number }]))));
+  const onMain = await Promise.allSettled([checks(defaultBranch).then(list => list.map(c => asRun(c, defaultBranch, "push", [])))]);
+  return [...onMain.flatMap(ok), ...onPrs.flatMap(ok)];
 }
 
 function cantRead(repo: string, now: number): BrainSignal {
@@ -275,7 +279,7 @@ export async function readCiSignals(ctx: CiContext, now: number): Promise<BrainS
   if (!token) return [cantRead(repo, now)];
   let snapshot = await cache.get<CiSnapshot>(cacheKey(repo));
   const age = snapshot ? now - snapshot.triedAt : Infinity;
-  if (!snapshot || age >= POLL_MS || (snapshot.dirty && age >= MIN_REFETCH_MS)) {
+  if (!snapshot || age >= POLL_MS || (ctx.force && age >= 15_000) || (snapshot.dirty && age >= MIN_REFETCH_MS)) {
     try {
       snapshot = { at: now, triedAt: now, runs: await (ctx.fetchRuns ?? fetchRuns)(repo, token, new Date(now - WINDOW_MS).toISOString()) };
     } catch (error) {

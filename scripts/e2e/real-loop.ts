@@ -7,6 +7,8 @@
 //   bun scripts/e2e/real-loop.ts watch 10            record 10 minutes of what Shippy notices (cards, bottleneck, thoughts)
 //   bun scripts/e2e/real-loop.ts look              ~30s: make Shippy look at the repo now, print what he flags and suggests
 //                                                    (E2E_EXPECT="#39" exits 1 unless his card names it)
+//   bun scripts/e2e/real-loop.ts fix               Shippy's whole loop on a red PR: look, yes on his fix card, ship the fix
+//                                                    issue he files, wait for the red PR to go green, tap his follow-up
 //   bun scripts/e2e/real-loop.ts park              set aside queued items nobody started (no plan job, 6h+ old), the deck's own
 //                                                    Park; `unpark` puts back exactly what park set aside
 //   bun scripts/e2e/real-loop.ts forget              start learned trust over (every yes this script tapped counts), so a
@@ -35,10 +37,10 @@ const ORIGINS = new Set(["https://shiptorio.dev", "https://shiptorio.com", "http
 if (new URL(base).origin !== base || !ORIGINS.has(new URL(base).origin)) throw new Error("Unsupported SHIPTORIO_URL"); // an exact origin, nothing around it
 if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error("Set SHIPTORIO_REPO=owner/repo");
 if (repo === "r3dbars/shiptorio") throw new Error("The driver ships real merges; point it at a test repo");
-if (!["status", "ship", "watch", "look", "park", "unpark", "forget"].includes(mode)) throw new Error("Use status, ship ISSUE, watch MINUTES, look, park, unpark or forget");
-const issue = mode === "ship" ? Number(arg) : 0;
+if (!["status", "ship", "watch", "look", "fix", "park", "unpark", "forget"].includes(mode)) throw new Error("Use status, ship ISSUE, watch MINUTES, look, fix, park, unpark or forget");
+let issue = mode === "ship" ? Number(arg) : 0; // fix: the issue Shippy files
 if (mode === "ship" && !(Number.isInteger(issue) && issue > 0)) throw new Error("Usage: real-loop.ts ship ISSUE");
-const itemId = `gh-${issue}`;
+let itemId = `gh-${issue}`;
 const minutes = Number(mode === "watch" ? arg || 10 : mode === "look" ? 1 : process.env.E2E_MINUTES || 45);
 
 const work = resolve(import.meta.dir, "../../runner/.work/e2e");
@@ -332,8 +334,48 @@ async function look() {
   if (expect && ![neck?.title, neck?.why, card?.title, card?.why].some(t => t?.includes(expect))) { result = `MISSED ${expect}: ${result}`; process.exitCode = 1; }
 }
 
+const waitFor = async <T>(test: () => T | undefined | null | false, ms: number): Promise<T | undefined> => {
+  for (const until = Date.now() + ms; Date.now() < until; await page.waitForTimeout(1000)) { const v = test(); if (v) return v; }
+};
+/** Press a card's own button once the deck shows it, setting aside (Later) any card on top of it. */
+async function pressWhenShown(id: string, hold = false) {
+  for (let i = 0; i < 30; i++) {
+    const showing = await cardOnScreen();
+    if (showing?.id === id) { await shot(`card-${showing.title}`); await press("approve", hold); return note("tapped", { card: showing.title, yes: showing.yes }); }
+    if (showing && i >= 3) { await note("later", { card: showing.title, why: `ahead of ${id}` }); await press("later"); }
+    await page.waitForTimeout(1200);
+  }
+  throw new Error(`${id} never came up on the deck`);
+}
+
+async function fix() {
+  await look();
+  const card = openCards().find(m => m.id.startsWith("unlock:") && continueOption(m).actions[0]?.tool === "fix_failing_pr");
+  if (!card) { result = `no red-PR card: ${result}`; process.exitCode = 1; return; }
+  const pr = Number(continueOption(card).actions[0].args.pr);
+  const looked = result;
+  await note("red_pr", { pr, card: card.title, why: card.why });
+  await pressWhenShown(card.id);
+  const filed = await waitFor(() => logs.map(t => /Filed #(\d+) to fix .* on #(\d+)/.exec(t)).find(m => m && Number(m[2]) === pr), 60_000);
+  if (!filed) throw new Error(`Shippy filed no fix for #${pr}: ${logs.slice(-3).join(" | ")}`);
+  issue = Number(filed[1]); itemId = `gh-${issue}`;
+  await note("fix_issue", { issue, pr, github: await gh<{ title: string }>(`/issues/${issue}`).then(i => i?.title) });
+  await ship(); // plan → build → checks → review → Ship it, through the deck's own buttons
+  if (!result.startsWith("shipped")) return;
+  const shipped = result;
+  await note("brought_in", { log: await waitFor(() => logs.find(t => t.includes(`into #${pr}`)), 120_000) ?? null });
+  // #pr's checks run again on the fix; Shippy checks the result himself and deals his follow-up.
+  const win = await waitFor(() => openCards().find(m => m.id === `win:fix:${pr}`), 25 * 60_000);
+  await note("follow_up", { card: win && { title: win.title, why: win.why }, logs: logs.filter(t => t.includes(`#${pr}`)).slice(-3) });
+  await shot("thats-fixed");
+  if (!win) { result = `${shipped}, but no follow-up for #${pr} in 25 min`; process.exitCode = 1; return; }
+  await pressWhenShown(win.id);
+  result = `loop closed: ${looked.replace(/^Shippy looked in \S+ \(\w+\): /, "")} → filed #${issue} → ${shipped} → #${pr} green → "${win.title}: ${win.why}"`;
+}
+
 try {
   if (mode === "ship") await ship();
+  else if (mode === "fix") await fix();
   else if (mode === "watch") await watch();
   else if (mode === "look") await look();
   else { await page.waitForTimeout(4000); result = `status: ${state?.items.length ?? 0} items, ${openCards().length} cards`; await note("items", { items: state?.items.map(i => ({ id: i.id, state: i.state, pr: i.prNumber, title: i.title })) }); }

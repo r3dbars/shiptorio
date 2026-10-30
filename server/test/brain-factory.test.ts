@@ -126,7 +126,8 @@ describe("the bottleneck brain in the real factory", () => {
       const url = String(input instanceof Request ? input.url : input), method = init?.method ?? "GET";
       calls.push(`${method} ${url.replace("https://api.github.com", "")}`);
       if (url.includes("/access_tokens")) return Response.json({ token: "fixture-installation-token", expires_at: new Date(Date.now() + 3600000).toISOString() });
-      if (url.endsWith("/pulls/39") && method === "GET") return Response.json({ state: "open", title: "Shipping note", html_url: "https://github.com/r3dbars/demo/pull/39", head: { repo: { full_name: "r3dbars/demo" } } });
+      if (url.endsWith("/pulls/39") && method === "GET") return Response.json({ state: "open", title: "Shipping note", html_url: "https://github.com/r3dbars/demo/pull/39", head: { sha: "h39", repo: { full_name: "r3dbars/demo" } } });
+      if (url.includes("/commits/h39/check-runs")) return Response.json({ check_runs: [{ status: "completed", conclusion: "success" }] });
       if (url.endsWith("/repos/r3dbars/demo/issues") && method === "POST") return Response.json(issue, { status: 201 });
       if (url.endsWith("/issues/50")) return Response.json(issue);
       if (url.includes("/issues/50/comments")) return Response.json([]);
@@ -153,6 +154,12 @@ describe("the bottleneck brain in the real factory", () => {
     await f.factory.onPullClosed(51, true, "abc").catch(() => {});
     await f.factory.onPullClosed(51, true, "abc").catch(() => {});
     expect(calls.filter(c => c === "PUT /repos/r3dbars/demo/pulls/39/update-branch")).toHaveLength(1);
+
+    // #39's checks finish green: Shippy sees it himself and follows up first thing on the deck.
+    await f.tick();
+    const win = f.saved().deck?.find(m => m.id === "win:fix:39");
+    expect(win?.why).toBe("Shippy checked again: #39 passes its checks now, with the fix from #51.");
+    expect((f.data.get("fixesPr:50") as { confirmed?: boolean }).confirmed).toBe(true);
   });
 
   it("after a problem clears, Shippy follows up once with a card that says so", async () => {

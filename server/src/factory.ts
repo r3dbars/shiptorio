@@ -165,6 +165,9 @@ const RELIABILITY_WORDS = {
   pollPostHog: "Reading PostHog", reconnectMines: "Reconnecting your sources", tickSupport: "Reading support messages",
 } as const;
 
+/** A red PR Shippy filed a fix for (`fixesPr:<issue>`): brought in once merged, confirmed once its checks finish. */
+type FixRecord = { pr: number; sameRepo: boolean; done?: boolean; fixedBy?: number; confirmed?: boolean };
+
 class FactoryBase extends DurableObject<FactoryEnv> {
   /** Dedicated probe object: storage read only, never initializes a repo or schedules work. */
   async health(): Promise<{ ok: boolean }> {
@@ -496,20 +499,23 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   private async brainCard(derived: { bottleneck: FactoryState["bottleneck"] }): Promise<Move | null> {
     if (!await flagEnabled(this.env, "brain")) return null;
     const memory = await this.ctx.storage.get<BrainMemory>("brainMemory");
-    const cur = memory?.current;
-    if (!cur) return this.winCard(memory);
+    const cur = memory?.current, win = await this.winCard(memory);
+    // A fresh follow-up goes first, even over the next problem; an older one waits until the deck is quiet.
+    if (win && (!cur || Date.now() - win.createdAt < 30 * 60_000)) return win;
+    if (!cur) return null;
     const move = unlockMove(cur.bottleneck, cur.unlock, cur.shownAt);
     // A queue-jam card stands on the jam's station, so the deck doesn't also deal the plain bottleneck card.
     const jam = derived.bottleneck;
     return cur.bottleneck.id.startsWith("factory:queue_jam") && jam ? { ...move, stage: jam.stage, focus: jam.stationId ?? jam.stage } : move;
   }
 
-  /** Shippy's follow-up: the last unlock that worked, once, until the player taps it. Never over a live problem. */
+  /** Shippy's follow-up: the last unlock that worked, once, until the player taps it. */
   private async winCard(memory: BrainMemory | undefined): Promise<Move | null> {
     const win = memory?.cleared[0];
     if (!win || Date.now() - win.clearedAt > 6 * 3_600_000 || await this.ctx.storage.get<number>("brainWinSeen") === win.clearedAt) return null;
     return {
-      id: `win:${win.bottleneckId}`, title: "That's fixed", why: `Shippy checked again: "${win.title.replace(/\.$/, "")}" is clear now.`,
+      id: `win:${win.bottleneckId}`, title: "That's fixed",
+      why: win.bottleneckId.startsWith("fix:") ? `Shippy checked again: ${win.title}.` : `Shippy checked again: "${win.title.replace(/\.$/, "")}" is clear now.`,
       kind: "unblock", createdAt: win.clearedAt, attention: "suggest",
       options: [{ id: "continue", label: "Nice", recommended: true, actions: [] }, { id: "later", label: "Hide", recommended: false, actions: [] }],
     };
@@ -537,7 +543,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const s = this.state!, meta = this.meta!;
       let token: Promise<string> | undefined;
       const { cache, errors } = await collect({
-        state: s, repo: meta.repo, env: this.env, jam: { bottleneck: derived.bottleneck ?? null, stages: derived.stages },
+        force, state: s, repo: meta.repo, env: this.env, jam: { bottleneck: derived.bottleneck ?? null, stages: derived.stages },
         storage: { get: key => this.ctx.storage.get(key) },
         githubToken: () => token ??= installationToken(this.env, meta.installationId),
         publicUrl: this.publicUrl(), yes: rollUpYes(this.deckBook?.yes),
@@ -558,6 +564,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           () => modelDiagnose(this.sparkEnv(), brief, { repo: meta.repo }, { factory: () => factoryBrief(s, undefined, permits, feedback) }),
           out => "quiet" in out ? { outcome: "Nothing worth a card right now", reason: out.reason } : { outcome: `${out.bottleneck.title} → ${out.unlock.title}`, reason: out.reason }) : undefined,
       });
+      result.memory = await this.confirmFixes(result.memory, now);
       await this.accountPut("brainMemory", result.memory);
       const main = result.memory.current && cache.signals.find(x => x.id === result.memory.current!.bottleneck.signalIds[0]);
       const holdingBack = result.memory.current ? { ...result.memory.current.bottleneck, severity: main ? Math.min(1, signalWeight(main, now)) : 0 } : null;
@@ -569,7 +576,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       }
       for (const c of result.cleared) this.log("success", `Unblocked: ${c.title.replace(/\.$/, "")}.`);
       // A forced look says what it weighed, so a "why didn't he notice X" is answerable from the deck's log.
-      if (force) this.log("info", `Shippy looked: ${freshSignals(cache.signals, now).slice(0, 4).map(x => `${x.title.slice(0, 60)} (${signalWeight(x, now).toFixed(2)})`).join("; ") || "nothing to flag"}. ${result.why}`.slice(0, 600));
+      // Top four, plus any CI signal below them, since a red PR is what the Look button is usually for.
+      const seen = freshSignals(cache.signals, now), shown = [...seen.slice(0, 4), ...seen.slice(4).filter(x => x.source === "ci")];
+      if (force) this.log("info", `Shippy looked: ${shown.map(x => `${x.title.slice(0, 60)} (${signalWeight(x, now).toFixed(2)})`).join("; ") || "nothing to flag"}. ${result.why}`.slice(0, 600));
       if (result.decided) {
         const log = await this.ctx.storage.get<Diagnosis[]>("brainDiagnoses") ?? [];
         await this.accountPut("brainDiagnoses", [result.diagnosis, ...log].slice(0, 50));
@@ -636,9 +645,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
   /** The fix for a red PR merged: update that PR from the default branch so its checks run on the fix. */
   private async bringFixInto(issue: number, fixPr: number) {
-    const target = await this.ctx.storage.get<{ pr: number; sameRepo: boolean; done?: boolean }>(`fixesPr:${issue}`);
+    const target = await this.ctx.storage.get<FixRecord>(`fixesPr:${issue}`);
     if (!target || target.done || !this.meta) return;
-    await this.accountPut(`fixesPr:${issue}`, { ...target, done: true }); // a merge webhook and our own launch both land here
+    await this.accountPut(`fixesPr:${issue}`, { ...target, done: true, fixedBy: fixPr }); // a merge webhook and our own launch both land here
     if (!target.sameRepo) { this.log("info", `The fix for #${target.pr} merged in #${fixPr}. #${target.pr} comes from a fork, so its author needs to update it.`); return; }
     try {
       const token = await installationToken(this.env, this.meta.installationId);
@@ -648,6 +657,32 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     } catch (error) {
       this.log("warn", `The fix merged in #${fixPr}, but #${target.pr} couldn't be updated: ${String(error).slice(0, 160)}`);
     }
+  }
+
+  /**
+   * A fix Shippy brought into a red PR: once that PR's checks finish, he checks the result himself. Green is a win
+   * for the follow-up card; still red is said plainly. Two GitHub reads a pass, only while a fix is out.
+   */
+  private async confirmFixes(memory: BrainMemory, now: number): Promise<BrainMemory> {
+    if (!this.meta) return memory;
+    const out = [...(await this.ctx.storage.list<FixRecord>({ prefix: "fixesPr:" })).entries()].filter(([, f]) => f.done && !f.confirmed);
+    if (!out.length) return memory;
+    const token = await installationToken(this.env, this.meta.installationId);
+    let next = memory;
+    for (const [key, f] of out) {
+      try {
+        const pull = await gh<{ state: string; head: { sha: string } }>(`/repos/${this.meta.repo}/pulls/${f.pr}`, token);
+        const runs = (await gh<{ check_runs?: { status: string; conclusion: string | null }[] }>(`/repos/${this.meta.repo}/commits/${pull.head.sha}/check-runs?per_page=50`, token)).check_runs ?? [];
+        if (pull.state === "open" && (!runs.length || runs.some(r => r.status !== "completed"))) continue;
+        await this.accountPut(key, { ...f, confirmed: true });
+        if (pull.state !== "open") continue;
+        if (!runs.every(r => ["success", "neutral", "skipped"].includes(r.conclusion ?? ""))) { this.log("warn", `#${f.pr} still fails its checks after the fix in #${f.fixedBy}. It needs another look.`); continue; }
+        const title = `#${f.pr} passes its checks now${f.fixedBy ? `, with the fix from #${f.fixedBy}` : ""}`;
+        next = { ...next, cleared: [{ bottleneckId: `fix:${f.pr}`, play: "fix_blocking_check", title, clearedAt: now, heldMs: 0 }, ...next.cleared].slice(0, 10) };
+        this.log("success", `${title}.`);
+      } catch (error) { this.log("warn", `Couldn't check #${f.pr} after the fix: ${String(error).slice(0, 160)}`); }
+    }
+    return next;
   }
 
   /** Continue on an unlock card: run its one safe action (or the browser opens its link), and watch whether it worked. */
