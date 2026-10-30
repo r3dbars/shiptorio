@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shippy's brain lab</title>
+<style>
+  :root { --bg:#14161a; --panel:#1d2026; --line:#2c3038; --ink:#e8e6e1; --dim:#9aa0a8; --yellow:#f2c14e; --green:#5fc77a; --red:#e5584f; --cyan:#4fc3d9; --spark:#f2c14e; --wonder:#b48cf2; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.45 ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  header { padding:16px 20px 0; display:flex; gap:16px; align-items:baseline; flex-wrap:wrap; }
+  h1 { font-size:20px; margin:0; }
+  .muted { color:var(--dim); }
+  nav { display:flex; gap:4px; padding:12px 20px 0; border-bottom:1px solid var(--line); }
+  nav button { background:none; border:0; color:var(--dim); padding:8px 14px; font:inherit; cursor:pointer; border-bottom:2px solid transparent; }
+  nav button.on { color:var(--ink); border-color:var(--yellow); }
+  main { padding:16px 20px 60px; }
+  .tab { display:none; } .tab.on { display:block; }
+  .grid { display:grid; grid-template-columns: 320px 1fr; gap:16px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px; }
+  .list { max-height:70vh; overflow:auto; }
+  .case { padding:6px 8px; border-radius:6px; cursor:pointer; }
+  .case:hover { background:#262a31; } .case.on { background:#2e333c; }
+  .case b { display:block; font-weight:600; font-size:13px; } .case span { font-size:12px; color:var(--dim); }
+  input, select, textarea, button { font:inherit; color:var(--ink); background:#262a31; border:1px solid var(--line); border-radius:6px; padding:6px 8px; }
+  button.go { background:var(--yellow); color:#14161a; border:0; font-weight:700; cursor:pointer; padding:8px 14px; }
+  button.go:disabled { opacity:.5; cursor:wait; }
+  button.small { padding:2px 8px; cursor:pointer; }
+  table { border-collapse:collapse; width:100%; }
+  th, td { text-align:left; padding:5px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--dim); font-weight:500; font-size:12px; }
+  .sig td input[type=text] { width:100%; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:8px 0; }
+  .answers { display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap:12px; margin-top:12px; }
+  .answer h3 { margin:0 0 6px; font-size:15px; display:flex; justify-content:space-between; }
+  .card { background:#2a2418; border:1px solid #4a3f22; border-radius:8px; padding:10px; margin:8px 0; }
+  .card .t { font-weight:700; font-size:15px; }
+  .pill { display:inline-block; border-radius:99px; padding:1px 8px; font-size:12px; font-weight:600; }
+  .hit { background:#1f3a27; color:var(--green); } .miss { background:#3d1f1d; color:var(--red); } .ok { background:#3a3320; color:var(--yellow); } .na { background:#2a2d33; color:var(--dim); }
+  .steps { font-size:12px; color:var(--dim); margin:6px 0 0; padding-left:18px; }
+  .expect { border-left:3px solid var(--cyan); padding:6px 10px; background:#1a2529; border-radius:4px; margin-top:8px; }
+  .m-muse-spark-1\.3 { color:var(--spark); } .m-muse-wonder-1\.0 { color:var(--wonder); }
+  .score { font-size:28px; font-weight:800; }
+  .scores { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px,1fr)); gap:12px; margin:12px 0; }
+  code { background:#262a31; padding:1px 5px; border-radius:4px; font-size:12px; }
+  .err { color:var(--red); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Shippy's brain lab</h1>
+  <span class="muted" id="setup">loading…</span>
+</header>
+<nav>
+  <button data-tab="try" class="on">Try a scenario</button>
+  <button data-tab="eval">Run the eval</button>
+  <button data-tab="tools">Shippy's toolbox</button>
+</nav>
+<main>
+  <section id="try" class="tab on">
+    <div class="grid">
+      <div class="panel">
+        <input id="filter" placeholder="Filter scenarios…" style="width:100%;margin-bottom:8px">
+        <div class="list" id="cases"></div>
+      </div>
+      <div>
+        <div class="panel">
+          <div class="row"><b id="caseTitle">Pick a scenario</b></div>
+          <div class="row"><label>Player's goal <input id="goal" placeholder="ship things people use" style="width:280px"></label></div>
+          <table class="sig"><thead><tr><th>Source / kind</th><th style="width:90px">Severity</th><th>What the collector says</th><th></th></tr></thead><tbody id="sigs"></tbody></table>
+          <div class="row">
+            <button class="small" id="add">+ Add a signal</button>
+            <span style="flex:1"></span>
+            <span id="modelPicks"></span>
+            <button class="go" id="ask">Ask Shippy</button>
+          </div>
+          <div id="expect"></div>
+        </div>
+        <div class="answers" id="answers"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="eval" class="tab">
+    <div class="panel">
+      <div class="row">
+        <span>Grades every scenario: first look, a steady check 15 min later (did the card flip?), a Later tap (did it nag again?), and a heartbeat on quiet cases.</span>
+      </div>
+      <div class="row">
+        <span id="evalModels"></span>
+        <label>Only <input id="evalOnly" placeholder="case ids, comma separated (blank = all)" style="width:320px"></label>
+        <button class="go" id="runEval">Run the eval</button>
+        <button class="small" id="stopEval">Stop</button>
+        <span class="muted" id="evalStatus"></span>
+      </div>
+    </div>
+    <div class="scores" id="scores"></div>
+    <div class="panel"><table><thead><tr><th>Scenario</th><th>Expected</th><th id="evalCols"></th></tr></thead><tbody id="evalRows"></tbody></table></div>
+  </section>
+
+  <section id="tools" class="tab">
+    <div id="toolbox" class="panel">loading…</div>
+  </section>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" })[c]);
+const api = async (path, body) => {
+  const r = await fetch(path, body ? { method:"POST", headers:{ "content-type":"application/json" }, body: JSON.stringify(body) } : {});
+  const j = await r.json(); if (!r.ok) throw new Error(j.error || r.statusText); return j;
+};
+const label = m => m === "rule" ? "Rule (no AI)" : m === "muse-spark-1.3" ? "Muse Spark 1.3" : m === "muse-wonder-1.0" ? "Muse Wonder 1.0" : m;
+let SETUP, CASES = [], TOOLS, current = null, signals = [], dirty = false;
+
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("nav button, .tab").forEach(x => x.classList.remove("on"));
+  b.classList.add("on"); $("#" + b.dataset.tab).classList.add("on");
+});
+
+function modelBoxes(el, name, defaults) {
+  el.innerHTML = SETUP.models.map(m => `<label style="margin-right:8px"><input type="checkbox" name="${name}" value="${m}" ${defaults.includes(m) ? "checked" : ""}> <span class="m-${m}">${label(m)}</span></label>`).join("");
+}
+const picked = name => [...document.querySelectorAll(`input[name=${name}]:checked`)].map(i => i.value);
+
+function renderCases() {
+  const f = $("#filter").value.toLowerCase();
+  $("#cases").innerHTML = CASES.filter(c => !f || (c.id + c.title).toLowerCase().includes(f)).map(c =>
+    `<div class="case ${current?.id === c.id ? "on" : ""}" data-id="${c.id}"><b>${esc(c.title)}</b><span>${esc(c.id)} · expects ${esc(c.expect.area ?? "quiet")}</span></div>`).join("");
+  document.querySelectorAll(".case").forEach(d => d.onclick = () => pick(d.dataset.id));
+}
+function pick(id) {
+  current = CASES.find(c => c.id === id); dirty = false;
+  signals = structuredClone(current.signals);
+  $("#caseTitle").textContent = current.title; $("#goal").value = current.goal;
+  renderSignals(); renderExpect(); renderCases(); $("#answers").innerHTML = "";
+}
+function kindOptions(sel) {
+  return Object.entries(TOOLS.signals).map(([src, v]) => `<optgroup label="${src} (${v.area})">${v.kinds.map(k => `<option value="${src}/${k}" ${sel === src + "/" + k ? "selected" : ""}>${src} / ${k}</option>`).join("")}</optgroup>`).join("");
+}
+function renderSignals() {
+  $("#sigs").innerHTML = signals.map((s, i) => `<tr>
+    <td><select data-i="${i}" data-f="kind">${kindOptions(s.source + "/" + s.kind)}</select></td>
+    <td><input type="range" min="0" max="1" step="0.05" value="${s.severity}" data-i="${i}" data-f="severity" style="width:70px"> <span>${(+s.severity).toFixed(2)}</span></td>
+    <td><input type="text" value="${esc(s.title)}" data-i="${i}" data-f="title"></td>
+    <td><button class="small" data-rm="${i}">✕</button></td></tr>`).join("");
+  document.querySelectorAll("#sigs [data-f]").forEach(el => el.oninput = () => {
+    const s = signals[el.dataset.i]; dirty = true;
+    if (el.dataset.f === "kind") { const [src, k] = el.value.split("/"); s.source = src; s.kind = k; }
+    else if (el.dataset.f === "severity") { s.severity = +el.value; el.nextElementSibling.textContent = (+el.value).toFixed(2); }
+    else s.title = el.value;
+    renderExpect();
+  });
+  document.querySelectorAll("[data-rm]").forEach(b => b.onclick = () => { signals.splice(+b.dataset.rm, 1); dirty = true; renderSignals(); renderExpect(); });
+}
+$("#add").onclick = () => { signals.push({ source:"ci", kind:"ci_red_main", title:"Main has been red for 2 hours.", severity:0.7, confidence:1, evidence:[] }); dirty = true; renderSignals(); renderExpect(); };
+$("#filter").oninput = renderCases;
+
+function renderExpect() {
+  if (!current) return;
+  $("#expect").innerHTML = dirty
+    ? `<div class="expect muted">You changed the scenario, so there's no answer key. Judge it yourself.</div>`
+    : `<div class="expect"><b>A sharp lead would say:</b> ${esc(current.expect.area ?? "nothing, stay quiet")}${current.expect.signal ? ` (main signal <code>${esc(current.expect.signal)}</code>)` : ""}${current.expect.plays.length ? `, move: ${current.expect.plays.map(p => `<code>${esc(p)}</code>`).join(" or ")}` : ""}<br><span class="muted">${esc(current.why)}</span></div>`;
+}
+
+function gradeAnswer(a) {
+  if (dirty || !current) return "";
+  const e = current.expect, area = a.bottleneck?.area ?? null;
+  const areaOk = area === e.area ? "hit" : e.alsoOk.includes(area) ? "ok" : "miss";
+  const sigOk = e.signal == null ? "na" : a.bottleneck?.id === e.signal ? "hit" : "miss";
+  const playOk = e.area == null ? "na" : e.plays.includes(a.unlock?.play) ? "hit" : "miss";
+  return `<span class="pill ${areaOk}">problem ${areaOk === "hit" ? "✓" : areaOk === "ok" ? "~" : "✗"}</span> <span class="pill ${sigOk}">signal ${sigOk === "na" ? "–" : sigOk === "hit" ? "✓" : "✗"}</span> <span class="pill ${playOk}">move ${playOk === "na" ? "–" : playOk === "hit" ? "✓" : "✗"}</span>`;
+}
+function renderAnswer(a) {
+  const b = a.bottleneck, u = a.unlock;
+  return `<div class="panel answer"><h3><span class="m-${a.model}">${label(a.model)}</span><span class="muted">${(a.wallMs / 1000).toFixed(1)}s · $${a.meter.usd.toFixed(4)} · ${a.meter.input + a.meter.output} tok</span></h3>
+    ${gradeAnswer(a)}
+    ${b ? `<div class="card"><div class="muted">${esc(b.area)} · confidence ${(+b.confidence).toFixed(2)} · by ${esc(b.by)}</div><div class="t">${esc(b.title)}</div><div>${esc(b.why)}</div>
+      <hr style="border-color:#4a3f22"><div class="t">▶ ${esc(u.title)}</div><div>${esc(u.because)}</div><div class="muted">move <code>${esc(u.play)}</code> · ${esc(u.effort)} · ${u.action ? `button: ${esc(u.action.tool)}` : u.url ? `opens ${esc(u.url)}` : ""}</div></div>`
+      : `<div class="card"><div class="t">Stays quiet</div><div class="muted">${esc(a.reason)}</div></div>`}
+    ${a.fellBack ? `<div class="err">AI failed, rule stood in: ${esc(a.fellBack)}</div>` : ""}
+    ${a.steps.length ? `<ol class="steps">${a.steps.map(s => `<li><b>${esc(s.tool)}</b>: ${esc(s.reason)}</li>`).join("")}</ol>` : ""}
+    <div class="muted" style="font-size:12px;margin-top:6px">${a.meter.calls} model call(s)</div></div>`;
+}
+$("#ask").onclick = async () => {
+  const models = picked("tryModel"); if (!models.length) return;
+  $("#ask").disabled = true;
+  $("#answers").innerHTML = models.map(m => `<div class="panel" id="ans-${m.replace(/\W/g, "")}"><span class="m-${m}">${label(m)}</span> <span class="muted">thinking…</span></div>`).join("");
+  await Promise.all(models.map(async m => {
+    const box = $("#ans-" + m.replace(/\W/g, ""));
+    try { box.outerHTML = renderAnswer(await api("/api/think", { model: m, signals, goal: $("#goal").value })); }
+    catch (e) { box.innerHTML = `${label(m)}: <span class="err">${esc(e.message)}</span>`; }
+  }));
+  $("#ask").disabled = false;
+};
+
+// ---------- eval ----------
+let stop = false;
+$("#stopEval").onclick = () => { stop = true; };
+function tally(rows, m) {
+  const r = rows.filter(x => x[m]).map(x => x[m]);
+  const pct = (n, d) => d ? Math.round(100 * n / d) + "%" : "–";
+  const named = r.filter(x => x.signalHit !== null), plays = r.filter(x => x.playHit !== null), quiet = r.filter(x => x.expected.area === null);
+  const nags = r.reduce((n, x) => n + Object.values(x.nags).filter(Boolean).length, 0);
+  const thinks = r.reduce((n, x) => n + x.thinks, 0), usd = r.reduce((n, x) => n + x.meter.usd, 0), ms = r.reduce((n, x) => n + x.meter.ms, 0);
+  return { n: r.length, hit: pct(r.filter(x => x.hit).length, r.length), signal: pct(named.filter(x => x.signalHit).length, named.length), move: pct(plays.filter(x => x.playHit).length, plays.length),
+    quiet: `${quiet.filter(x => !x.nags.quietCard && !x.nags.heartbeatCard).length}/${quiet.length}`, nags, fallbacks: r.filter(x => x.fellBack && !/No model/.test(x.fellBack)).length,
+    usd, perDecision: thinks ? usd / thinks : 0, sec: thinks ? ms / thinks / 1000 : 0 };
+}
+function renderScores(rows, models) {
+  $("#scores").innerHTML = models.map(m => { const t = tally(rows, m); return `<div class="panel"><div class="m-${m}"><b>${label(m)}</b></div>
+    <div class="score">${t.hit}</div><div class="muted">right problem (${t.n} scenarios)</div>
+    <table><tr><td>Right signal</td><td>${t.signal}</td></tr><tr><td>Right move</td><td>${t.move}</td></tr><tr><td>Quiet when all clear</td><td>${t.quiet}</td></tr>
+    <tr><td>Nags (flip, re-nag, false card)</td><td>${t.nags}</td></tr><tr><td>AI failures</td><td>${t.fallbacks}</td></tr>
+    <tr><td>Cost per decision</td><td>$${t.perDecision.toFixed(4)}</td></tr><tr><td>Time per decision</td><td>${t.sec.toFixed(1)}s</td></tr><tr><td>Total spent</td><td>$${t.usd.toFixed(3)}</td></tr></table></div>`; }).join("");
+}
+const cell = r => !r ? `<span class="muted">…</span>` : r.error ? `<span class="err">${esc(r.error)}</span>`
+  : `<span class="pill ${r.exact ? "hit" : r.hit ? "ok" : "miss"}">${esc(r.got.area ?? "quiet")}</span> ${r.playHit === false ? `<span class="pill miss">move</span>` : ""}${Object.entries(r.nags).filter(([, v]) => v).map(([k]) => `<span class="pill miss">${k}</span>`).join(" ")}<div class="muted" style="font-size:12px">${esc(r.got.text.split(" | ")[0] || r.got.reason).slice(0, 110)}${r.got.play ? ` → <code>${esc(r.got.play)}</code>` : ""}</div>`;
+$("#runEval").onclick = async () => {
+  const models = picked("evalModel"); if (!models.length) return;
+  const only = $("#evalOnly").value.split(",").map(s => s.trim()).filter(Boolean);
+  const list = CASES.filter(c => !only.length || only.includes(c.id));
+  stop = false; $("#runEval").disabled = true;
+  $("#evalCols").outerHTML = models.map(m => `<th class="m-${m}">${label(m)}</th>`).join("");
+  const rows = list.map(c => ({ c }));
+  const draw = () => { $("#evalRows").innerHTML = rows.map(r => `<tr><td><b>${esc(r.c.title)}</b><div class="muted" style="font-size:12px">${esc(r.c.id)}</div></td><td>${esc(r.c.expect.area ?? "quiet")}</td>${models.map(m => `<td>${cell(r[m])}</td>`).join("")}</tr>`).join(""); renderScores(rows, models); };
+  draw();
+  let done = 0;
+  for (const r of rows) {
+    if (stop) break;
+    for (const m of models) {
+      $("#evalStatus").textContent = `${done}/${rows.length * models.length} · ${r.c.id} on ${label(m)}`;
+      try { r[m] = await api("/api/grade", { model: m, caseId: r.c.id }); } catch (e) { r[m] = { error: e.message }; }
+      done++; draw();
+    }
+  }
+  $("#evalStatus").textContent = stop ? `stopped at ${done}` : `done: ${done} runs`;
+  $("#runEval").disabled = false;
+  try { localStorage.setItem("brainLabLast", JSON.stringify({ at: Date.now(), models, rows: rows.map(r => ({ id: r.c.id, ...Object.fromEntries(models.map(m => [m, r[m]])) })) })); } catch {}
+};
+
+// ---------- toolbox ----------
+function renderTools() {
+  const t = TOOLS;
+  $("#toolbox").innerHTML = `
+    <h2 style="margin-top:0">How Shippy decides</h2>
+    <p>Each look, Shippy gets every open signal (headline, weight, and the moves allowed for it). It can take up to <b>${t.turns}</b> turns, one tool per turn, then must pick one bottleneck or stay quiet. Signals under weight <b>${t.floor}</b> never earn a card. Without AI, a simple rule picks the heaviest signal over ${t.ruleFloor}.</p>
+    <table><thead><tr><th>Brain tool</th><th>What it does</th></tr></thead><tbody>${t.brain.map(x => `<tr><td><code>${x.name}</code></td><td>${esc(x.what)}</td></tr>`).join("")}</tbody></table>
+    <h2>Every move Shippy can recommend (${t.moves.length})</h2>
+    <p class="muted">Shippy can only pick a move listed for the main problem's signal kind. The words on the card are Shippy's; the button and link come from this list.</p>
+    <table><thead><tr><th>Move</th><th>Card</th><th>Fixes</th><th>Effort</th><th>What the button does</th></tr></thead><tbody>${t.moves.map(m => `<tr><td><code>${m.play}</code></td><td>${esc(m.title)}${m.grows.length ? ` <span class="pill hit">${esc(m.grows.join(", "))}</span>` : ""}</td><td>${m.fixes.map(k => `<code>${k}</code>`).join(" ")}</td><td>${m.effort}</td><td class="muted">${esc(m.does)}</td></tr>`).join("")}</tbody></table>
+    <h2>What Shippy can notice</h2>
+    <table><thead><tr><th>Source</th><th>Area</th><th>Signal kinds</th></tr></thead><tbody>${Object.entries(t.signals).map(([s, v]) => `<tr><td>${s}</td><td>${v.area}</td><td>${v.kinds.map(k => `<code>${k}</code>`).join(" ")}</td></tr>`).join("")}</tbody></table>
+    <h2>Tools Shippy uses when it plans and reviews code</h2>
+    <table><tbody>${t.builderTools.map(x => `<tr><td><code>${x.name}</code></td><td>${esc(x.what.replace(/^\w+ /, ""))}</td></tr>`).join("")}</tbody></table>
+    <h2>Other jobs the same brain does</h2><ul>${t.otherJobs.map(j => `<li>${esc(j)}</li>`).join("")}</ul>
+    <h2>Models</h2><table><thead><tr><th>Model</th><th>Input $/M</th><th>Cached $/M</th><th>Output $/M</th></tr></thead><tbody>${t.models.map(m => `<tr><td class="m-${m.id}">${label(m.id)}</td><td>${(m.price.input / 1000).toFixed(2)}</td><td>${(m.price.cached / 1000).toFixed(2)}</td><td>${(m.price.output / 1000).toFixed(2)}</td></tr>`).join("")}</tbody></table>`;
+}
+
+(async () => {
+  [SETUP, CASES, TOOLS] = await Promise.all([api("/api/setup"), api("/api/scenarios"), api("/api/tools")]);
+  $("#setup").innerHTML = SETUP.stub ? `<span class="err">STUB model: fake answers for testing the page</span> · ${CASES.length} scenarios` : SETUP.key ? `Meta key found · ${CASES.length} scenarios` : `<span class="err">No Meta key. Add META_API_KEY to server/.dev.vars, then restart. Rule-only answers still work.</span>`;
+  modelBoxes($("#modelPicks"), "tryModel", ["muse-spark-1.3", "muse-wonder-1.0"]);
+  modelBoxes($("#evalModels"), "evalModel", ["muse-spark-1.3", "muse-wonder-1.0"]);
+  renderCases(); renderTools(); pick(CASES.find(c => c.id === "testing-39-red-pr")?.id ?? CASES[0].id);
+})();
+</script>
+</body>
+</html>
