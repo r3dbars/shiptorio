@@ -17,6 +17,15 @@ export type ShipPhase = "off" | "lever" | "ride" | "press" | "launch" | "done";
 
 export const SHIP_CRATE = "tour-crate";
 
+/** What's happening, as the caption over the deck, while the fix ships (round 2: every step says what it is). */
+export const SHIP_CAPTION: Record<ShipPhase, string | null> = {
+  off: null, done: null,
+  lever: "Merged! The Gate opens.",
+  ride: "Your fix rides out to Launch.",
+  press: "Shippy hits launch...",
+  launch: "Shipped to your users!",
+};
+
 export const SHIP_TIMING = {
   lever: 0.6, // Shippy pulls the lever before the crate moves (the tour hands it to Launch at the same moment)
   ride: 7, // most the crate gets to reach the pad; crate-arrive normally ends it sooner (2.5 let the rocket go before the crate landed)
@@ -68,7 +77,7 @@ export function shipFeel<T extends DeckSource>(tour: T, bus: DeckBus): T & { shi
       : phase === "press" ? { pose: "poke", at: "launch" } : { pose: "happy", at: "launch" };
     shown = null;
     return {
-      ...v, stops, card: null, caption: null, shippy, attention: [], focus: phase === "lever" ? "gate" : "launch",
+      ...v, stops, card: null, caption: SHIP_CAPTION[phase], shippy, attention: [], focus: phase === "lever" ? "gate" : "launch",
       followItem: phase === "ride" ? SHIP_CRATE : undefined,
       // Held until the crate is on the pad: the engine launches the rocket the moment this goes up.
       shipped: (phase === "lever" || phase === "ride" || phase === "press" ? held : held + 1) + bias,

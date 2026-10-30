@@ -169,13 +169,26 @@ function centreOn(box: Rect, screen: CityScreen, k: number, band = bandOf(screen
  *    band (8 px above it): the ring re-centres above the card if it fits there, else its top stays EDGE under the screen's top.
  *  - A focus (the story sets one only in beat 3) on a desktop: pushIn, one step closer; the ring when that does not fit.
  *  - A focus on a phone: closeUp, one step closer. */
-export function cityCamera(view: Pick<CityView, "focus" | "plates"> & Partial<Pick<CityView, "beat">>, screen: CityScreen, layout: RingLayout, manifest: CityManifest): CityShot {
+export function cityCamera(view: Pick<CityView, "focus" | "plates"> & Partial<Pick<CityView, "beat" | "cine">>, screen: CityScreen, layout: RingLayout, manifest: CityManifest): CityShot {
   const kRing = ringK(layout, manifest, screen), ring = ringBox(layout, manifest, screen, kRing);
   if (view.focus && screen.portrait) return closeUp(view.focus, view.plates, screen, layout, manifest, kRing);
   if (view.focus) { const shot = pushIn(view.focus, view.plates, screen, layout, manifest, kRing); if (shot) return shot; }
+  if (view.focus && view.cine) return cineOn(view.focus, view.plates, screen, layout, manifest, kRing);
   if (view.beat === "card" && screen.portrait && screen.cardTop !== undefined)
     return centreOn(ring, screen, kRing, Math.max(BAND.portrait, screen.h - screen.cardTop + EDGE), true);
   return centreOn(ring, screen, kRing, bandOf(screen), topOf(screen) > 0);
+}
+
+/** The tour's island card when pushIn can't fit the island with its bridges above the card (Inbox's tower, Customers' arc):
+ *  the island alone, one step closer if it fits the usable screen, else at k_ring; either way centred above the card,
+ *  so the camera still goes to it (Justin 2026-10-30: "pan down to the inbox"). */
+function cineOn(id: CityIsland, plates: CityView["plates"], screen: CityScreen, layout: RingLayout, manifest: CityManifest, kRing: number): CityShot {
+  const u = usable(screen);
+  for (const k of [kRing + 1, kRing]) {
+    const box = focusBox(layout, manifest, id, screen, k, !!plates[id]);
+    if (k === kRing || (box.w * k <= u.w && box.h * k <= u.h)) return centreOn(box, screen, k, bandOf(screen), true);
+  }
+  return centreOn(ringBox(layout, manifest, screen, kRing), screen, kRing);
 }
 
 /** A desktop's close-up of one island at k_ring + 1: pushBox centred in the usable screen (so half the caption band below the
@@ -267,21 +280,33 @@ export interface CityStep { pose: CamPose; cut: boolean }
 /** How the camera gets to cityCamera's target (motion-2). A new k cuts x, y and the scale in the same frame; so does a hop
  *  longer than cutHop. Any other new target glides on a fixed smoothstep over CITY_TIMING.move from where the camera was when
  *  the target changed (u = min(1, t / move), e = u * u * (3 - 2 * u)), x and y on whole device px. */
+/** Cinematic moves (CityView.cine): seconds per whole k a zoom steps through, CSS px a pan covers in a second, and the
+ *  longest a pan takes. */
+export const CINE = { zoomStep: 0.38, panSpeed: 650, longest: 2.2 } as const;
+
 export function createCityMove(move: number = CITY_TIMING.move) {
-  let from: CamPose | null = null, to: CamPose | null = null, t = 0;
-  const cut = (target: CamPose): CityStep => { from = { ...target }; to = { ...target }; t = move; return { pose: { ...target }, cut: true }; };
+  let from: CamPose | null = null, to: CamPose | null = null, t = 0, dur = move;
+  const cut = (target: CamPose): CityStep => { from = { ...target }; to = { ...target }; t = dur = move; return { pose: { ...target }, cut: true }; };
+  const kOf = (s: number, screen: CityScreen) => Math.max(1, Math.round(s * CITY_PX * screen.dpr));
   return {
-    step(cam: CamPose, target: CamPose, dt: number, screen: CityScreen): CityStep {
+    /** cine: the tour's city. A long hop pans instead of cutting, and a new k steps there one whole k at a time while the
+     *  camera glides, so a zoom out reads as a slow pull back, never a jump. */
+    step(cam: CamPose, target: CamPose, dt: number, screen: CityScreen, cine = false): CityStep {
       if (!to || to.x !== target.x || to.y !== target.y || to.s !== target.s) {
-        if (target.s !== cam.s || Math.hypot(target.x - cam.x, target.y - cam.y) * target.s > cutHop(screen)) return cut(target);
+        if (!cine && (target.s !== cam.s || Math.hypot(target.x - cam.x, target.y - cam.y) * target.s > cutHop(screen))) return cut(target);
         from = { x: cam.x, y: cam.y, s: cam.s }; to = { ...target }; t = 0;
+        const hop = Math.hypot(target.x - cam.x, target.y - cam.y) * Math.min(cam.s, target.s); // CSS px on screen
+        dur = !cine ? move : Math.min(CINE.longest, Math.max(move * 1.5, hop / CINE.panSpeed, Math.abs(kOf(target.s, screen) - kOf(cam.s, screen)) * CINE.zoomStep));
       }
-      t = Math.min(move, t + dt);
-      const u = move > 0 ? t / move : 1;
+      t = Math.min(dur, t + dt);
+      const u = dur > 0 ? t / dur : 1;
       if (u >= 1) return { pose: { ...to }, cut: false };
-      const e = u * u * (3 - 2 * u), dev = to.s * screen.dpr; // device px per world unit
+      const e = u * u * (3 - 2 * u);
+      // the scale: whole k only, stepping from the old k to the new one along the same ease
+      const k0 = kOf(from!.s, screen), k1 = kOf(to.s, screen), s = k0 === k1 ? to.s : Math.round(k0 + (k1 - k0) * e) / (CITY_PX * screen.dpr);
+      const dev = s * screen.dpr; // device px per world unit
       const x = from!.x + (to.x - from!.x) * e, y = from!.y + (to.y - from!.y) * e;
-      return { pose: { x: Math.round(x * dev) / dev, y: Math.round(y * dev) / dev, s: to.s }, cut: false };
+      return { pose: { x: Math.round(x * dev) / dev, y: Math.round(y * dev) / dev, s }, cut: false };
     },
     /** Forget the move in progress: the next step starts from wherever the camera is (after a zoom change or a cut). */
     reset() { from = to = null; t = 0; },

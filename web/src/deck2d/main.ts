@@ -132,7 +132,7 @@ export function oneAsk<V extends DeckView>(view: V): V {
 }
 
 /** Finish the sample loop with the existing connection card, not a second front door.
- *  ask: the story's own "Want to create your own factory?" card shows first, and only its yes opens sign-in
+ *  ask: the story's own "Want to build yours?" card shows first, and only its yes opens sign-in
  *  (the guest tour: the password comes up there, never before), straight on to the password or GitHub with no second
  *  card. Closing sign-in brings that card back.
  *  ending(): the story's own last card (the city reveal's "Start with your repo.") while the connection card is up in its
@@ -393,6 +393,7 @@ const seed = Number(params.get("seed")) || 0;
       ? { ...underlying, city: manualCity(manual, cityLabel(location.search)), caption: manual === "city" ? null : underlying.caption } : underlying;
     paintZoom(zoomHidden(view, storyCity, storyRun, firstRun) || guestTour); // the tour frames every shot itself
     document.body.classList.toggle("first-run", !!firstRun?.playing());
+    document.body.classList.toggle("guest-tour", guestTour); // the tour's station captions read like the first run's line
     const work = (view as import('./data/view').LiveDeckView).work;
     cv.dataset.workId = work?.id ?? '';
     cv.dataset.workStop = work?.stop ?? '';

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { SHIP_CRATE, SHIP_TIMING, isShipCard, shipFeel } from "../src/deck2d/story/ship";
+import { SHIP_CAPTION, SHIP_CRATE, SHIP_TIMING, isShipCard, shipFeel } from "../src/deck2d/story/ship";
 import { TOUR, createTour } from "../src/deck2d/story/tour";
 import { createBus } from "../src/deck2d/contract";
 
@@ -24,7 +24,7 @@ test("Ship it: lever, the crate rides onto the pad, only then one ship, and the 
   const before = s.view().shipped;
   s.approve(s.view().card!.id);
   expect(s.shipPhase()).toBe("lever");
-  expect(s.view()).toMatchObject({ card: null, caption: null, shippy: { pose: "lever", at: "gate" } });
+  expect(s.view()).toMatchObject({ card: null, caption: SHIP_CAPTION.lever, shippy: { pose: "lever", at: "gate" } });
   run(s, SHIP_TIMING.lever + 0.1);
   run(s, 2); // the tour's own clock would have dropped the crate and shipped by now
   let v = s.view();
@@ -42,7 +42,7 @@ test("Ship it: lever, the crate rides onto the pad, only then one ship, and the 
   expect(items(v)).toEqual([]);
   bus.emit({ type: "launch" });
   run(s, SHIP_TIMING.afterLaunch - 0.2);
-  expect(s.view()).toMatchObject({ card: null, caption: null }); // the rocket climbs with nothing over it
+  expect(s.view()).toMatchObject({ card: null, caption: SHIP_CAPTION.launch }); // only the caption says what just happened
   run(s, 6);
   expect(s.shipPhase()).toBe("done");
   expect(s.view().card?.title).toBe(TOUR[SHIP + 1].title); // the tour's own "Shipped!" card

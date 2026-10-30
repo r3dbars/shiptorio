@@ -59,8 +59,8 @@ body.deck-page {
 }
 
 /* The live first run: Shippy's one line reads like a line, not a footnote, and nothing else competes with it. */
-body.first-run .toast { width: calc(100% - 24px); white-space: normal; text-align: center; font-size: 18px; line-height: 1.35; padding: 10px 16px; max-width: 520px; background: #121e2bd9; border: 2px solid #a36915; box-shadow: 0 3px 0 #000; }
-@media (min-width: 900px) and (min-height: 560px) { body.first-run .toast { font-size: 24px; max-width: 960px; } }
+body.first-run .toast, body.guest-tour .toast { width: calc(100% - 24px); white-space: normal; text-align: center; font-size: 18px; line-height: 1.35; padding: 10px 16px; max-width: 520px; background: #121e2bd9; border: 2px solid #a36915; box-shadow: 0 3px 0 #000; }
+@media (min-width: 900px) and (min-height: 560px) { body.first-run .toast, body.guest-tour .toast { font-size: 24px; max-width: 960px; } }
 
 /* The preview password at "create your own factory" (password.ts). Same iron-and-brass as the card. */
 .deck-password { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 16px; background: #0c0a0bb3; user-select: text; -webkit-user-select: text; }

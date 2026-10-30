@@ -111,14 +111,14 @@ describe("?fresh=1 replays the first run (staging only)", () => {
   });
 });
 
-test('the guest tour asks "Want to create your own factory?" first; its yes goes straight to GitHub, and closing sign-in asks again', async () => {
+test('the guest tour asks "Want to build yours?" first; its yes goes straight to GitHub, and closing sign-in asks again', async () => {
   const went: string[] = [];
   const connections = createConnections({origin:'https://example.test', path:'/deck?source=live', navigate(url) { went.push(url); }, async copy() {}, fetch:async () => Response.json({guest:true, login:null, githubConfigured:true})});
   let opens = 0;
   const story = storyBeforeSignIn(createTour(), {open(target) { opens++; connections.open(target); }, card: connections.card, answer: connections.answer}, {ask: true});
-  for (let i = 0; i < 4000 && story.view().card?.title !== 'Want to create your own factory?'; i++) { const c = story.view().card; if (c) story.approve(c.id); else story.step?.(0.1); } // play to the end (no Skip)
+  for (let i = 0; i < 4000 && story.view().card?.title !== 'Want to build yours?'; i++) { const c = story.view().card; if (c) story.approve(c.id); else story.step?.(0.1); } // play to the end (no Skip)
   const ask = story.view().card!;
-  expect(ask.title).toBe('Want to create your own factory?');
+  expect(ask.title).toBe('Want to build yours?');
   story.view(); story.view();
   expect(opens).toBe(0);
   story.approve(ask.id);
@@ -131,7 +131,7 @@ test('the guest tour asks "Want to create your own factory?" first; its yes goes
   const signIn = connections.card()!;
   await connections.answer(signIn.id, false); // back from the password or GitHub without signing in
   const again = story.view().card!;
-  expect(again.title).toBe('Want to create your own factory?');
+  expect(again.title).toBe('Want to build yours?');
   expect(again.id).not.toBe(ask.id);
   expect(opens).toBe(1);
 });
