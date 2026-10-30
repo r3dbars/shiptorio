@@ -10,9 +10,11 @@ export async function assertLinuxSandbox() {
   const [err, code] = await Promise.all([new Response(child.stderr).text(), child.exited]);
   if (code) throw new Error(`Bubblewrap is unavailable: enable unprivileged user namespaces. ${err.slice(0, 300)}`);
 }
-export async function linuxSandbox(work: string, agent?: AgentSandboxOptions): Promise<CheckSandbox> {
+export async function linuxSandbox(work: string, agent?: AgentSandboxOptions, options: { exactRoot?: boolean } = {}): Promise<CheckSandbox> {
   await assertLinuxSandbox();
-  const directory = await realpath(work), root = await realpath(await mkdtemp(join(tmpdir(), "shiptorio-check-")));
+  const directory = await realpath(work);
+  if (options.exactRoot && directory !== work) throw new Error("Verification root must be the assigned checkout");
+  const root = await realpath(await mkdtemp(join(tmpdir(), "shiptorio-check-")));
   const home = agent ? await realpath(agent.home) : join(root, "home"), temp = join(root, "tmp"), bin = join(root, "bin");
   if (!agent) await mkdir(home); await mkdir(temp); await mkdir(bin);
   const runtime = await realpath(process.execPath), node = Bun.which("node");
@@ -37,7 +39,7 @@ export async function linuxSandbox(work: string, agent?: AgentSandboxOptions): P
       if (location !== directory && !location.startsWith(directory + "/")) throw new Error("Verification cwd escapes the assigned checkout");
       if (options.install && !(await realpath(args[0]) === runtime && args.length === 4 && args[1] === "install" && args[2] === "--frozen-lockfile" && args[3] === "--ignore-scripts")) throw new Error("Only frozen dependency installation without lifecycle scripts can use network access");
       // Mask host temp before mounting trusted runtimes/agent binaries, which may themselves live in /tmp.
-      const child = Bun.spawn([Bun.which("bwrap")!, "--die-with-parent", "--new-session", "--unshare-all", ...(options.install || agent ? ["--share-net"] : []), "--cap-drop", "ALL", "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", ...visible, "--bind", directory, directory, "--bind", root, root, ...(agent ? ["--bind", home, home] : []), ...readOnlyFiles.flatMap(path => ["--ro-bind", path, path]), "--chdir", location, "--", ...(options.install ? [args[0], "--no-env-file", "--config=/dev/null", ...args.slice(1)] : args)], { cwd: location, env, stdin: "ignore", stdout: "pipe", stderr: "pipe", detached: true });
+      const child = Bun.spawn([Bun.which("bwrap")!, "--die-with-parent", "--new-session", "--unshare-all", ...(options.install || agent ? ["--share-net"] : []), "--cap-drop", "ALL", "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", ...visible, "--bind", directory, directory, "--bind", root, root, ...(agent ? ["--bind", home, home] : []), ...readOnlyFiles.flatMap(path => ["--ro-bind", path, path]), "--chdir", location, "--", ...(options.install ? [args[0], "--no-env-file", "--config=/dev/null", ...args.slice(1)] : args)], { cwd: location, env, stdin: options.input === undefined ? "ignore" : new Blob([options.input]), stdout: "pipe", stderr: "pipe", detached: true });
       const stop = () => { try { process.kill(-child.pid, "SIGKILL"); } catch {} };
       let timedOut = false;
       const timer = setTimeout(() => { timedOut = true; stop(); }, options.timeout ?? 180000);

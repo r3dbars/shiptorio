@@ -1,5 +1,5 @@
-import { lstat, mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import type { CheckSandbox } from "./sandbox";
+import { localFiles } from "./local-files";
 import { lookup } from "node:dns/promises";
 
 // Geothermal power: a model on the player's own hardware (Ollama, llama.cpp server, LM Studio, MLX)
@@ -82,34 +82,8 @@ export async function detectLocalModel(config: LocalModelConfig, fetchImpl: type
   }
 }
 
-/** Refuse symlinked parents or targets: the checkout is untrusted and this process is not sandboxed. */
-async function safeTarget(work: string, path: string, create: boolean): Promise<string> {
-  if (!/^[\w./@+-]+$/.test(path) || path.startsWith("/") || path.split("/").some(p => p === ".." || p === "." || p.toLowerCase().startsWith(".git"))) throw new Error("Unsafe local edit path");
-  let current = work;
-  for (const part of path.split("/").slice(0, -1)) {
-    current = join(current, part);
-    try { if (!(await lstat(current)).isDirectory()) throw new Error("Local edit parent is not a regular directory"); }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      if (create) await mkdir(current); else return join(work, path);
-    }
-  }
-  const target = join(work, path);
-  try { if (!(await lstat(target)).isFile()) throw new Error("Local edit target is not a regular file"); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-  return target;
-}
-
-export async function readScope(work: string, paths: string[]): Promise<Record<string, string | null>> {
-  const files: Record<string, string | null> = {};
-  for (const path of paths) {
-    const target = await safeTarget(work, path, false);
-    const file = Bun.file(target);
-    if (!(await file.exists())) { files[path] = null; continue; }
-    if (file.size > LOCAL_LIMITS.maxFileBytes) throw new Error(`${path} is too big for local power`);
-    files[path] = await file.text();
-  }
-  return files;
+export async function readScope(work: string, paths: string[], sandbox: CheckSandbox): Promise<Record<string, string | null>> {
+  return localFiles(sandbox, work, paths, LOCAL_LIMITS.maxFileBytes);
 }
 
 export function localMessages(plan: string, files: Record<string, string | null>) {
@@ -133,7 +107,7 @@ export function parseLocalEdits(text: string, allowedPaths: string[]): { summary
     const f = raw as { path?: unknown; content?: unknown };
     if (typeof f?.path !== "string" || typeof f.content !== "string") throw new Error("Local model edit is malformed");
     if (!allowedPaths.includes(f.path) || seen.has(f.path)) throw new Error("Local model edited a path outside the approved scope");
-    if (f.content.length > LOCAL_LIMITS.maxFileBytes) throw new Error("Local model edit is too large");
+    if (Buffer.byteLength(f.content) > LOCAL_LIMITS.maxFileBytes) throw new Error("Local model edit is too large");
     seen.add(f.path);
     return { path: f.path, content: f.content };
   });
@@ -146,9 +120,9 @@ export function parseLocalEdits(text: string, allowedPaths: string[]): { summary
  * checks, sandboxed typecheck/test/build, verify bay and trusted publication as any
  * subscription agent. Nothing here commits or pushes.
  */
-export async function runLocalAssembler(job: { plan: string; allowedPaths: string[] }, work: string, config: LocalModelConfig, fetchImpl: typeof fetch = fetch): Promise<{ summary: string; paths: string[] }> {
+export async function runLocalAssembler(job: { plan: string; allowedPaths: string[] }, work: string, config: LocalModelConfig, sandbox: CheckSandbox, fetchImpl: typeof fetch = fetch): Promise<{ summary: string; paths: string[] }> {
   if (!job.allowedPaths.length || job.allowedPaths.length > LOCAL_LIMITS.maxFiles) throw new Error(`Local power takes 1-${LOCAL_LIMITS.maxFiles} files; route this job to a subscription`);
-  const files = await readScope(work, job.allowedPaths);
+  const files = await readScope(work, job.allowedPaths, sandbox);
   await assertResolvesLocal(config.baseUrl);
   const r = await fetchImpl(`${config.baseUrl}/chat/completions`, {
     redirect: "error", method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(LOCAL_LIMITS.timeoutMs),
@@ -159,12 +133,8 @@ export async function runLocalAssembler(job: { plan: string; allowedPaths: strin
   const content = reply.choices?.[0]?.message?.content;
   if (typeof content !== "string") throw new Error("Local model reply has no message");
   const edits = parseLocalEdits(content, job.allowedPaths);
-  const changed: string[] = [];
-  for (const edit of edits.files) {
-    if (files[edit.path] === edit.content) continue;
-    await Bun.write(await safeTarget(work, edit.path, true), edit.content);
-    changed.push(edit.path);
-  }
+  const changed = edits.files.filter(edit => files[edit.path] !== edit.content);
   if (!changed.length) throw new Error("Local model made no changes");
-  return { summary: edits.summary, paths: changed };
+  await localFiles(sandbox, work, changed.map(edit => edit.path), LOCAL_LIMITS.maxFileBytes, { edits: changed, expected: files });
+  return { summary: edits.summary, paths: changed.map(edit => edit.path) };
 }
