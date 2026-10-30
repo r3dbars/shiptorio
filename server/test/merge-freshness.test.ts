@@ -4,7 +4,7 @@ import { expect, it, mock } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
 import { FactoryState, type Item } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
-import { freshInspection, setStage } from "../src/gauntlet";
+import { freshInspection, reworkMove, setStage } from "../src/gauntlet";
 import { emptyBook, setPermit } from "../src/permits";
 import { RateLimitError } from "../src/rate-limit";
 import { authorizedSocket, browserEnv } from "./browser-fixture";
@@ -52,7 +52,7 @@ async function fixture(run: (f: { factory: InstanceType<typeof Factory>; data: M
     const autoLaunch = async () => {
       data.set("permits", setPermit(emptyBook(), "docs", true));
       await factory.exportState();
-      await (factory as unknown as { launch(item: Item, by: "autonomy"): Promise<void> }).launch(saved().items[0], "autonomy");
+      await (factory as unknown as { launch(item: Item, by: "autonomy", approvedHead: string): Promise<void> }).launch((factory as unknown as { state: FactoryState }).state.items[0], "autonomy", saved().items[0].inspection!.headSha);
     };
     await run({ mergeState: state => { mergeState = state; }, factory, data, saved, mode: next => { mode = next; }, currentHead: sha => { current = sha; }, files: (next, change = false) => { names = next; changeDuringFiles = change; }, merges: () => merges, launch, autoLaunch, duringFiles: fn => { duringFiles = fn; }, station: () => (factory as unknown as { runGauntlet(): Promise<void> }).runGauntlet(), putItem: async item => { await factory.exportState(); await (factory as unknown as { patch(p: { items: Item[] }): Promise<void> }).patch({ items: [item] }); } });
   } finally { globalThis.fetch = original; }
@@ -99,7 +99,7 @@ it("a changed head returns to CI instead of consuming an old launch approval", a
   await fixture(async f => {
     f.currentHead("b".repeat(40));
     await f.factory.exportState();
-    await (f.factory as unknown as { launch(item: Item, by: "player"): Promise<void> }).launch(f.saved().items[0], "player");
+    await (f.factory as unknown as { launch(item: Item, by: "player", approvedHead: string): Promise<void> }).launch((f.factory as unknown as { state: FactoryState }).state.items[0], "player", head);
     expect(f.merges()).toBe(0);
     expect(f.saved().items[0].state).toBe("inspecting");
     expect(f.saved().items[0].inspection?.headSha).toBe("b".repeat(40));
@@ -255,5 +255,108 @@ it("the player approval is saved before the launch is published", async () => {
     await f.launch();
     expect(f.saved().items[0].state).toBe("launched");
     expect(f.merges()).toBe(1);
+  });
+});
+
+
+type MergeFixture = Parameters<Parameters<typeof fixture>[0]>[0];
+async function offerOverrule(f: MergeFixture) {
+  await f.putItem(setStage(f.saved().items[0], "ai", "rework", "Review requires a change"));
+  await (f.factory as unknown as { offerGauntletMove(): Promise<void> }).offerGauntletMove();
+  const card = f.saved().deck!.find(m => m.options.some(o => o.id === "overrule"))!;
+  expect(card).toBeDefined();
+  return card;
+}
+async function chooseOverrule(f: MergeFixture, id: string) {
+  await f.factory.webSocketMessage(authorizedSocket(undefined, "owner/repo"), JSON.stringify({ type: "choose_move", moveId: id, optionId: "overrule" }));
+}
+
+it("an overrule cannot approve a head pushed after its card was offered", async () => {
+  await fixture(async f => {
+    const card = await offerOverrule(f);
+    f.currentHead("b".repeat(40));
+    await chooseOverrule(f, card.id);
+    expect(f.merges()).toBe(0);
+    expect(f.saved().items[0].inspection?.headSha).toBe("b".repeat(40));
+    expect(f.saved().items[0].state).toBe("inspecting");
+  });
+});
+
+it("an unchanged overrule remains explicit and obeys GitHub merge policy", async () => {
+  for (const policy of ["clean", "behind", "blocked"]) await fixture(async f => {
+    const card = await offerOverrule(f);
+    f.mergeState(policy);
+    const fetchBefore = globalThis.fetch;
+    let submittedHead: unknown;
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      if (String(input).endsWith("/merge")) submittedHead = JSON.parse(String(init?.body)).sha;
+      return fetchBefore(input, init);
+    }) as typeof fetch;
+    await chooseOverrule(f, card.id);
+    expect(f.merges()).toBe(policy === "clean" ? 1 : 0);
+    expect(submittedHead).toBe(policy === "clean" ? head : undefined);
+  });
+});
+
+it("an overrule cannot reuse a replaced inspection during readiness", async () => {
+  for (const replacementHead of [head, "b".repeat(40)]) await fixture(async f => {
+    const card = await offerOverrule(f);
+    const fetchBefore = globalThis.fetch;
+    let reads = 0;
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      if (String(input).endsWith("/pulls/99") && ++reads === 2) {
+        await f.putItem(setStage({ ...f.saved().items[0], inspection: freshInspection(replacementHead) }, "ai", "rework", "New review"));
+      }
+      return fetchBefore(input, init);
+    }) as typeof fetch;
+    await chooseOverrule(f, card.id);
+    expect(reads).toBeGreaterThanOrEqual(2);
+    expect(f.merges()).toBe(0);
+    expect(f.saved().items[0].inspection?.headSha).toBe(replacementHead);
+  });
+});
+
+it("publishing a stale review card never upgrades its merge authority to the new head", async () => {
+  await fixture(async f => {
+    const rejected = setStage(f.saved().items[0], "ai", "rework", "Old review");
+    const card = reworkMove(rejected);
+    const newer = setStage({ ...rejected, inspection: freshInspection("b".repeat(40)) }, "ai", "rework", "New review");
+    await f.putItem(newer);
+    await (f.factory as unknown as { publishDecision(move: typeof card): Promise<void> }).publishDecision(card);
+    expect(f.saved().deck?.some(m => m.id === card.id)).toBe(false);
+    expect(f.merges()).toBe(0);
+  });
+});
+
+
+it("an old selected card cannot overwrite an already newer local inspection", async () => {
+  await fixture(async f => {
+    const card = await offerOverrule(f);
+    const newer = setStage({ ...f.saved().items[0], inspection: freshInspection("b".repeat(40)) }, "ai", "rework", "New review");
+    await f.putItem(newer);
+    // A socket handler may have selected this card before awaiting other work.
+    const handler = f.factory as unknown as { state: FactoryState; chooseGauntletMove(id: string, option: string): Promise<boolean> };
+    handler.state.move = card;
+    await handler.chooseGauntletMove(card.id, "overrule");
+    expect(f.merges()).toBe(0);
+    expect(f.saved().items[0].inspection).toEqual(newer.inspection);
+  });
+});
+
+it("merge execution rejects missing, malformed or mismatched stored approval targets", async () => {
+  for (const args of [
+    { pr: 99, overrule: true },
+    { pr: 99, overrule: true, headSha: "unknown" },
+    { pr: 99, overrule: true, headSha: 123 },
+    { pr: 100, overrule: true, headSha: head },
+    { pr: 99, overrule: false, headSha: head },
+  ]) await fixture(async f => {
+    const card = await offerOverrule(f);
+    card.options.find(o => o.id === "overrule")!.actions[0].args = args;
+    const handler = f.factory as unknown as { state: FactoryState; chooseGauntletMove(id: string, option: string): Promise<boolean> };
+    handler.state.move = card;
+    await handler.chooseGauntletMove(card.id, "overrule");
+    expect(f.merges()).toBe(0);
+    expect(f.saved().items[0].state).toBe("rejected");
   });
 });

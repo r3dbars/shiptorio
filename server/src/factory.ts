@@ -418,6 +418,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     this.openMoves = this.openMoves!.filter(move => {
       const item = move.itemId && s.items.find(i => i.id === move.itemId);
       if (move.itemId && (!item || item.state === "launched")) return false;
+      // Restored or delayed merge cards cannot acquire authority over a new commit.
+      if (move.options.some(o => o.actions.some(a => a.tool === "request_merge" && (!item || a.args.pr !== item.prNumber || typeof a.args.headSha !== "string" || !/^[a-f0-9]{40}$/.test(a.args.headSha) || a.args.headSha !== item.inspection?.headSha)))) return false;
       const boundHead = move.options.flatMap(o => o.actions).find(a => typeof a.args.headSha === "string")?.args.headSha;
       if (boundHead && item && boundHead !== item.inspection?.headSha) return false;
       const proposing = move.options.some(o => o.actions.some(a => a.tool === "plan_runner_job"));
@@ -793,7 +795,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (move) {
       move = enrichMove(move, this.state!);
       const item = this.state!.items.find(i => i.id === move!.itemId);
-      if (item?.inspection) move = { ...move, options: move.options.map(o => ({ ...o, actions: o.actions.map(a => ({ ...a, args: { ...a.args, headSha: item.inspection!.headSha, scarCount: item.scars?.length ?? 0 } })) })) };
+      if (item?.inspection) move = { ...move, options: move.options.map(o => ({ ...o, actions: o.actions.map(a => ({ ...a, args: { ...a.args, headSha: a.tool === "request_merge" ? a.args.headSha : item.inspection!.headSha, scarCount: item.scars?.length ?? 0 } })) })) };
       const key = moveKey(move);
       const previous = this.openMoves!.find(m => moveKey(m) === key);
       if (previous) move = { ...move, id: previous.id, createdAt: previous.createdAt };
@@ -3006,26 +3008,29 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const ready = optionId === "launch" && item.state === "on_pad" && item.inspection?.state === "passed" && stationsPassed(item.inspection);
     const overrule = optionId === "overrule" && item.state === "rejected";
     if (!ready && !overrule) return true;
-    await this.launch(item, overrule ? "overrule" : "player");
+    const action = move.options.find(o => o.id === optionId)?.actions.find(a => a.tool === "request_merge");
+    if (!action || action.args.pr !== item.prNumber || (action.args.overrule === true) !== overrule) return true;
+    await this.launch(item, overrule ? "overrule" : "player", action.args.headSha);
     return true;
   }
 
   /** Merges at the merge gate: the player's tap, an overrule, or a launch permit doing it on its own. */
-  private async launch(item: Item, by: "player" | "overrule" | "autonomy"): Promise<void> {
+  private async launch(item: Item, by: "player" | "overrule" | "autonomy", approvedHead: unknown): Promise<void> {
     if (by === "autonomy" && !(await flagEnabled(this.env, "permits"))) return;
     if (!item.prNumber || !this.meta) return;
     const launchingItem = this.state!.items.find(current => current.id === item.id && current.prNumber === item.prNumber);
     const launchingInspection = launchingItem?.inspection;
     try {
+      if (typeof approvedHead !== "string" || !/^[a-f0-9]{40}$/.test(approvedHead) || launchingItem !== item || launchingInspection?.headSha !== approvedHead) throw new Error("Current checks changed since this approval was offered.");
       const token = await installationToken(this.env, this.meta.installationId);
       const head = (await gh<{ head: { sha: string } }>(`/repos/${this.meta.repo}/pulls/${item.prNumber}`, token)).head.sha;
-      if (!launchingItem || !this.state!.items.some(current => current === launchingItem)) throw new Error("Current checks changed while launch was being refreshed.");
+      if (!launchingItem || !this.state!.items.some(current => current === launchingItem && current.inspection === launchingInspection)) throw new Error("Current checks changed while launch was being refreshed.");
+      if (approvedHead !== head) {
+        await this.patch({ items: [{ ...item, state: "inspecting", machineId: "ci-1", inspection: freshInspection(head), updatedAt: Date.now() }] });
+        throw new Error("The PR changed after its checks ran. It goes back through the gauntlet.");
+      }
       if (by !== "overrule") {
         if (!stationsPassed(item.inspection)) throw new Error("Current checks require complete station receipts.");
-        if (item.inspection?.headSha !== head) {
-          await this.patch({ items: [{ ...item, state: "inspecting", machineId: "ci-1", inspection: freshInspection(head), updatedAt: Date.now() }] });
-          throw new Error("The PR changed after its checks ran. It goes back through the gauntlet.");
-        }
         const checks = await inspectPullRequest(token, this.meta.repo, item.prNumber, head, this.state!.baseBranch);
         if (!launchingItem || !this.state!.items.some(current => current === launchingItem)) throw new Error("Current checks changed while launch was being refreshed.");
         if (checks.stale) throw new Error("The PR changed while its checks were being refreshed.");
@@ -3055,7 +3060,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         await this.offerGauntletMove();
         throw new Error(`Current checks: ${readiness.reason}`);
       }
-      if (by !== "overrule" && !this.state!.items.some(current => current.id === item.id && current.prNumber === item.prNumber && current.inspection === launchingInspection && current.inspection?.headSha === head && current.state === "on_pad" && stationsPassed(current.inspection))) {
+      if (!this.state!.items.some(current => current.id === item.id && current.prNumber === item.prNumber && current.inspection === launchingInspection && current.inspection?.headSha === approvedHead && (by === "overrule" ? current.state === "rejected" : current.state === "on_pad" && stationsPassed(current.inspection)))) {
         throw new Error("Current checks changed while launch was being refreshed.");
       }
       const mergeSha = await mergePullRequest(token, this.meta.repo, item.prNumber, head, item.title);
@@ -3181,7 +3186,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const book = await this.permitBook();
     for (const item of this.state?.items.filter((i) => mayAutoLaunch(book, i)) ?? []) {
       if ((await this.ctx.storage.get<string>(`autoLaunchFailed:${item.id}`)) === item.inspection?.headSha) continue;
-      await this.launch(item, "autonomy");
+      await this.launch(item, "autonomy", item.inspection?.headSha);
     }
   }
 
