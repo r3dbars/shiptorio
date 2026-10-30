@@ -64,8 +64,7 @@ starts doing that step without asking. Ship it always waits for a human.
 - **Try it:** [shiptorio.dev](https://shiptorio.dev). Shippy walks you through a scripted factory in about two
   minutes. Nothing in the walkthrough touches a real repo.
 - **Build your own:** sign in with GitHub, pick a repo, install the runner with one line, and your first issue
-  becomes your first real launch. Runner setup: [docs/site/runner.md](docs/site/runner.md). During the hackathon
-  this is behind a preview password.
+  becomes your first real launch. Runner setup: [docs/site/runner.md](docs/site/runner.md).
 
 <p align="center">
   <img src="docs/readme/tour-first-card.png" alt="The tour's first card on a small empty platform: Hi, I'm Shippy! Great to meet you." width="740">
