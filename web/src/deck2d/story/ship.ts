@@ -11,16 +11,15 @@ import { PAYOFF } from "../payoff";
 import type { CardView, DeckBus, DeckSource, DeckView, ShippyView, StopId } from "../contract";
 import type { AttentionView } from "../stations/attention";
 import { TOUR } from "./tour";
-import { FEEL } from "../feel";
 
 export type ShipPhase = "off" | "lever" | "ride" | "launch" | "done";
 
 export const SHIP_CRATE = "tour-crate";
 
 export const SHIP_TIMING = {
-  lever: FEEL.rocket.lever, // Shippy pulls the lever before the crate moves (the tour hands it to Launch at the same moment)
+  lever: 0.6, // Shippy pulls the lever before the crate moves (the tour hands it to Launch at the same moment)
   ride: 2.5, // most the crate gets to reach the pad; crate-arrive normally ends it sooner (playtest: the rocket idled ~6s)
-  settle: FEEL.rocket.settle, // the crate sits on the pad a beat before the countdown
+  settle: 0.3, // the crate sits on the pad a beat before the countdown
   liftoff: 1.5, // no "launch" event (no rocket layer): go on anyway after this
   afterLaunch: PAYOFF.afterLaunch, // the rocket clears the pad and climbs before the next card covers the bottom
 } as const;

@@ -11,8 +11,8 @@ test("launch holds for ignition, climbs, coasts and decelerates to the pad", () 
   expect(flightPose(FLIGHT_SECONDS)).toMatchObject({ stage: "ready", y: 0, x: 0, lean: 0, legs: 1 });
 });
 
-test("the longer ascent, coast and descent meet without teleporting", () => {
-  expect(FLIGHT.ascent).toBeGreaterThanOrEqual(5);
+test("the ascent, coast and descent meet without teleporting", () => {
+  expect(FLIGHT.ascent).toBeGreaterThanOrEqual(3); // snappy (feel test 2026-10-30), still long enough to read
   expect(FLIGHT.landing).toBeGreaterThanOrEqual(8);
   for (const boundary of [FLIGHT.ignition + FLIGHT.ascent, FLIGHT.ignition + FLIGHT.ascent + FLIGHT.coast]) {
     const before = flightPose(boundary - 0.001), after = flightPose(boundary + 0.001);

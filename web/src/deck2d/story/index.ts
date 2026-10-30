@@ -17,7 +17,6 @@ import { LAUNCH_BUILD_SECONDS } from "../launch/timeline";
 import { CITY_COPY, STOPS, type CardView, type DeckSource, type DeckView, type Item, type ShippyView, type StopId } from "../contract";
 import type { AttentionView } from "../stations/attention";
 import { revealAt } from "./reveal";
-import { FEEL } from "../feel";
 
 export interface StoryOptions {
   seed?: number; // same seed, same story (crate titles, spawn jitter)
@@ -60,6 +59,7 @@ const ISLAND_SEC = Math.min(LAUNCH_BUILD_SECONDS, 8);
 const FIXES = ["login typo", "broken docs link", "button label", "footer link", "empty state copy", "page title"];
 const CALL_PILE = 3; // crates waiting at Review before the first card slides up
 const PREROLL = 0.5; // startAt "reveal": seconds of a running line before the hero rocket goes up
+const RELEASE_HOLD = 0.5; // seconds Review holds still after a yes before the pile goes (anticipation)
 const PILE_CAP = 9; // stop adding crates past this so the heap stays readable
 
 // The small working line the story opens on: everything but the Gate, island up. Whenever the island is up the deck
@@ -348,10 +348,11 @@ export function createStory(opts: StoryOptions = {}): Story {
     S.approvals++;
     S.card = null;
     // Each yes releases a batch of the pile, quickly, so the swipe visibly moves the line.
-    // ?feel=jamX (feel.ts): how long Review holds after the yes, how much of the pile goes, how far apart.
-    const release = Math.max(3, Math.ceil(S.st.review.q.length * FEEL.jam.batch));
-    if (FEEL.jam.hold > 0) after(FEEL.jam.hold, () => { S.budget = (S.budget ?? 0) + release; }); else S.budget = (S.budget ?? 0) + release;
-    S.reviewSvc = FEEL.jam.svc;
+    // The whole pile goes (Justin's pick, feel test 2026-10-30): a held beat after the yes, then every waiting crate
+    // leaves Review in quick succession.
+    const release = Math.max(3, S.st.review.q.length);
+    after(RELEASE_HOLD, () => { if (S.budget != null) S.budget += release; }); // null: Review already runs free
+    S.reviewSvc = 0.18;
     S.shippy = { pose: "happy", at: "corner" };
     if (S.approvals >= 3) { goAuto(); return; }
     if (S.approvals >= (opts.swipes ?? 3)) { shortEnd(); return; }
