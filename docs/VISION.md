@@ -8,7 +8,7 @@
 > The pre-deck version (3D map, vertical shaft, island, build mode) is archived at
 > [context/archive/vision-before-deck.md](context/archive/vision-before-deck.md).
 >
-> Last updated: 2026-10-29.
+> Last updated: 2026-10-30.
 
 ## The goal
 
@@ -42,7 +42,7 @@ Belief before setup. A newcomer gets the story before they connect anything:
 - **Shippy is the only character.** Shippy the robot walks the line, parks on the jam and pulls the lever. No humans.
 - **Meta Muse Spark is Shippy's brain.** It reads the factory, picks the bottleneck, says in one plain line why, plans
   the work and reviews it. It never writes code. Coding runs on the player's own machine with their own Codex or
-  Claude Code subscription (the local runner). Player copy says Shippy, never "Spark", except one short tutorial beat that says
+  Muse Code subscription (the local runner). Player copy says Shippy, never "Spark", except one short tutorial beat that says
   Shippy is powered by Meta Muse Spark.
 - **One trust meter.** The dots on a card: approve the same kind of card as is three times and that kind becomes
   automatic (`server/src/learn.ts`). Later or a change resets it. The Gate (merging) never learns on its own.
@@ -61,7 +61,7 @@ password. Live on shiptorio.dev; shiptorio.com keeps its landing page and gate u
 ## Principles
 
 1. **Play → real-world results.** If it doesn't end as something real (a merged PR, a fixed error), it's decoration.
-2. **Spark is the brain, never a worker.** Triage, planning, routing and review stay with Spark. Codex and Claude
+2. **Spark is the brain, never a worker.** Triage, planning, routing and review stay with Spark. Codex and Muse
    Code are the hands.
 3. **Autonomy is earned.** Day one, every step asks. The trust meter is the only progress bar.
 4. **Verify everything.** Checks (CI + proof) → Review → Gate (your hold on Ship it). Fails loop back.
@@ -73,15 +73,21 @@ password. Live on shiptorio.dev; shiptorio.com keeps its landing page and gate u
 ## Non-goals (for now)
 
 - Spark as a coder or a hosted build farm.
-- Silent autonomy, auto-merge without earned trust, auto-sending to customers.
-- Breadth before the core loop works: marketing, Stripe, multi-repo empire, build mode, new mines.
+- Silent autonomy, automatic merging in the deck, auto-sending to customers.
+- Breadth before the core loop works: shaft map, marketing, pricing, Stripe, multi-repo empire, build mode, new mines.
 
-## Finish line (Justin, 2026-10-29)
+## Current focus (Justin, 2026-10-30)
 
-Polish, simplify and clean up the loop we have. **No new features.** Product done by **end of Monday Nov 2**
-(Fri full day, Sat ~4h, Sun ~4h, Mon finish). Tue Nov 3 and Wed Nov 4 are filming only; the Meta hackathon cutoff
-is Wed Nov 4 8 PM CT. Day-by-day plan, freeze points and who owns what: [context/demo-plan.md](context/demo-plan.md).
-Shot list: [context/demo-script.md](context/demo-script.md).
+The deck is the whole product. Simplify, polish and clean up the real issue-to-merge loop. **No new tour work,
+features, screens or settings.** Justin proves one real ship by hand: approve the plan, let his own Codex or
+Muse Code subscription build locally, hold **Ship it** at the Gate, and verify both the real GitHub merge and
+the rocket. A tutorial, fixture or replay cannot stand in for that proof.
+
+**Freeze Oct 31. Record Nov 1. Submit Nov 4 at noon CT.** The event cutoff is 8 PM CT; noon is our submission
+plan. After the freeze, fix only blockers in the existing loop or recording. The **shaft map, build mode,
+multi-repo empire and pricing are parked**. The old React map was deleted; it is not a second game surface.
+
+Schedule and ownership: [demo plan](context/demo-plan.md). Shot list: [demo script](context/demo-script.md).
 
 ## How to decide what's next
 
@@ -117,9 +123,9 @@ New high-level goals from Justin go here, dated, then get folded into the sectio
   forward in two minutes. Cards favor growing automation, verifiability and inputs. Details: PRODUCT.md "Check-in".
 - 2026-10-27: The map goes vertical (principle 10). Work is mined underground, cascades down, rides up through
   refining and the checks, becomes a PR and launches from the top. The visual style is critical and must make
-  plain what each part does. Lives in `web/src/map/shaft/`.
-- 2026-10-27: "This new artwork and vertical system needs to be the way this app works." The shaft is the map
-  for everyone (game, judge mode, tour, landing loop); the island stays behind `?world=iron` for one release.
+  plain what each part does. Historical: the shaft implementation was deleted on Oct 29.
+- 2026-10-27: "This new artwork and vertical system needs to be the way this app works." The shaft was then the map
+  for everyone; both that shaft and the earlier island implementation were deleted on Oct 29.
 - 2026-10-27: Build mode (advanced, optional): players build and redesign the factory themselves, Factorio /
   RollerCoaster Tycoon style, on the Black Iron art. Every piece is a real pipeline part, so the layout is the
   pipeline config, and the gauntlet can be added to but never bypassed. Spec (archived): `docs/context/archive/build-mode.md`.
@@ -153,3 +159,5 @@ New high-level goals from Justin go here, dated, then get folded into the sectio
 - 2026-10-29: Docs, README and code should all describe what shiptorio.dev is now and where it's headed.
 - 2026-10-29: The old React app is deleted (shaft and island maps, old UI, judge replay, ~40k lines). The deck is the only
   web app: "/" and old demo links go to it on every host, and `/judge` plays the deck's story with no password.
+
+- 2026-10-30: The deck is the product; no new tour work. Justin proves one real ship by hand. Freeze Oct 31, record Nov 1, submit Nov 4 at noon CT. Shaft map, build mode, empire and pricing stay parked.

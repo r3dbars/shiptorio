@@ -1,11 +1,13 @@
-# The growth loop (prototype)
+# The growth loop (parked prototype)
+
+> Parked, checked 2026-10-30. This is not a playable deck feature. The old React growth panels and map were deleted. The deck in `web/src/deck2d/` is the whole product; no new growth work before submission.
 
 **Review boundary:** live growth remains opt-in behind the existing default-off `newFeatures` kill switch and is paused until an authorized ordered, whole-window unique-person funnel query is implemented. The existing route traffic poll is context only. Simulator cohorts are synthetic; no real conversion or impact is validated by this prototype. Final comparisons require the full fixed window; missing/underpowered evidence stays inconclusive.
 
 The first loop past code, toward the long-term vision in `docs/VISION.md` ("Where it goes": marketing,
 acquisition, retention, same game, more districts). PR #177.
 
-**Play it:** `?source=sim&scenario=growth`
+**Fixture only:** `?source=sim&scenario=growth` retains synthetic state; it does not restore the removed growth UI.
 
 ## The loop
 
@@ -36,9 +38,6 @@ acquisition, retention, same game, more districts). PR #177.
 | Live: Spark prompt | `server/src/spark.ts` `proposeExperiment` |
 | Live: glue on the PostHog poll | `server/src/factory.ts` `growthPoll` (tests: `server/test/mines.test.ts`) |
 | Sim scenario | `web/src/sim/engine.ts` `growth` (tests: `playtest/test/growth.test.ts`) |
-| Measure station art (Item Lab style, states MEASURING · LIFT · NO LIFT · HURT · IDLE) | `docs/item-lab.html` + `web/src/map/itemlab.js` `buildMeasure` |
-| Map state, label, verdict pops | `web/src/map/scene.ts` (`stationArt`, `syncGrowth`) |
-| Station panel: A vs B bars per experiment | `web/src/ui/StationPanel.tsx` |
 
 ## Thresholds (shared/src/growth.ts)
 

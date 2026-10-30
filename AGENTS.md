@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Read this before you change anything. It's short on purpose: what's true **today** (2026-10-29). History lives in
+Read this before you change anything. It's short on purpose: what's true **today** (2026-10-30). History lives in
 [`docs/context/archive/`](docs/context/archive/README.md); don't follow rules you find there.
 
 ## Read first
@@ -19,11 +19,17 @@ work, and every rocket that launches is a real merged pull request. There's alwa
 waiting on one of your calls. You swipe a card, the line moves. Approve the same kind of thing a few times and the
 factory starts doing it on its own, so you're free for the next jam. Meta's Muse Spark makes the factory's decisions.
 
-Built for the Meta AI Developer Hackathon. **Cutoff: Wed Nov 4, 8 PM CT.** Product done by end of Mon Nov 2; Tue and
-Wed are filming only (see the demo plan).
+Built for the Meta AI Developer Hackathon. Submit **Wed Nov 4 at noon CT**; the event cutoff is 8 PM CT.
 
-**Right now: polish only (Justin, 2026-10-29).** "As simple as possible ... more simple, more clear, more friendly for
-end users, and more polished." No new features, screens or settings. Deleting beats adding.
+## Current focus (Justin, 2026-10-30)
+
+The 2D pixel deck with Shippy is the whole product. Polish and simplify the loop we have; **no new features,
+screens, settings or tour work**. Justin proves one real ship by hand: approve a plan, let his local agent build,
+hold **Ship it** at the Gate, then verify the GitHub merge and rocket. A scripted preview is not that proof.
+
+**Freeze Oct 31. Record Nov 1. Submit Nov 4 at noon CT.** After the freeze, only fixes needed for the existing
+loop or recording; no new scope. The shaft map, build mode, multi-repo empire and pricing are parked.
+See [the demo plan](docs/context/demo-plan.md). Deleting beats adding.
 
 ## The deck is the product
 
@@ -55,7 +61,7 @@ Never "you are the bottleneck"; say what's waiting on you.
 - A GitHub App for sign-in, installs and webhooks ([`docs/context/github-app.md`](docs/context/github-app.md)).
 - Muse Spark (`muse-spark-1.3` on the Meta Model API, OpenAI-compatible) plans and decides
   (`server/src/spark.ts`).
-- The local runner (`runner/`) runs Codex or Claude Code on the player's machine, in a git worktree, and pushes
+- The local runner (`runner/`) runs Codex or Muse Code on the player's machine, in a git worktree, and pushes
   branches. Subscription logins only ever run there, never on our servers.
 
 Bun workspaces: `shared/` (model + protocol, the contract), `server/`, `runner/`, `web/`, `playtest/`.
