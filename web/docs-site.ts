@@ -31,7 +31,9 @@ function frontmatter(raw: string): { meta: Record<string, string>; body: string 
 }
 
 const slugify = (text: string) => text.toLowerCase().replace(/<[^>]+>/g, "").replace(/&[a-z]+;|&#\d+;/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-const plain = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, " ").trim();
+// Strip tags until none are left (a removal can join "<scr" + "ipt>"), then decode &amp; last so "&amp;lt;" stays "&lt;".
+const stripTags = (html: string): string => { const next = html.replace(/<[^>]*>?/g, " "); return next === html ? next : stripTags(next); };
+const plain = (html: string) => stripTags(html).replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 
 function render(slug: string, raw: string): DocPage {
