@@ -15,17 +15,17 @@ can see, and rewards you for adding more of them. The more you verify, the more 
 
 ## Meet Shippy
 
-Shippy is the robot who runs your line. **Meta Muse Spark is Shippy's brain.** It reads your issues, plans the
+Shippy is the robot who runs your line. **Meta Muse Wonder is Shippy's brain.** It reads your issues, plans the
 change, spots the bottleneck, reviews the result and tells you what to do next. It never writes code.
 
-The code is written by your own **Codex or Muse Code subscription**, through a small runner on your machine.
-Your sign-ins are the power plants. Nothing runs on our servers but the game.
+The code is written by your own **Muse Code subscription**, or another coding subscription like Codex, through a
+small runner on your machine. Your sign-ins are the power plants. Nothing runs on our servers but the game.
 
 ## How a fix ships
 
 1. **Repo.** An issue arrives on the line.
 2. **Planner.** Shippy proposes a plan and the files it may touch. You approve or send it back.
-3. **Builder.** Your Codex or Muse Code writes the change locally and opens a pull request.
+3. **Builder.** Your Muse Code or Codex writes the change locally and opens a pull request.
 4. **Checks.** CI, lint, tests and proof checks run. Fails ride back to the planner with a scar.
 5. **Review.** Shippy reads the diff and gives a verdict.
 6. **Gate.** You hold **Ship it**. The PR merges for real.
@@ -66,8 +66,8 @@ opens the PR. Secrets are encrypted per repo and never reach the browser or the 
 
 ## Built at the Meta AI Developer Hackathon
 
-Everything here was built between Oct 26 and Nov 4, 2026, from an empty repo. Muse Spark makes every
-factory decision. Muse Code is one of the two builders.
+Everything here was built between Oct 26 and Nov 4, 2026, from an empty repo. Muse Wonder makes every
+factory decision. Muse Code is the builder.
 
 ## License
 
