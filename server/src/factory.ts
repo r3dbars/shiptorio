@@ -580,7 +580,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const seen = freshSignals(cache.signals, now), shown = [...seen.slice(0, 4), ...seen.slice(4).filter(x => x.source === "ci")];
       // "set aside" marks what memory skips (Later, or acted on), so a pass over a heavy signal is readable.
       const open = new Set(brainEligible(cache.signals, before, now).map(x => x.id));
-      if (force) this.log("info", `Shippy looked: ${shown.map(x => `${x.title.slice(0, 60)} (${signalWeight(x, now).toFixed(2)}${open.has(x.id) ? "" : ", set aside"})`).join("; ") || "nothing to flag"}. ${result.why}`.slice(0, 600));
+      if (force) this.log("info", `Shippy looked: ${shown.map(x => `${x.title.slice(0, 60)} (${signalWeight(x, now).toFixed(2)}${x.confidence < 1 ? `, ${Math.round(x.confidence * 100)}% sure` : ""}${open.has(x.id) ? "" : ", set aside"})`).join("; ") || "nothing to flag"}. ${result.why}`.slice(0, 600));
       if (result.decided) {
         const log = await this.ctx.storage.get<Diagnosis[]>("brainDiagnoses") ?? [];
         await this.accountPut("brainDiagnoses", [result.diagnosis, ...log].slice(0, 50));

@@ -6,6 +6,8 @@
 import { signalId, type BrainSignal, type Evidence, type SignalCollector } from "@shiptorio/shared";
 import { gh } from "../github";
 import { OutboundError } from "../reliability";
+import { RateLimitError } from "../rate-limit";
+import { log } from "../telemetry";
 
 /** The fields we use from GET /repos/{repo}/actions/runs. */
 export interface WorkflowRun {
@@ -246,6 +248,20 @@ export async function fetchRuns(repo: string, token: string, sinceIso: string): 
 /** Our GitHub App asks for checks: read, not Actions, so /actions/runs is a 403 on a real install. Check runs on the
  * open PRs' heads and on the default branch say the same things that matter most (red main, a check blocking PRs),
  * shaped as runs so one derive serves both. Found by the real-loop proof: a red PR never reached Shippy. */
+/** A forced look reads every source at once and they share the install's one-a-second GitHub slot, so this second
+ * call often lands behind a queue and gets RateLimitError. Wait out a short one rather than drop to 0.8 confidence. */
+async function openPrsOf(ctx: CiContext, repo: string, token: string): Promise<number[] | undefined> {
+  const read = ctx.fetchOpenPrs ?? (ctx.fetchRuns ? undefined : fetchOpenPrs);
+  for (let attempt = 0; read && attempt < 3; attempt++) {
+    try { return await read(repo, token); } catch (error) {
+      const wait = error instanceof RateLimitError ? error.retryAt - Date.now() : Infinity;
+      if (attempt === 2 || wait > 15_000) { log("warn", "ci.open_prs_failed", { repo, error: String(error).slice(0, 200) }); return undefined; }
+      await new Promise(r => setTimeout(r, Math.max(250, wait)));
+    }
+  }
+  return undefined;
+}
+
 export async function fetchOpenPrs(repo: string, token: string): Promise<number[]> {
   return (await gh<{ number: number }[]>(`/repos/${repo}/pulls?state=open&per_page=100`, token)).map(p => p.number);
 }
@@ -295,7 +311,7 @@ export async function readCiSignals(ctx: CiContext, now: number): Promise<BrainS
         ? { at: now, triedAt: now, runs: await checks(), fromChecks: true }
         : { at: now, triedAt: now, runs: await (ctx.fetchRuns ?? fetchRuns)(repo, token, new Date(now - WINDOW_MS).toISOString()),
           // Which PRs are still open, so a red one counts at full confidence. One call; unknown on a failure.
-          openPrs: ctx.openPrs ? undefined : await (ctx.fetchOpenPrs ?? (ctx.fetchRuns ? undefined : fetchOpenPrs))?.(repo, token).catch(() => undefined) };
+          openPrs: ctx.openPrs ? undefined : await openPrsOf(ctx, repo, token) };
     } catch (error) {
       const denied = !snapshot?.fromChecks && error instanceof OutboundError && (error.status === 403 || error.status === 404);
       // No Actions access: fall back to check runs. Otherwise keep the old runs (they age out on freshUntil) and

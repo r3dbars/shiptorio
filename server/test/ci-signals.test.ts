@@ -3,6 +3,7 @@ import { BrainSignal, SIGNAL_KINDS, freshSignals } from "@shiptorio/shared";
 import clogged from "./fixtures/ci/clogged-runs.json";
 import healthy from "./fixtures/ci/healthy-runs.json";
 import { GitHubError } from "../src/github";
+import { RateLimitError } from "../src/rate-limit";
 import { ciCollector, deriveCiSignals, markCiDirty, minutes, POLL_MS, type CiCache, type CiContext, type WorkflowRun } from "../src/signals/ci";
 
 const now = Date.parse("2026-10-27T18:00:00Z");
@@ -174,6 +175,14 @@ describe("CI collector: reading cheaply", () => {
     const read = (open: number[]) => ciCollector.read(ctx({ fetchRuns: async () => [failing], fetchOpenPrs: async () => open }), now);
     expect((await read([39])).find(s => s.kind === "ci_blocking")!.confidence).toBe(1);
     expect((await read([12])).some(s => s.kind === "ci_blocking")).toBe(false); // closed PRs don't count
+  });
+
+  it("waits out a short GitHub queue for the open PR list instead of dropping confidence", async () => {
+    const failing = { id: 1, name: "check", head_branch: "seed", head_sha: "a".repeat(40), event: "pull_request", status: "completed", conclusion: "failure", created_at: new Date(now - 3_600_000).toISOString(), updated_at: new Date(now - 3_500_000).toISOString(), html_url: "https://github.com/x/y/runs/1", pull_requests: [{ number: 39 }] };
+    let tries = 0;
+    const signals = await ciCollector.read(ctx({ fetchRuns: async () => [failing], fetchOpenPrs: async () => { if (tries++ === 0) throw new RateLimitError(Date.now() + 300); return [39]; } }), now);
+    expect(tries).toBe(2);
+    expect(signals.find(s => s.kind === "ci_blocking")!.confidence).toBe(1);
   });
 
   it("keeps the last runs when GitHub hiccups, and backs off a full poll", async () => {
