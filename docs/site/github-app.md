@@ -25,15 +25,15 @@ The App asks for exactly these permissions:
 | --- | --- |
 | Contents: write | Your runner pushes `shiptorio/runner-*` branches, and Shiptorio squash-merges a PR when you launch it |
 | Pull requests: write | Open the PR your agent built, post the AI review verdict |
-| Issues: write | Post Spark's plan and status notes on the source issue |
-| Checks: read, Statuses: read | Read CI results for the CI inspector and orbit watch |
+| Issues: write | Post Shippy's plan and status notes on the source issue |
+| Checks: read, Statuses: read | Read CI results for Checks and post-merge status |
 | Metadata: read | Required by GitHub for every App |
 
 It listens to these webhooks: `issues`, `issue_comment`, `pull_request`, `pull_request_review`, `check_suite`, `check_run` and `push`. GitHub also sends install and uninstall events on its own.
 
 Every webhook is checked against its `X-Hub-Signature-256` signature, and repeat deliveries are dropped.
 
-> **Heads up** Agents never push to `main`. Runner branches are always `shiptorio/runner-<id>`, and a merge only happens when you hold **Ship it** at the Gate, or when a lane holds a launch permit you granted (see [Trust](/docs/trust)). Protect `main` with GitHub branch rules too. A repo-scoped token can't be limited to one branch, so branch protection is your backstop.
+> **Heads up** Agents never push to `main`. Runner branches are always `shiptorio/runner-<id>`, and a merge only happens when you hold **Ship it** at the Gate (see [Trust](/docs/trust)). Protect `main` with GitHub branch rules too. A repo-scoped token can't be limited to one branch, so branch protection is your backstop.
 
 ## What happens right after install
 

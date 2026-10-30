@@ -2,7 +2,9 @@
 
 What a brand-new GitHub account goes through, step by step, timed, with every snag and who owns it.
 Re-run it any time: `bun run stranger` (or `node playtest/stranger/run.mjs` after `bun run build`).
-CI runs the **Stranger E2E** workflow on every PR to `main`, including drafts and docs-only changes.
+CI runs the **Stranger E2E** workflow on PRs to `dev` and `main`, including drafts. Documentation-only changes outside the public docs site get a successful scope check without rerunning the browser journey (`scripts/ci/docs-only.sh`).
+
+The current journey uses the 2D pixel deck. The Oct 26 timings below are historical fixture results, not a current live-ship receipt.
 
 ## How the dry run works
 

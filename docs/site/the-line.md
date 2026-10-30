@@ -29,7 +29,7 @@ Shippy's brain, Meta Muse Spark, reads the issue and the code and proposes a sma
 
 ## Builder
 
-Your own coding agent builds the plan on your own machine: Codex or Claude Code, on your subscription, through the [local runner](/docs/runner). It pushes one commit to a `shiptorio/runner-*` branch and opens a PR. The server then re-reads the diff from GitHub and rejects it if it touched files you didn't approve or got too big.
+Your own coding agent builds the plan on your own machine: Codex or Muse Code, on your subscription, through the [local runner](/docs/runner). It pushes one commit to a `shiptorio/runner-*` branch and opens a PR. The server then re-reads the diff from GitHub and rejects it if it touched files you didn't approve or got too big.
 
 ## Checks
 
@@ -37,7 +37,7 @@ Your repo's CI runs on the PR, plus a proof check: a code change needs a test th
 
 ## Review
 
-Spark reads the diff and the repo and decides pass or rework, with findings. On a seeded test set it caught 10 of 10 bad fixes and passed 5 of 5 good ones ([results and limits](https://github.com/r3dbars/shiptorio/blob/dev/docs/EVAL.md)).
+Shippy reads the diff and the repo and decides pass or rework, with findings. On a seeded test set it caught 10 of 10 bad fixes and passed 5 of 5 good ones ([results and limits](https://github.com/r3dbars/shiptorio/blob/dev/docs/EVAL.md)).
 
 ## Gate
 
@@ -45,4 +45,4 @@ You hold **Ship it**. Right before merging, Shiptorio checks the PR hasn't chang
 
 ## Launch
 
-GitHub confirms the merge and the rocket goes up. Only a real, confirmed merge launches a rocket. Then a short "Shipped" line, and the next card.
+GitHub confirms the merge and the rocket goes up. In a live factory, only a real, confirmed merge launches a rocket. The tutorial and simulator animate sample merges. Then a short "Shipped" line, and the next card.

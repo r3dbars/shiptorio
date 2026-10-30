@@ -1,5 +1,7 @@
 # Black Iron line (source)
 
+> Historical prototype guidance (Oct 26, marked 2026-10-30). This is not the current game rulebook. The 2D pixel deck is the product; follow [VISION.md](../../VISION.md) and [pixel-deck.md](../../context/pixel-deck.md).
+
 The chosen art direction (Justin, Oct 26): the "Black Iron" Cogworks foundry, rebuilt as a real, readable
 production line. Built page: `docs/black-iron.html` (served at `/art/black-iron.html`).
 
