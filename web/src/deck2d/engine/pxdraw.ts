@@ -1,4 +1,5 @@
 import { ART_PX, PALETTE as C, type Item } from "../contract";
+import { FEEL } from "../feel";
 
 // The engine's own pieces drawn as pixel art in code (contract: the pixel canvas): belt, crates, lever, jam beacon.
 // Everything is in art px; px() turns that into world units on the art grid.
@@ -211,7 +212,7 @@ export function lever(cx: CanvasRenderingContext2D, x: number, base: number, mod
  * Red when the station is actually stuck, yellow when it's waiting on your call. */
 export function beacon(cx: CanvasRenderingContext2D, x: number, top: number, t: number, kind: "jam" | "wait" = "jam") {
   const ax = g(x) - 3, ay = g(top) - 8, k = kind === "wait" ? WAIT : C.jam;
-  halo(cx, ax + 3, ay + 3, 8, k[1], 0.2 + 0.1 * Math.sin(t * 2.4));
+  halo(cx, ax + 3, ay + 3, 8, k[1], 0.2 + 0.1 * Math.sin(t * FEEL.jam.breath));
   px(cx, ax + 1, ay, 5, 1, C.soot[0]); px(cx, ax, ay + 1, 7, 5, C.soot[0]);
   px(cx, ax + 1, ay + 1, 5, 4, k[0]); px(cx, ax + 2, ay + 1, 3, 3, k[1]); px(cx, ax + 3, ay + 1, 2, 1, k[2]); px(cx, ax + 4, ay + 2, 1, 1, C.white[0]);
   px(cx, ax + 3, ay + 1, 1, 4, C.soot[0]); // cage bar
