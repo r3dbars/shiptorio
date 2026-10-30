@@ -10,8 +10,6 @@ Shippy is the robot on the deck. Its brain is **Meta Muse Spark** (`muse-spark-1
 
 **Shippy never writes code, and it can never merge past a failed check.** Your own agent builds. Fixed rules guard the gates.
 
-For the full story with a worked example (PR #87, one of the PRs the factory shipped to its own repo), read the judge page: [How Meta Muse Spark runs Shiptorio](/art/spark.html).
-
 ## Every call Shippy makes
 
 | Decision | What Shippy does | If Shippy can't answer |
@@ -35,7 +33,7 @@ Planning is a tool loop with a hard budget of **eight turns**. The issue is alre
 - `assign_job`: the plan, up to 8 acceptance checks, and the files to edit
 - `ask_player`: hand it back to you with a reason
 
-It must read at least one file before assigning the job. It can read beyond the initially proposed edit scope. A file it finds and reads can join that scope only when the final scope still requires your approval on the Build card; fixed path rules always apply. Two repeated reads are free, then repeats use a turn. An unsafe planning path, unavailable tool or exhausted turn budget stops the plan.
+It must read at least one file before assigning the job. It can read beyond the initially proposed edit scope. A file it finds and reads can join that scope only when the final scope still requires your approval on the Start build card; fixed path rules always apply. Two repeated reads are free, then repeats use a turn. An unsafe planning path, unavailable tool or exhausted turn budget stops the plan.
 
 Re-plans carry the last failure and newest scars on every turn. Shippy must address the rejected problem and include an acceptance check for it.
 

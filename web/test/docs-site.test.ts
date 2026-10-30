@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { buildDocs, loadDocs, publicFile, resolveDocsPath } from "../docs-site";
 
 // The docs link checker: every internal link, anchor and image on every page has to resolve in the built site.
-const APP_PATHS = new Set(["/", "/art/spark.html"]); // non-docs pages the docs may link to
+const APP_PATHS = new Set(["/"]); // non-docs pages the docs may link to
 
 test("every docs page builds with a title, a description and a section", () => {
   const pages = loadDocs();

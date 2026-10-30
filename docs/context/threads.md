@@ -16,6 +16,8 @@ PR #598 (`codex/dev-deck-default`) makes authorized bare visits to shiptorio.dev
 
 - 2026-10-30 Codex (submission hygiene): reviewed remote branches and open PRs/issues, deleted 89 ancestry-verified merged branches, closed 1 superseded PR(s), retained unshipped issue #170, and updated repository metadata. Full actual changes: [decisions.md](decisions.md).
 
+- 2026-10-30 Codex (staging docs QA): checked all 12 public docs on shiptorio.dev at phone and desktop sizes, including search, menu, assets and anchors. Removed the stale password-gated judge link, corrected edit links to dev, and removed the link-checker exemption for that retired destination.
+
 ## Deck visual iteration (Codex, 2026-10-28)
 
 2026-10-29 · Codex #57 (`codex/shippy-calm`): stable floor anchors, one-shot reactions and still waiting poses; preserve purposeful work and charging, with no new moves.
