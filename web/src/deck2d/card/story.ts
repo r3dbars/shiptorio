@@ -15,7 +15,7 @@ export const STORY_W = 30;
 export const STORY_H = 24;
 const FEET_X = 12, FEET_Y = STORY_H - 3; // where his feet sit: on the bay's floor plate
 const TICK_MS = 140;
-const CHARS_PER_SEC = 38;
+const CHARS_PER_SEC = 55; // 2026-10-30: faster, so the tour stays under two minutes
 
 const still = () => {
   try {
