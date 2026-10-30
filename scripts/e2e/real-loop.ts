@@ -334,5 +334,5 @@ try {
     ...timeline.filter(l => !["shot", "socket_open"].includes(l.kind)).map(({ t, kind, ...rest }) => `| ${t} | ${kind} ${JSON.stringify(rest).replace(/\|/g, "/").slice(0, 300)} |`),
   ].join("\n"));
   console.log(`evidence: ${out}`);
-  process.exit(result.startsWith("shipped") || mode !== "ship" ? 0 : 1);
+  process.exit(process.exitCode ? Number(process.exitCode) : result.startsWith("shipped") || mode !== "ship" ? 0 : 1); // look's E2E_EXPECT miss sets exitCode
 }
