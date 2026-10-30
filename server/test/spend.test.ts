@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from "bun:test";
 import { testD1 } from "./d1-fixture";
-import { accountSpend, factorySpend, measuredCost, NANO_USD, reserveFactorySpend, settleFactorySpend, spendReport } from "../src/spend";
+import { accountSpend, siteDailyBudget, factorySpend, measuredCost, NANO_USD, reserveFactorySpend, settleFactorySpend, spendReport } from "../src/spend";
 import { sparkChat } from "../src/spark";
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
@@ -79,4 +79,13 @@ it("charges calls without a factory to the account, so nothing slips past the ca
   globalThis.fetch = (async () => Response.json({ choices: [{ message: { content: "ok" } }], usage: { prompt_tokens: 100, completion_tokens: 20 } })) as unknown as typeof fetch;
   expect(await sparkChat(env, [])).toBe("ok");
   expect(await accountSpend(db, "user:7")).toMatchObject({ calls: 1, estimatedUsd: 0.00021 });
+});
+it("caps the whole site at $50/day by default, whoever is asking", async () => {
+  const db = testD1(), now = Date.parse("2026-10-30T12:00:00Z");
+  // $4 per call: every account stays under its own $5, but the site fills up.
+  for (let user = 1; user <= 12; user++) await reserveFactorySpend(db, `u${user}/repo`, 3_200_000, 0, "muse-spark-1.3", now, `user:${user}`);
+  await expect(reserveFactorySpend(db, "u13/repo", 3_200_000, 0, "muse-spark-1.3", now, "user:13")).rejects.toThrow("daily AI limit for everyone");
+  await expect(reserveFactorySpend(db, "u13/repo", 3_200_000, 0, "muse-spark-1.3", now, "user:13", 100 * NANO_USD)).resolves.toBeString();
+  expect(siteDailyBudget({})).toBe(50 * NANO_USD);
+  expect(siteDailyBudget({ SPARK_SITE_DAILY_USD: "20" })).toBe(20 * NANO_USD);
 });

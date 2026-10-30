@@ -13,6 +13,13 @@ export const NANO_USD = 1_000_000_000;
 export const DEFAULT_DAILY_BUDGET = 5 * NANO_USD;
 /** Every signed-in account gets $5/day of model spend across all the factories it pays for. Resets 00:00 UTC. */
 export const ACCOUNT_DAILY_BUDGET = 5 * NANO_USD;
+/** All accounts together: $50/day unless SPARK_SITE_DAILY_USD says otherwise. Protects the bill when strangers sign in. */
+export const SITE_DAILY_BUDGET = 50 * NANO_USD;
+export const siteDailyBudget = (env: { SPARK_SITE_DAILY_USD?: string }) => {
+  const usd = Number(env.SPARK_SITE_DAILY_USD);
+  return env.SPARK_SITE_DAILY_USD !== undefined && Number.isFinite(usd) && usd >= 0 ? Math.round(usd * NANO_USD) : SITE_DAILY_BUDGET;
+};
+export const SITE_CAP_LINE = "Shippy is done thinking for today: Shiptorio hit its daily AI limit for everyone. He's back at 00:00 UTC. The deck, reviews and merges keep working.";
 export const ACCOUNT_CAP_LINE = "Shippy is done thinking for today: this account used its $5 of AI for the day. He's back at 00:00 UTC. The deck, reviews and merges keep working.";
 const accountUserId = (account?: string) => account && /^user:-?\d+$/.test(account) ? Number(account.slice(5)) : null;
 export async function accountDailyBudget(db: D1Database, account?: string) {
@@ -40,7 +47,7 @@ export function measuredCost(usage?: TokenUsage, model = "muse-spark-1.3") {
   const price = modelPrice(model), cost = (input - cached) * price.input + cached * price.cached + output * price.output;
   return Number.isSafeInteger(cost) ? { input, output, cached, cost } : null;
 }
-export async function reserveFactorySpend(db: D1Database, repo: string, input: number, output: number, model: string, now = Date.now(), account?: string) {
+export async function reserveFactorySpend(db: D1Database, repo: string, input: number, output: number, model: string, now = Date.now(), account?: string, siteCap = SITE_DAILY_BUDGET) {
   const price = modelPrice(model), cost = input * price.input + output * price.output;
   if (!count(input) || !count(output) || !count(cost)) throw new BudgetError("Invalid Planner cost reservation");
   const id = crypto.randomUUID(), day = utcDay(now), accountCap = await accountDailyBudget(db, account);
@@ -48,9 +55,14 @@ export async function reserveFactorySpend(db: D1Database, repo: string, input: n
   const row = await db.prepare(`INSERT INTO spark_factory_calls(id, repo, day, model, nano_usd, account)
     SELECT ?, ?, ?, ?, ?, ? WHERE COALESCE((SELECT SUM(nano_usd) FROM spark_factory_calls WHERE repo = ? AND day = ?), 0) + ?
     <= COALESCE((SELECT daily_nano_usd FROM spark_factory_budgets WHERE repo = ?), ?)
-    AND (? IS NULL OR COALESCE((SELECT SUM(nano_usd) FROM spark_factory_calls WHERE account = ? AND day = ?), 0) + ? <= ?) RETURNING id`)
+    AND (? IS NULL OR COALESCE((SELECT SUM(nano_usd) FROM spark_factory_calls WHERE account = ? AND day = ?), 0) + ? <= ?)
+    AND COALESCE((SELECT SUM(nano_usd) FROM spark_factory_calls WHERE day = ?), 0) + ? <= ? RETURNING id`)
     .bind(id, repo.toLowerCase(), day, model, cost, account ?? null, repo.toLowerCase(), day, cost, repo.toLowerCase(), DEFAULT_DAILY_BUDGET,
-      account ?? null, account ?? null, day, cost, accountCap).first();
+      account ?? null, account ?? null, day, cost, accountCap, day, cost, siteCap).first();
+  if (!row) {
+    const site = await db.prepare("SELECT COALESCE(SUM(nano_usd), 0) AS nano_usd FROM spark_factory_calls WHERE day = ?").bind(day).first<{ nano_usd: number }>();
+    if ((site?.nano_usd ?? 0) + cost > siteCap) throw new BudgetError(`Site daily dollar budget reached. ${SITE_CAP_LINE}`);
+  }
   if (!row && account && (await accountSpend(db, account, now)).estimatedUsd * NANO_USD + cost > accountCap) throw new BudgetError(`Account daily dollar budget reached. ${ACCOUNT_CAP_LINE}`);
   if (!row) throw new BudgetError("Planner daily dollar budget reached or too little remains for this call. I paused paid thinking to protect your budget. Raise the factory budget or wait until 00:00 UTC; existing PR checks and human merges can continue.");
   return id;

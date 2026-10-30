@@ -1,6 +1,6 @@
 import { ShiptorioError } from "./errors";
 import { adminPaused } from "./admin-control";
-import { reserveFactorySpend, settleFactorySpend, type TokenUsage } from "./spend";
+import { reserveFactorySpend, settleFactorySpend, siteDailyBudget, type TokenUsage } from "./spend";
 import { observedFetch } from "./telemetry";
 import { retry, OutboundError } from "./reliability";
 
@@ -20,6 +20,8 @@ export interface SparkEnv extends BudgetEnv {
   META_API_KEY?: string;
   SPARK_BASE_URL?: string;
   SPARK_MODEL?: string;
+  /** Total AI dollars per UTC day across every account. Defaults to $50. */
+  SPARK_SITE_DAILY_USD?: string;
   /** "1" sends each reply's schema as a native `response_format` (docs/context/meta-api.md). Repair parsing stays as the fallback. */
   SPARK_NATIVE_JSON?: string;
 }
@@ -77,7 +79,7 @@ export async function sparkChat(env: SparkEnv, messages: ChatMessage[], effort: 
     env.planningSignal?.throwIfAborted();
     // A provider retry is another billable call: reserve every attempt independently.
     // Every paid call is priced and charged to its paying account, with or without a factory.
-    const spendId = await reserveFactorySpend(env.DB!, env.budgetRepo ?? `(${account})`, reservedTokens - output, output, sparkModel(env), Date.now(), account);
+    const spendId = await reserveFactorySpend(env.DB!, env.budgetRepo ?? `(${account})`, reservedTokens - output, output, sparkModel(env), Date.now(), account, siteDailyBudget(env));
     let reservation;
     try { reservation = await reserveSpark(env, account, reservedTokens); }
     catch (error) {
