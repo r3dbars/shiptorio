@@ -7,7 +7,8 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import { benchmarkServer } from './perf-server.mjs';
-import { PROFILE, observePlayable, throttle } from './cold-load-profile.mjs';
+import { PROFILE, observePlayable, collectCurrentMarks, throttle } from './cold-load-profile.mjs';
+import { checkColdLoadBudget } from './cold-load-budget.mjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const out=process.env.COLD_LOAD_OUT ?? mkdtempSync(join(tmpdir(),'cold-load-'));
@@ -43,6 +44,7 @@ try {
     try {
       await page.goto(host.origin+(live?'/deck?source=live&repo=test-fixture/test-newbie':'/deck?fresh=1'),{waitUntil:'commit'});
       await page.waitForFunction(name=>performance.getEntriesByName(name).length>0,'shiptorio:playable',{timeout:45000});
+      await collectCurrentMarks(page,marks);
       await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
       await page.screenshot({path:join(out,`${name}.png`)});
       if(errors.length)throw Error(errors.join('\n'));
@@ -51,8 +53,8 @@ try {
       if(live && (!sockets.length || sockets[0].repo!=='test-fixture/test-newbie' || !sockets[0].cardIds.length))throw Error('No real fixture snapshot/card');
       const origin=Math.min(...marks.filter(m=>m.name==='navigation').map(m=>m.timeOrigin));
       const times={navigation:0};
-      for(const m of marks)if(!(m.name in times))times[m.name]=Math.round((m.timeOrigin-origin+m.start)*10)/10;
-      const row={path,round,times,milestones:marks.map(m=>({name:m.name,ms:Math.round((m.timeOrigin-origin+m.start)*10)/10})),navigations:documents.length,requests:requests.map(r=>({url:new URL(r.url).pathname,type:r.type,ms:Math.round((r.wallTime*1000-origin)*10)/10})),snapshots:sockets,server:host.samples.slice(before)};
+      for(const m of marks)if(!(m.name in times))times[m.name]=m.timeOrigin-origin+m.start;
+      const row={path,round,times,milestones:marks.map(m=>({name:m.name,ms:Math.round((m.timeOrigin-origin+m.start)*10)/10})),navigations:documents.length,requests:requests.map(r=>({url:new URL(r.url).pathname,type:r.type,ms:Math.round((r.wallTime*1000-origin)*10)/10})),snapshots:sockets.map(s=>({...s,receivedMs:(s.at-documents[0].timestamp)*1000+documents[0].wallTime*1000-origin})),server:host.samples.slice(before)};
       results.push(row);
       writeFileSync(join(out,'rounds.json'),JSON.stringify({profile,results},null,2));
       console.log(name,JSON.stringify(times));
@@ -84,7 +86,9 @@ try {
   const serverOnly=[await host.probe(true)];
   for(let n=0;n<5;n++)serverOnly.push(await host.probe());
   writeFileSync(join(out,'results.json'),JSON.stringify({commit:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),profile,rounds,summary,results,serverOnly},null,2));
-  console.table(summary);console.log('Evidence:',out);
+  console.table(Object.fromEntries(Object.entries(summary).map(([path,times])=>[path,Object.fromEntries(Object.entries(times).map(([key,value])=>[key,value.toFixed(1)]))])));
+  console.log('Evidence:',out);
+  if(process.argv.includes('--budget'))console.log('PASS sampled cold-load budgets:',checkColdLoadBudget(results));
 } finally {
   await browser?.close();await host?.close();
   staticServer.closeAllConnections();await new Promise(r=>staticServer.close(r));

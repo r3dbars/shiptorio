@@ -19,6 +19,17 @@ export const observePlayable = ({live})=>{
       requestAnimationFrame(visible);
     };
 
+// PerformanceObserver delivery can trail waitForFunction. Read the current
+// document directly before serializing, while retaining prior-navigation marks.
+export async function collectCurrentMarks(page, marks) {
+  const current=await page.evaluate(()=>[
+    {name:'navigation',start:0,timeOrigin:performance.timeOrigin},
+    ...performance.getEntries().filter(e=>e.entryType==='mark'||e.entryType==='paint')
+      .map(e=>({name:e.name,start:e.startTime,timeOrigin:performance.timeOrigin})),
+  ]);
+  for(const mark of current)if(!marks.some(m=>m.name===mark.name&&m.timeOrigin===mark.timeOrigin&&m.start===mark.start))marks.push(mark);
+}
+
 export async function throttle(cdp) {
   await cdp.send("Network.enable");
   await cdp.send("Network.setCacheDisabled",{cacheDisabled:true});
