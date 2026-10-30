@@ -86,7 +86,7 @@ import { ciReport, codeSearch, factoryBrief, issueComments, signalsBrief, treePa
 import { issueRevision, RunnerHarness, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
 import { enforceRoute, geothermalGuard, harnessLabel, LOCAL_POWER_ID, looksSmall, ruleRoute } from "./geothermal";
 import { foldSignal, matchDistrict, oreWeight } from "./ore";
-import { canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, nextGate, prFiles, referencedFiles, researchMove, reviewComment, reviewDiff, reworkMove, runChecks, setStage, stageOf, stationsPassed, verifyFromDiff, withChecks } from "./gauntlet";
+import { changedPaths, canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, nextGate, prFiles, referencedFiles, researchMove, reviewComment, reviewDiff, reworkMove, runChecks, setStage, stageOf, stationsPassed, verifyFromDiff, withChecks } from "./gauntlet";
 import { autonomyView, emptyBook, laneOf, mayAutoLaunch, permitMove, permitReady, recordRework, recordShip, setPermit, snooze, earned, type PermitBook } from "./permits";
 import { escape, grantLevel, ladderOf, LEVEL_NAME, levelMove, levelReady, levelTap, lowerLevel, snoozeLevel } from "./levels";
 import { githubStatus, normalizeGitHub, TRUST_LABEL, type GitHubPayload } from "./sources/github";
@@ -2660,7 +2660,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         continue;
       }
       if (item.branch?.startsWith("shiptorio/runner-") && (!item.lane || item.inspection?.headSha !== result.headSha)) {
-        const lane = await prFiles(token, this.meta.repo, item.prNumber).then((files) => laneOf(files.map((f) => f.filename))).catch(error => { this.log("error", `Lane metadata unavailable: ${String(error)}`, item.id); return null; });
+        const lane = await prFiles(token, this.meta.repo, item.prNumber).then((files) => laneOf(changedPaths(files))).catch(error => { this.log("error", `Lane metadata unavailable: ${String(error)}`, item.id); return null; });
         if (!this.state!.items.some(current => current === item && current.state !== "launched")) continue;
         item.lane = lane ?? undefined;
       }
@@ -2830,7 +2830,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         return;
       }
       const builder = job?.harness === "codex" ? "Codex" : job?.harness === "muse_code" ? "Muse Code" : job?.harness === "claude_code" ? "Claude Code" : job?.harness === "local" ? "Local model" : "the planner";
-      const lane = laneOf(files.map((f) => f.filename)) ?? undefined;
+      const lane = laneOf(changedPaths(files)) ?? undefined;
       const currentInLane = async () => {
         if (!current()) return;
         const refreshed = await inspectPullRequest(token, this.meta!.repo, pr, headSha, this.state!.baseBranch);
@@ -2847,7 +2847,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         for (const r of ran) this.log(r.passed ? "success" : "warn", `${techById(r.id)?.name ?? r.id} ${r.passed ? "passed" : "sent back"} PR #${pr}: ${r.reason}`, item.id);
         if (checked.state === "rejected") await this.noteRework(checked);
       } else if (gate === "verify") {
-        const v = verifyFromDiff(files.map((f) => f.filename), !!job, job?.proof);
+        const v = verifyFromDiff(files.map((f) => f.filename), !!job, job?.proof, changedPaths(files));
         const now = await currentInLane();
         if (!now) return;
         advanced = setStage(now, "verify", v.passed ? "passed" : "rework", v.reason);
@@ -3051,7 +3051,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         // A permit belongs to a lane on this head, never an item's historical
         // classification. Bracket the file read with head checks; merge also
         // supplies the expected SHA so a subsequent push cannot win the race.
-        const lane = laneOf((await prFiles(token, this.meta.repo, item.prNumber)).map(f => f.filename)) ?? undefined;
+        const lane = laneOf(changedPaths(await prFiles(token, this.meta.repo, item.prNumber))) ?? undefined;
         const latestHead = (await gh<{ head: { sha: string } }>(`/repos/${this.meta.repo}/pulls/${item.prNumber}`, token)).head.sha;
         if (latestHead !== head) throw new Error("The PR changed while its launch permit was being checked.");
         if (lane !== item.lane || !mayAutoLaunch(await this.permitBook(), { ...item, lane })) {

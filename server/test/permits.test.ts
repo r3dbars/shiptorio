@@ -28,6 +28,13 @@ describe("permit rules", () => {
     expect(laneOf(["package.json"])).toBeNull();
     expect(laneOf([])).toBeNull();
   });
+  it("reserves docs permits for prose instead of a directory name", () => {
+    for (const files of [["docs/install.sh"], ["docs/App.mdx"], ["docs/config.json"], ["docs/guide.md", "docs/run.ts"], ["web/docs/a.ts", "server/docs/b.ts"]]) {
+      expect(laneOf(files)).toBeNull();
+    }
+    expect(laneOf(["web/docs/a.ts", "web/test/a.test.ts"])).toBe("web");
+    expect(laneOf(["docs/guide.txt", "README.md"])).toBe("docs");
+  });
   it("offers a permit after 5 clean docs ships, and asks again 3 later on not yet", () => {
     let book = shipClean(emptyBook(), 4);
     expect(permitReady(book)).toBeUndefined();

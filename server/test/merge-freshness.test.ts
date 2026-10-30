@@ -13,10 +13,11 @@ const { Factory } = await import("../src/factory");
 const head = "a".repeat(40);
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
 type Mode = "passed" | "pending" | "failed" | "unavailable";
-async function fixture(run: (f: { factory: InstanceType<typeof Factory>; data: Map<string, unknown>; saved: () => FactoryState; mode: (next: Mode) => void; currentHead: (sha: string) => void; files: (names: string[], changeHead?: boolean) => void; merges: () => number; launch: () => Promise<void>; autoLaunch: () => Promise<void>; duringFiles: (fn: () => Promise<void>) => void; station: () => Promise<void>; putItem: (item: Item) => Promise<void>; mergeState: (state: string | null) => void }) => Promise<void>) {
+async function fixture(run: (f: { factory: InstanceType<typeof Factory>; data: Map<string, unknown>; saved: () => FactoryState; mode: (next: Mode) => void; currentHead: (sha: string) => void; files: (names: string[], changeHead?: boolean) => void; rename: (from: string | undefined, to: string) => void; merges: () => number; launch: () => Promise<void>; autoLaunch: () => Promise<void>; duringFiles: (fn: () => Promise<void>) => void; station: () => Promise<void>; putItem: (item: Item) => Promise<void>; mergeState: (state: string | null) => void }) => Promise<void>) {
   let mode: Mode = "passed", current = head, merges = 0;
   let mergeState: string | null = "clean";
   let names = ["docs/README.md"], changeDuringFiles = false;
+  let renamed: { filename: string; previous_filename?: string; status: string; patch: string } | undefined;
   let duringFiles: (() => Promise<void>) | undefined;
   const original = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -26,7 +27,7 @@ async function fixture(run: (f: { factory: InstanceType<typeof Factory>; data: M
     if (url.includes("/pulls/99/files?")) {
       const hook = duringFiles; duringFiles = undefined; if (hook) await hook();
       if (changeDuringFiles) current = "b".repeat(40);
-      return Response.json(names.map(filename => ({ filename, status: "modified", patch: "+safe" })));
+      return Response.json(renamed ? [renamed] : names.map(filename => ({ filename, status: "modified", patch: "+safe" })));
     }
     if (url.endsWith("/pulls/99/merge")) { merges++; return Response.json({ merged: true }); }
     if (url.includes("/check-runs?")) return Response.json({ total_count: 1, check_runs: [{ name: "CI", app: { id: 15368 }, head_sha: new URL(url).pathname.split("/").at(-2), status: mode === "pending" ? "in_progress" : "completed", conclusion: mode === "failed" ? "failure" : "success" }] });
@@ -54,7 +55,7 @@ async function fixture(run: (f: { factory: InstanceType<typeof Factory>; data: M
       await factory.exportState();
       await (factory as unknown as { launch(item: Item, by: "autonomy", approvedHead: string): Promise<void> }).launch((factory as unknown as { state: FactoryState }).state.items[0], "autonomy", saved().items[0].inspection!.headSha);
     };
-    await run({ mergeState: state => { mergeState = state; }, factory, data, saved, mode: next => { mode = next; }, currentHead: sha => { current = sha; }, files: (next, change = false) => { names = next; changeDuringFiles = change; }, merges: () => merges, launch, autoLaunch, duringFiles: fn => { duringFiles = fn; }, station: () => (factory as unknown as { runGauntlet(): Promise<void> }).runGauntlet(), putItem: async item => { await factory.exportState(); await (factory as unknown as { patch(p: { items: Item[] }): Promise<void> }).patch({ items: [item] }); } });
+    await run({ rename: (from, to) => { renamed = { filename: to, previous_filename: from, status: "renamed", patch: "+safe" }; }, mergeState: state => { mergeState = state; }, factory, data, saved, mode: next => { mode = next; }, currentHead: sha => { current = sha; }, files: (next, change = false) => { names = next; changeDuringFiles = change; }, merges: () => merges, launch, autoLaunch, duringFiles: fn => { duringFiles = fn; }, station: () => (factory as unknown as { runGauntlet(): Promise<void> }).runGauntlet(), putItem: async item => { await factory.exportState(); await (factory as unknown as { patch(p: { items: Item[] }): Promise<void> }).patch({ items: [item] }); } });
   } finally { globalThis.fetch = original; }
 }
 
@@ -107,7 +108,7 @@ it("a changed head returns to CI instead of consuming an old launch approval", a
 });
 
 it("a historical docs permit cannot launch code or cross-lane changes", async () => {
-  for (const files of [["src/fix.ts"], ["docs/README.md", "src/fix.ts"]]) await fixture(async f => {
+  for (const files of [["src/fix.ts"], ["docs/README.md", "src/fix.ts"], ["docs/install.sh"], ["docs/App.mdx"], ["docs/README.md", "docs/run.ts"], ["web/docs/a.ts", "server/docs/b.ts"]]) await fixture(async f => {
     f.files(files);
     await f.autoLaunch();
     expect(f.merges()).toBe(0);
@@ -358,5 +359,19 @@ it("merge execution rejects missing, malformed or mismatched stored approval tar
     await handler.chooseGauntletMove(card.id, "overrule");
     expect(f.merges()).toBe(0);
     expect(f.saved().items[0].state).toBe("rejected");
+  });
+});
+
+it("docs permits classify both rename paths and require complete rename evidence", async () => {
+  for (const from of ["src/code.ts", ".github/workflows/check.yml", undefined]) await fixture(async f => {
+    f.rename(from, "docs/retired.md");
+    await f.autoLaunch();
+    expect(f.merges()).toBe(0);
+    expect(f.data.has("autoLaunch:gh-1")).toBe(false);
+  });
+  await fixture(async f => {
+    f.rename("docs/old.md", "docs/new.md");
+    await f.autoLaunch();
+    expect(f.merges()).toBe(1);
   });
 });

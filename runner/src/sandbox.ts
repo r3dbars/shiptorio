@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { museDirs } from "./policy";
 
+export interface AgentSandboxOptions { home: string; executable: string; readOnlyFiles?: string[] }
 export interface SandboxResult { code: number; out: string; err: string; timedOut?: boolean }
 export interface CheckSandbox {
   run(args: string[], cwd?: string, options?: { install?: boolean; timeout?: number }): Promise<SandboxResult>;
@@ -35,7 +36,7 @@ export async function assertVerificationPlatform(): Promise<void> {
   await verificationGit();
 }
 
-export async function checkSandbox(work: string, agent?: { home: string; executable: string }): Promise<CheckSandbox> {
+export async function checkSandbox(work: string, agent?: AgentSandboxOptions): Promise<CheckSandbox> {
   if (process.platform === "linux") return linuxSandbox(work, agent);
 
   await assertVerificationPlatform();
@@ -46,6 +47,7 @@ export async function checkSandbox(work: string, agent?: { home: string; executa
   const runtime = await realpath(process.execPath);
   const git = await verificationGit();
   const agentBinary = agent ? await realpath(agent.executable) : null;
+  const readOnlyFiles = await Promise.all((agent?.readOnlyFiles ?? []).map(path => realpath(path)));
   const bin = join(privateRoot, "bin"); await mkdir(bin);
   await symlink(runtime, join(bin, "bun"));
   const node = Bun.which("node");
@@ -79,7 +81,7 @@ export async function checkSandbox(work: string, agent?: { home: string; executa
 (allow file-read* (literal "/") (subpath "/System") (subpath "/usr/bin") (subpath "/usr/lib") (subpath "/usr/share") (subpath "/usr/libexec") (subpath "/usr/sbin") (subpath "/bin") (subpath "/sbin")
   (subpath "/Library/Developer") (subpath "/Library/Apple") (subpath "/Applications/Xcode.app/Contents/Developer")
   (subpath "/private/etc") (literal "/dev/null") (literal "/dev/random") (literal "/dev/urandom")
-  (subpath "/dev/fd") (literal ${quote(runtime)}) ${nodeRuntime ? `(literal ${quote(nodeRuntime)})` : ""} (subpath ${quote(directory)}) (subpath ${quote(privateRoot)}) ${agentBinary ? `(subpath ${quote(dirname(agentBinary))}) (subpath ${quote(home)})` : ""})
+  (subpath "/dev/fd") (literal ${quote(runtime)}) ${nodeRuntime ? `(literal ${quote(nodeRuntime)})` : ""} (subpath ${quote(directory)}) (subpath ${quote(privateRoot)}) ${readOnlyFiles.map(path => `(literal ${quote(path)})`).join(" ")} ${agentBinary ? `(subpath ${quote(dirname(agentBinary))}) (subpath ${quote(home)})` : ""})
 (allow file-write* (subpath ${quote(directory)}) (subpath ${quote(privateRoot)}) ${agent ? `(subpath ${quote(home)})` : ""} (literal "/dev/null") (subpath "/dev/fd"))
 ${install || agent ? `(allow network-outbound (literal "/private/var/run/mDNSResponder") (remote tcp "*:443") (remote tcp "*:53") (remote udp "*:53"))
 (allow file-read* (literal "/private/var/run/resolv.conf"))
