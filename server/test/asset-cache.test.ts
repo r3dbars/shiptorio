@@ -26,7 +26,7 @@ test("the committed font loading markup works without CSP-blocked inline handler
   const html = readFileSync(new URL("../../web/index.html", import.meta.url), "utf8");
   expect(securityHeaders(new Request("https://shiptorio.com"))["Content-Security-Policy"]).toContain("script-src-attr 'none'");
   expect(html).not.toMatch(/\bonload\s*=/i);
-  expect((html.match(/<link\b[^>]*>/gi) ?? []).filter(link => link.includes("fonts.googleapis.com")).every(link => !link.includes('media="print"'))).toBe(true);
+  expect((html.match(/<link\b[^>]*>/gi) ?? []).filter(link => /\bhref="https:\/\/fonts\.googleapis\.com\//.test(link)).every(link => !link.includes('media="print"'))).toBe(true);
 });
 
 test("public docs survive password and waitlist gates while private APIs stay gated", async () => {
