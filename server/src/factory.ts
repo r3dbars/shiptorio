@@ -888,15 +888,24 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const item = this.state!.items.find(i => i.id === move.itemId);
     const refreshMove = move.options.some(o => o.actions.some(a => a.tool === "plan_runner_job" && a.args.refreshBase === true)) || (await this.runnerJobs()).some(j => j.approvalMoveId === moveId && !!j.refreshBase);
     const available = (candidate: Item) => refreshMove ? !!candidate.prNumber && ["on_pad", "passed", "inspecting", "rejected"].includes(candidate.state) : (!candidate.prNumber || candidate.state === "rejected") && ["ore", "queued", "rejected"].includes(candidate.state);
-    if (!item || !available(item)) return false;
+    if (!item || !available(item)) {
+      if (optionId === "approve") log("warn", "factory.runner_approval_refused", { reason: "item_unavailable", itemId: move.itemId, state: item?.state, hasPr: !!item?.prNumber, refreshMove });
+      return false;
+    }
     // GitHub names are case-insensitive; a browser visit can refresh metadata casing after planning.
     const job = (await this.runnerJobs()).find(j => j.approvalMoveId === moveId && j.itemId === move.itemId && j.repo.toLowerCase() === this.meta?.repo.toLowerCase() && j.status === "awaiting_approval");
     if (job) {
       return this.ctx.blockConcurrencyWhile(async () => {
         const stored = await this.ctx.storage.get<RunnerJob>(`runnerJob:${job.id}`);
-        if (!stored || stored.status !== "awaiting_approval" || stored.approvalMoveId !== moveId || stored.itemId !== move.itemId || stored.repo.toLowerCase() !== this.meta?.repo.toLowerCase()) return false;
+        if (!stored || stored.status !== "awaiting_approval" || stored.approvalMoveId !== moveId || stored.itemId !== move.itemId || stored.repo.toLowerCase() !== this.meta?.repo.toLowerCase()) {
+          if (optionId === "approve") log("warn", "factory.runner_approval_refused", { reason: "stored_job_mismatch", itemId: move.itemId, found: !!stored, status: stored?.status, sameCard: stored?.approvalMoveId === moveId, sameItem: stored?.itemId === move.itemId, sameRepo: stored?.repo.toLowerCase() === this.meta?.repo.toLowerCase() });
+          return false;
+        }
         const currentItem = this.state?.items.find(i => i.id === stored.itemId);
-        if (!currentItem || !available(currentItem)) return false;
+        if (!currentItem || !available(currentItem)) {
+          if (optionId === "approve") log("warn", "factory.runner_approval_refused", { reason: "item_changed", itemId: move.itemId, state: currentItem?.state });
+          return false;
+        }
         if (stored.inputRevision !== await workRevision(currentItem)) {
           stored.status = "failed"; stored.error = "Issue changed; request a fresh plan.";
           await this.accountPut(`runnerJob:${stored.id}`, stored);
@@ -921,7 +930,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     }
     if (optionId === "decline") { await this.accountPut(`runnerDeferred:${item.id}`, item.updatedAt); await this.resolveRunnerMove(move); return true; }
     const action = move.options.find(o => o.id === optionId)?.actions[0];
-    if (action?.tool !== "plan_runner_job" || !RunnerHarness.safeParse(action.args.harness).success) return false;
+    if (action?.tool !== "plan_runner_job" || !RunnerHarness.safeParse(action.args.harness).success) {
+      if (optionId === "approve") log("warn", "factory.runner_approval_refused", { reason: "approval_job_missing", itemId: move.itemId, repo: this.meta?.repo });
+      return false;
+    }
     try {
       await this.enqueueRunner({ itemId: item.id, harness: action.args.harness as RunnerJob["harness"], allowedPaths: [], needsApproval: true, refreshBase: action.args.refreshBase === true });
       await this.resolveRunnerMove(move);
@@ -3478,6 +3490,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         // Only the invocation that committed a runner transition may teach approval.
         // Another socket can observe that transition too; observation is not a second tap.
         const consumed = handled ? !this.openMoves!.some(m => m.id === card.id) || before !== JSON.stringify(await this.runnerJobs()) : runnerConsumed;
+        if (!consumed && action?.tool === "approve_runner_job") log("warn", "factory.runner_approval_not_applied", { itemId: card.itemId, handledElsewhere: handled });
         if (consumed && option.recommended) {
           await this.recordApproval(card.kind ?? "unblock", moveScope(card, s));
           noteYes(this.deckBook!, card.kind ?? "unblock", moveScope(card, s));
