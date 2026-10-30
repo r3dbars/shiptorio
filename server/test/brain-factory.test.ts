@@ -148,6 +148,10 @@ describe("the bottleneck brain in the real factory", () => {
     expect(filedLabels).toEqual(["shiptorio"]); // so the planner trusts an issue the App filed itself
     expect(f.saved().items.some(i => i.id === "gh-50")).toBe(true);
     expect(f.data.get("fixesPr:50")).toEqual({ pr: 39, sameRepo: true });
+    // A failed fix build forgets the Continue, so the red-PR card can come back now instead of in 6 hours.
+    f.data.set("brainMemory", { ...(f.data.get("brainMemory") as BrainMemory), acted: { [red.id]: Date.now(), "repo:backlog_growing:repo": Date.now() } });
+    await (f.factory as unknown as { reopenRedPrCard(id: string): Promise<void> }).reopenRedPrCard("gh-50");
+    expect(Object.keys((f.data.get("brainMemory") as BrainMemory).acted)).toEqual(["repo:backlog_growing:repo"]);
 
     // The fix ships as PR #51: Shippy updates #39 from main so its checks run on the fix, once.
     const state = f.data.get("state") as FactoryState;
