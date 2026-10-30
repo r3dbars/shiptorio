@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="web/public/brand/wordmark-brass-rocket-transparent.png" alt="Shiptorio" width="560">
+  <img src="docs/readme/logo.png" alt="Shiptorio" width="668">
 </p>
 
 <p align="center"><strong>A game you play on top of your GitHub repo. Every move ships something real.</strong></p>
 
 <p align="center">
-  <img src="docs/readme/hero.gif" alt="The Shiptorio deck: the whole line, then the rocket lifts off" width="900">
+  <img src="docs/readme/hero.gif" alt="The Shiptorio deck: all checks pass, then the rocket lifts off" width="940">
 </p>
 
 Your issues are the raw material. They ride a pixel conveyor through a planner, a builder, the checks and a
