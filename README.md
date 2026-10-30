@@ -43,14 +43,29 @@ small runner on your machine. Your sign-ins are the power plants. Nothing runs o
 6. **Gate.** You hold **Ship it**. The PR merges for real.
 7. **Launch.** Rocket.
 
+<p align="center">
+  <img src="docs/readme/fix-rides-the-line.gif" alt="One fix rides the line: Repo, Planner, Builder, Checks, Review, Gate, with each station named as the crate stops there" width="940">
+</p>
+<p align="center">
+  <img src="docs/readme/hold-to-ship.gif" alt="Hold to ship: the card at the Gate, the fix rides out to the pad, Shippy hits launch, the rocket goes" width="940">
+</p>
+
 The first few times, you approve everything. Approve the same kind of change a few times and the factory
 starts doing that step without asking. Ship it always waits for a human.
+
+<p align="center">
+  <img src="docs/readme/automatic-card.png" alt="A card with two of three trust dots filled: Approve fix for broken link? Approve this one and it's automatic." width="440">
+</p>
 
 ## Play
 
 - **Try it:** [shiptorio.dev](https://shiptorio.dev). Shippy walks you through a factory in about two minutes.
 - **Build your own:** sign in with GitHub, pick a repo, install the runner with one line, and your first issue
   becomes your first launch. Runner setup: [docs/site/runner.md](docs/site/runner.md).
+
+<p align="center">
+  <img src="docs/readme/tour-first-card.png" alt="The tour's first card on a small empty platform: Hi, I'm Shippy! Great to meet you." width="740">
+</p>
 
 ## Run it yourself
 
