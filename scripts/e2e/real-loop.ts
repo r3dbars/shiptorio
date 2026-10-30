@@ -5,6 +5,8 @@
 //   bun scripts/e2e/real-loop.ts status              who am I, is the runner online, what's on the line
 //   bun scripts/e2e/real-loop.ts ship 30             Testing #30 through Planner → Builder → Checks → Review → Gate → Launch
 //   bun scripts/e2e/real-loop.ts watch 10            record 10 minutes of what Shippy notices (cards, bottleneck, thoughts)
+//   bun scripts/e2e/real-loop.ts forget              start learned trust over (every yes this script tapped counts), so a
+//                                                    filmed take begins at zero dots
 //
 // Env: SHIPTORIO_URL (https://shiptorio.dev), SHIPTORIO_REPO (r3dbars/testing), E2E_OUT (runner/.work/e2e/<stamp>-<mode>),
 //      E2E_MINUTES (ship: 45), E2E_PHONE=1 (390x844 instead of 1280x720), GH_TOKEN (read-only GitHub checks).
@@ -28,7 +30,7 @@ const [mode = "status", arg] = process.argv.slice(2);
 if (!["https://shiptorio.dev", "https://shiptorio.com", "http://localhost:8787"].includes(base)) throw new Error("Unsupported SHIPTORIO_URL");
 if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error("Set SHIPTORIO_REPO=owner/repo");
 if (repo === "r3dbars/shiptorio") throw new Error("The driver ships real merges; point it at a test repo");
-if (!["status", "ship", "watch"].includes(mode)) throw new Error("Use status, ship ISSUE or watch MINUTES");
+if (!["status", "ship", "watch", "forget"].includes(mode)) throw new Error("Use status, ship ISSUE, watch MINUTES or forget");
 const issue = mode === "ship" ? Number(arg) : 0;
 if (mode === "ship" && !(Number.isInteger(issue) && issue > 0)) throw new Error("Usage: real-loop.ts ship ISSUE");
 const itemId = `gh-${issue}`;
@@ -83,6 +85,21 @@ const me = (await api<{ login: string }>("/api/me")).body;
 const runner = (await api<Record<string, unknown>>(`/api/repos/${repo}/runner/status`)).body;
 await note("signed_in", { login: me?.login, base, repo });
 await note("runner", { runner });
+
+if (mode === "forget") {
+  // The same message "Ask me again" sends, with "*" for every kind (server/src/learn.ts forgetAll).
+  const socket = new WebSocket(`${base.replace(/^http/, "ws")}/api/repos/${repo}/factory`, { headers: { cookie, origin: base } } as unknown as string[]);
+  const learned = await new Promise<unknown>((ok, fail) => {
+    const timer = setTimeout(() => fail(new Error("no snapshot in 20s")), 20_000);
+    socket.onmessage = e => { const msg = JSON.parse(String(e.data)); if (msg.type === "snapshot") { clearTimeout(timer); ok(msg.state.learned ?? []); } };
+    socket.onerror = () => fail(new Error("socket error"));
+  });
+  socket.send(JSON.stringify({ type: "unlearn", key: "*" }));
+  await Bun.sleep(3000);
+  socket.close();
+  await note("forgot", { learnedBefore: learned });
+  process.exit(0);
+}
 
 // ---------- GitHub (read only) ----------
 const [ghOwner, ghName] = repo.split("/");

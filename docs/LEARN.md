@@ -15,7 +15,8 @@
   else. ("Wrong call" already did.) The notes reach the planner through `playerFeedback`.
 - **Comes back**: if an item the factory moved on its own later needs rework or comes back after launch, that kind
   forgets and asks again.
-- **Ask me again**: Make it yours lists every learned kind with a button that forgets it.
+- **Ask me again**: Make it yours lists every learned kind with a button that forgets it. `unlearn` with key `*`
+  (no button; `scripts/e2e/real-loop.ts forget`) starts every kind over, half-filled dots too, after a scripted run.
 
 ## What can be learned
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { Item, Move } from "@shiptorio/shared";
 import { emptyDeckBook } from "../src/deck-decisions";
-import { dismissNote, forget, freshWork, forgetOnComeback, isLearned, LEARN_NEED, learnedList, learnFromYes, learnKey, learnLabel, learnMeter, learnOption, noteAutoRun, resetLearn } from "../src/learn";
+import { dismissNote, forget, forgetAll, freshWork, forgetOnComeback, isLearned, LEARN_NEED, learnedList, learnFromYes, learnKey, learnLabel, learnMeter, learnOption, noteAutoRun, resetLearn } from "../src/learn";
 
 const card = (tool: string, overrides: Partial<Move> = {}): Move => ({
   id: "c1", title: "Plan #7: fix the login", why: "", kind: "build", stage: "build", itemId: "gh-7", createdAt: 1,
@@ -65,6 +65,18 @@ describe("learning what the player approves", () => {
     expect(isLearned(book, key)).toBe(false);
     expect(book.learnYes?.[key]).toBeUndefined();
     expect(forget(book, key)).toBe(false);
+  });
+
+  it("forgetting everything also empties half-filled dots, so a scripted run leaves no streak behind", () => {
+    const book = emptyDeckBook(), plan = card("plan_runner_job"), build = card("approve_runner_job");
+    for (let i = 0; i < LEARN_NEED; i++) learnFromYes(book, plan, scope, 1, true, "justin");
+    learnFromYes(book, build, scope, 1, true, "justin");
+    noteAutoRun(book, "gh-7", learnKey(plan, scope));
+    expect(forget(book, learnKey(build, scope))).toBe(false); // one key can't clear a streak that never learned
+    expect(forgetAll(book)).toBe(true);
+    expect(learnedList(book)).toEqual([]);
+    expect(learnMeter(book, build, scope, true)).toBeUndefined();
+    expect(forgetAll(book)).toBe(false);
   });
 
   it("rework, base refreshes and work with a PR or a scar never count or show dots", () => {

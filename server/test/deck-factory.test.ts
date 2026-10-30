@@ -668,6 +668,14 @@ describe("the factory learns what the player approves (docs/LEARN.md)", () => {
     expect(f.saved().learned).toEqual([]);
   });
 
+  it("unlearn * starts every kind over, learned or half-filled", async () => {
+    const { f } = await taught();
+    expect(f.saved().learned).toHaveLength(1);
+    await f.send({ type: "unlearn", key: "*" });
+    expect(f.saved().learned).toEqual([]);
+    expect(f.events.some(e => e.type === "log" && e.text === "Got it. The factory asks you about these again.")).toBe(true);
+  });
+
   it("three README/docs plans teach one permission even across root and docs triage labels", async () => {
     const { f, fourth } = await taught(true);
     expect(f.saved().learned?.map(l => l.key)).toEqual(["build|district:docs|approve_runner_job"]);

@@ -96,7 +96,7 @@ import { closeGone, loadTaps, offerCards, offeredRow, openCards, purgeTaps, reco
 import { deriveBottleneck, stageForItem, type StageHistory, type StageMetrics } from "./bottleneck";
 import { emptyMemory as emptyBrainMemory, modelDiagnose, runDiagnose, tapBrain, type BrainMemory } from "./diagnose";
 import { collect, emptyCache as emptySignalCache, type SignalCache } from "./signals";
-import { dismissNote, resetLearn, forget, forgetOnComeback, freshWork, isLearned, learnedList, learnFromYes, learnKey, learnMeter, learnOption, learnScope, noteAutoRun } from "./learn";
+import { dismissNote, resetLearn, forget, forgetAll, forgetOnComeback, freshWork, isLearned, learnedList, learnFromYes, learnKey, learnMeter, learnOption, learnScope, noteAutoRun } from "./learn";
 import { hasDeferReceipt, beginCheckin, deferCard, emptyDeckBook, moveKey, noteYes, plannerFeedback, resetYes, suppressed, thirdDefer, yesKey, type DeckBook, type DeckRule } from "./deck-decisions";
 import { normalizeSentry, sentryStatus, type SentryPayload } from "./sources/sentry";
 import { recordSentryPulse, SENTRY_PULSES_KEY, type SentryPulse } from "./signals/sentry";
@@ -3140,7 +3140,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   /** The player wants to be asked again for this kind of card. */
   private async unlearn(key: string): Promise<void> {
     await this.decisionData();
-    if (!forget(this.deckBook!, key)) return;
+    if (!(key === "*" ? forgetAll(this.deckBook!) : forget(this.deckBook!, key))) return;
     await this.accountPut("deckBook", this.deckBook);
     this.log("info", "Got it. The factory asks you about these again.");
     await this.refreshDecisions();
