@@ -8,14 +8,15 @@
   <img src="docs/readme/hero.gif" alt="The Shiptorio deck: all checks pass, then the rocket lifts off" width="940">
 </p>
 
-Your issues are the raw material. They ride a pixel conveyor through a planner, a builder, the checks and a
-review, and stop at the Gate. You hold **Ship it**. A real pull request merges, and a rocket goes up.
+Your issues are the raw material. Each one rides a pixel conveyor through the Planner, the Builder, Checks
+and Review, and stops at the Gate. You hold **Ship it**. A real pull request merges, and a rocket goes up.
 
 ## Why
 
 AI writes the code now. The slow part is the person: deciding what gets built, what gets checked, and
-what's safe to merge. Shiptorio puts those decisions on one card at a time, makes a yes safe with checks you
-can see, and rewards you for adding more of them. The more you verify, the more the factory runs on its own.
+what's safe to merge. Shiptorio puts those decisions in front of you one card at a time, makes every yes safe
+with checks you can see, and rewards you for adding more checks. The more you verify, the more the factory
+runs on its own.
 
 <p align="center">
   <img src="docs/readme/why-card.png" alt="One card at the bottom of the deck: Approve fix for broken docs link? Later on the left, Approve on the right" width="720">
@@ -29,7 +30,8 @@ Shippy is the robot who runs your line. **Meta Muse Wonder is Shippy's brain.** 
 change, spots the bottleneck, reviews the result and tells you what to do next. It never writes code.
 
 The code is written by your own **Muse Code subscription**, or another coding subscription like Codex, through a
-small runner on your machine. Your sign-ins are the power plants. Nothing runs on our servers but the game.
+small runner on your machine. In the game, your sign-ins are the power plants: more of them, bigger factory.
+Nothing runs on our servers but the game.
 
 <br clear="left">
 
@@ -37,8 +39,8 @@ small runner on your machine. Your sign-ins are the power plants. Nothing runs o
 
 1. **Repo.** An issue arrives on the line.
 2. **Planner.** Shippy proposes a plan and the files it may touch. You approve or send it back.
-3. **Builder.** Your Muse Code or Codex writes the change locally and opens a pull request.
-4. **Checks.** CI, lint, tests and proof checks run. Fails ride back to the planner with a scar.
+3. **Builder.** Your Muse Code or Codex writes the change on your machine and opens a pull request.
+4. **Checks.** CI, lint and tests run on the PR. A failed check sends it back to the Planner, with a scar so you can see it was caught.
 5. **Review.** Shippy reads the diff and gives a verdict.
 6. **Gate.** You hold **Ship it**. The PR merges for real.
 7. **Launch.** Rocket.
@@ -59,12 +61,20 @@ starts doing that step without asking. Ship it always waits for a human.
 
 ## Play
 
-- **Try it:** [shiptorio.dev](https://shiptorio.dev). Shippy walks you through a factory in about two minutes.
+- **Try it:** [shiptorio.dev](https://shiptorio.dev). Shippy walks you through a scripted factory in about two
+  minutes. Nothing in the walkthrough touches a real repo.
 - **Build your own:** sign in with GitHub, pick a repo, install the runner with one line, and your first issue
-  becomes your first launch. Runner setup: [docs/site/runner.md](docs/site/runner.md).
+  becomes your first real launch. Runner setup: [docs/site/runner.md](docs/site/runner.md). During the hackathon
+  this is behind a preview password.
 
 <p align="center">
   <img src="docs/readme/tour-first-card.png" alt="The tour's first card on a small empty platform: Hi, I'm Shippy! Great to meet you." width="740">
+</p>
+
+Your factory starts as a bare platform. Each station is built as Shippy introduces it.
+
+<p align="center">
+  <img src="docs/readme/deck-grows.gif" alt="The platform widens column by column behind a steel scaffold, then the crane builds the Builder" width="940">
 </p>
 
 ## Run it yourself
@@ -81,10 +91,6 @@ bun run dev:web
 Open [localhost:5173/deck.html](http://localhost:5173/deck.html). Add `?source=sim` for a simulated factory.
 `bun run dev` starts the full Worker with a local database on [localhost:8787](http://localhost:8787).
 
-<p align="center">
-  <img src="docs/readme/deck-grows.gif" alt="The platform widens column by column behind a steel scaffold, then the crane builds the Builder" width="940">
-</p>
-
 To host it: [self-host on Cloudflare](docs/site/self-host.md) with your own GitHub App and Meta API key.
 Everything else is in the [docs](docs/site/index.md). Contributing: [AGENTS.md](AGENTS.md).
 
@@ -94,6 +100,10 @@ One Cloudflare Worker serves the game and the API. Each repo gets its own Durabl
 factory state, ticks on an alarm and streams to the browser over a websocket. GitHub events arrive through a
 GitHub App. The runner dials out from your machine, works in a git worktree, and pushes a branch; the server
 opens the PR. Secrets are encrypted per repo and never reach the browser or the logs.
+
+Every decision Shippy makes is one call to the Meta Model API with a JSON schema for the answer: triage, the
+plan, the bottleneck pick and the review all use the same shape, so each one is checkable and logged. The
+planner and reviewer work in a small tool loop that can read files but never write them.
 
 <p align="center">
   <img src="docs/readme/under-the-hood.png" alt="Diagram: your machine runs the runner with Muse Code or Codex and pushes a branch; Cloudflare runs one Worker and one Durable Object per repo; GitHub sends issues and checks in and receives the PR; Meta Muse Wonder is Shippy's brain above; the deck in your browser below over a websocket" width="940">
@@ -119,7 +129,7 @@ The factory must grow.
 ## Built at the Meta AI Developer Hackathon
 
 Everything here was built between Oct 26 and Nov 4, 2026, from an empty repo. Muse Wonder makes every
-factory decision. Muse Code is the builder.
+factory decision. Muse Code writes the code (Codex works too).
 
 ## License
 
