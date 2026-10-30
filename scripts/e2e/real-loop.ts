@@ -13,7 +13,7 @@
 // Sign-in, first that is set:
 //      E2E_COOKIE_FILE   a cookie header saved by an earlier run (default runner/.work/e2e/cookie, 0600, gitignored)
 //      E2E_PASS          the JSON from `node scripts/e2e/owner-pass.mjs` on a machine with server/.dev.vars (60s to use)
-//      SESSION_SECRET + APP_PASSWORD (e.g. `bun --env-file=server/.dev.vars scripts/e2e/real-loop.ts …`)
+//      SESSION_SECRET + APP_PASSWORD (shiptorio.dev: `bun --env-file=$HOME/.config/shiptorio/staging.env …`)
 // Evidence: video.webm, shots/NN-*.png, frames.jsonl (every socket message), timeline.jsonl (every driver step) and
 // report.md. Never prints or saves secrets; the cookie file is the only credential it writes.
 import { chromium, type Page, type WebSocket as PwSocket } from "@playwright/test";

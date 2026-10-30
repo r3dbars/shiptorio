@@ -142,13 +142,14 @@ agent can prove the loop without Justin tapping. It presses the deck's own butto
 reads state from the page's socket frames, and only calls a run shipped when GitHub says the PR merged.
 
 ```sh
-bun --env-file=server/.dev.vars scripts/e2e/real-loop.ts status     # sign-in, runner, what's on the line
-bun --env-file=server/.dev.vars scripts/e2e/real-loop.ts ship 30    # Testing #30 from the inbox to a merged PR
-bun --env-file=server/.dev.vars scripts/e2e/real-loop.ts watch 10   # 10 min of Shippy's cards, bottleneck, thoughts
+bun --env-file=$HOME/.config/shiptorio/staging.env scripts/e2e/real-loop.ts status     # sign-in, runner, what's on the line
+bun --env-file=$HOME/.config/shiptorio/staging.env scripts/e2e/real-loop.ts ship 30    # Testing #30 from the inbox to a merged PR
+bun --env-file=$HOME/.config/shiptorio/staging.env scripts/e2e/real-loop.ts watch 10   # 10 min of Shippy's cards, bottleneck, thoughts
 ```
 
-Somewhere without `server/.dev.vars` (a cloud agent), mint a one-minute pass on a machine that has it with
-`node scripts/e2e/owner-pass.mjs` and hand it over as `E2E_PASS='<json>'`; the session cookie is then kept (0600) in
+shiptorio.dev is the staging Worker, so its secrets are `~/.config/shiptorio/staging.env` (docs/context/ops.md), not
+`server/.dev.vars`. Somewhere without them (a cloud agent), mint a one-minute pass on a machine that has it with
+`SECRETS=~/.config/shiptorio/staging.env node scripts/e2e/owner-pass.mjs` and hand it over as `E2E_PASS='<json>'`; the session cookie is then kept (0600) in
 gitignored `runner/.work/e2e/cookie` for later runs. Evidence lands in `runner/.work/e2e/<stamp>-<mode>/`: `video.webm`,
 `shots/`, `frames.jsonl`, `timeline.jsonl`, `report.md`. Ship mode merges real code, so it refuses `r3dbars/shiptorio`.
 Every yes it taps counts toward learned trust for that repo, same as a human's.
