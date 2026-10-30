@@ -1,7 +1,8 @@
 import { createAway } from "./data/away";
 import { createConnections } from "./data/connections";
 import "./deck.css";
-import { SPRITES, createBus, type CardView, type DeckView, type StopId, type AttachJuice, type CreateLayer, type CreateShippy, type DeckLayer, type DeckSource, type MountCard } from "./contract";
+import { SPRITES, createBus, type ArtLoader, type CardView, type CityView, type CityZoom, type DeckBus, type DeckView, type StopId, type AttachJuice, type CreateLayer, type CreateShippy, type DeckLayer, type DeckSource, type MountCard } from "./contract";
+import { cityLabel, manualCity, nextZoom, zoomLabel, type CityModule } from "./city";
 import { createArt } from "./engine/art";
 import { pixelOn } from "../flags";
 import { createDemo, createOrbDemo, createLaunchDemo } from "./engine/demo";
@@ -132,13 +133,15 @@ export function oneAsk<V extends DeckView>(view: V): V {
 /** Finish the sample loop with the existing connection card, not a second front door.
  *  ask: the story's own "Want to create your own factory?" card shows first, and only its yes opens sign-in
  *  (the guest tour: the password comes up there, never before), straight on to the password or GitHub with no second
- *  card. Closing sign-in brings that card back. */
-export function storyBeforeSignIn(story: DeckSource, connections: { open(target: "repo"): void; card(): CardView | null; answer?(id: string, yes: boolean): unknown }, opts: { ask?: boolean } = {}): DeckSource {
-  let finished = false, replay = 0, asks = 0, asked = false, pressed: string | null = null;
+ *  card. Closing sign-in brings that card back.
+ *  ending(): the story's own last card (the city reveal's "Start with your repo.") while the connection card is up in its
+ *  place: dressSignIn lends the words to the sign-in card, so Yes still runs today's sign-in and Replay still replays. */
+export function storyBeforeSignIn(story: DeckSource, connections: { open(target: "repo"): void; card(): CardView | null; answer?(id: string, yes: boolean): unknown }, opts: { ask?: boolean } = {}): DeckSource & { ending(): CardView | null } {
+  let finished = false, replay = 0, asks = 0, asked = false, pressed: string | null = null, ending: CardView | null = null;
   const askId = () => `story-connect:ask-${asks}`; // fresh each time it shows, so the card renders it again
   const originalId = (id: string) => !replay ? id : id.endsWith(`:replay-${replay}`) ? id.slice(0, -`:replay-${replay}`.length) : null;
   return { ...story, approve(id) { if (opts.ask && id === askId()) { asked = true; return; } const original = originalId(id); if (original) story.approve(original); },
-    later(id) { if (opts.ask && id === askId()) { asks++; story.later("story-connect"); return; } const original = originalId(id); if (original) story.later(original); }, view() {
+    later(id) { if (opts.ask && id === askId()) { asks++; story.later("story-connect"); return; } const original = originalId(id); if (original) story.later(original); }, ending: () => (finished ? ending : null), view() {
     const view = story.view();
     if (view.card?.id !== "story-connect") return replay && view.card ? { ...view, card: { ...view.card, id: `${view.card.id}:replay-${replay}` } } : view;
     if (opts.ask && !asked) return { ...view, card: { ...view.card, id: askId() } };
@@ -148,12 +151,29 @@ export function storyBeforeSignIn(story: DeckSource, connections: { open(target:
     }
     else if (!connections.card() && opts.ask) { finished = false; asked = false; asks++; return { ...view, card: { ...view.card, id: askId() } }; }
     else if (!connections.card()) {
-      finished = false; replay++;
+      finished = false; replay++; ending = null;
       story.later("story-connect"); // Close replays with fresh ids, so the renderer can show the same decisions again.
       return story.view();
     }
+    ending = view.card;
     return { ...view, card: null };
   } };
+}
+
+/** The reveal's last beat (city beat "card"): the sign-in card says what the story says ("Start with your repo.",
+ *  "Sign in with GitHub", "Replay") and is a setup card. Same id, so Yes is still the existing sign-in and No still closes it.
+ *  The card is dressed while it asks (yes "Sign in") and also while it waits for the answer (yes "Please wait…", titled
+ *  "Finding your repositories…"), so a slow /api/me never shows the player a different, shorter card for a moment. */
+export function dressSignIn(card: CardView | null, ending: CardView | null, city: CityView | undefined): CardView | null {
+  if (!card || !ending || city?.beat !== "card") return card;
+  if (!card.id.startsWith("connection-") || (card.yes !== "Sign in" && card.yes !== "Please wait…")) return card;
+  return { ...card, title: ending.title, line: ending.line, yes: ending.yes, no: ending.no, setup: true };
+}
+
+/** The Zoom button steps aside while a card asks, while Shippy's tour talks, and for the story's whole city reveal: from the hero
+ *  rocket (reveal t = 0, when the story's view has no city yet) through the sign-in card. Replay brings it back. */
+export function zoomHidden(view: Pick<DeckView, "card">, storyCity: CityView | undefined, storyRun: { phase(): string } | null, firstRun: { playing(): boolean } | null): boolean {
+  return !!view.card || !!storyCity?.beat || storyRun?.phase() === "reveal" || storyRun?.phase() === "end" || !!firstRun?.playing();
 }
 
 // The 2D deck page (web/deck.html). Wires the engine to a source, the card, Shippy and juice.
@@ -162,7 +182,7 @@ if (typeof document !== "undefined" && document.getElementById("world")) void (a
 // Each module lives in its own folder and is picked up here when it exists, so threads can land independently.
 type Mod = Record<string, unknown>;
 // Each folder's entry: index.ts, or the one file named after the folder's job (card/card.ts, data/source.ts).
-const mods = import.meta.glob<Mod>(["./{story,data,shippy,card,juice,grow,build,launch,props}/index.ts", "./card/card.ts", "./data/source.ts", "./shippy/shippy.ts", "./story/story.ts"]);
+const mods = import.meta.glob<Mod>(["./{story,data,shippy,card,juice,grow,build,launch,props,city}/index.ts", "./card/card.ts", "./data/source.ts", "./shippy/shippy.ts", "./story/story.ts"]);
 const load = async (folder: string, name: string) => {
   for (const [path, get] of Object.entries(mods)) if (path.startsWith(`./${folder}/`)) { const m = await get(); if (m[name]) return m; }
   return null;
@@ -194,6 +214,8 @@ const seed = Number(params.get("seed")) || 0;
     onStart: id => (source as DeckSource & { focusItem?: (id: string) => void }).focusItem?.(id),
   });
   let source: DeckSource;
+  let storyRun: { phase(): string } | null = null; // the deck page's story: the Zoom button hides during its reveal
+  let storyEnding: (() => CardView | null) | null = null; // the full story's last card, lent to the sign-in card (dressSignIn)
   const rehearsal = want === "shippy-demo" ? createShippyRehearsal() : null;
   const machines = want === "machine-demo" ? createMachineRehearsal() : null;
   const conveyor = want === "conveyor-demo" ? createConveyorDemo() : null;
@@ -222,11 +244,18 @@ const seed = Number(params.get("seed")) || 0;
       approve() {}, later() {} };
   }
   else if (want !== "demo" && story?.createStory) {
-    // A guest at the live front door gets the short version: one swipe, it clears, then Shippy and sign-in.
     // A guest at the live front door meets Shippy: a small deck, the story told in the card at their pace, each
-    // station built and named, then one fix shipped. /deck.html keeps the jam-and-swipe story for the video.
-    source = want === "live" ? storyBeforeSignIn(shipFeel(createTour(), bus), connections, { ask: true })
-      : storyBeforeSignIn((story.createStory as (o: { seed: number; speed: number }) => DeckSource)({ seed, speed }), connections);
+    // station built and named, then one fix shipped. /deck.html keeps the jam-and-swipe story for the video, which ends
+    // on the city reveal (?reveal=1 starts there, for shots and recording takes), then the same sign-in card.
+    if (want === "live") source = storyBeforeSignIn(shipFeel(createTour(), bus), connections, { ask: true });
+    else {
+      const run = (story.createStory as (o: { seed: number; speed: number; reducedMotion?: boolean; startAt?: "reveal" }) => DeckSource & { phase(): string })({
+        seed, speed, reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches, startAt: params.get("reveal") === "1" ? "reveal" : undefined });
+      storyRun = run;
+      const wrapped = storyBeforeSignIn(run, connections);
+      storyEnding = wrapped.ending;
+      source = wrapped;
+    }
   }
   else source = createDemo();
   const guestTour = want === "live" && !signedIn;
@@ -251,6 +280,8 @@ const seed = Number(params.get("seed")) || 0;
   const cv = document.getElementById("world") as HTMLCanvasElement;
   const layers: DeckLayer[] = [];
   for (const m of layerMods) if (m) layers.push((m.createLayer as CreateLayer)(art, bus));
+  const cityMod = await load("city", "createCity"); // scenery only: nothing in it reads an account, an issue or a service
+  const city = cityMod ? (cityMod.createCity as (art: ArtLoader, bus: DeckBus, host: HTMLElement) => CityModule)(art, bus, document.body) : undefined;
   const inspector = createMachineInteraction(machines ? id => { if (id === machines.machine) machines.setMode("working"); } : undefined);
   if (want === "live" && signedIn && !params.has("repo")) connections.open("repo");
   // The live first run after sign-in (the guest already met Shippy in the tour): picking a repo and connecting Codex
@@ -269,7 +300,7 @@ const seed = Number(params.get("seed")) || 0;
   let tourTalking = false;
   const note = mountWhatIs(document, () => whatis.close());
   document.addEventListener("pointerdown", e => { const t = e.target as HTMLElement; if (t !== cv && !t.closest?.(".whatis")) whatis.close(); });
-  const engine = createEngine(cv, art, bus, shippy, layers, { onPowerSelect: () => {
+  const engine = createEngine(cv, art, bus, shippy, layers, { city, onPowerSelect: () => {
     if (setupReachable) connections.open("power"); else whatis.tap("engine", tourTalking);
   }, onTapEmpty: () => whatis.close(), onMachineSelect: id => {
     deckSound.playTap(id);
@@ -314,15 +345,23 @@ const seed = Number(params.get("seed")) || 0;
     onApprove(id) { if (away?.answer(id)) return; if (id.startsWith("connection-")) { void connections.answer(id, true); return; } bus.emit({ type: "approve", cardId: id }); if (!inspector.answer(id, true)) source.approve(id); },
     onLater(id) { if (away?.answer(id)) return; if (id.startsWith("connection-")) { void connections.answer(id, false); return; } bus.emit({ type: "later", cardId: id }); if (!inspector.answer(id, false)) source.later(id); },
   });
+  // The card's font is fetched the first time a card draws. On a ?reveal=1 page that is the sign-in card at the end of the reveal:
+  // it drew once in the fallback font (a 294 px card), then swapped to Pixelify Sans (225 px) a frame later. Ask for it now.
+  void document.fonts?.load('700 16px "Pixelify Sans"')?.catch(() => undefined);
   (juiceMod?.attachJuice as AttachJuice | undefined)?.(bus, document.body, (s) => engine.where(s));
   deckSound.attachSound(bus, () => source.view());
 
   const zoom = document.getElementById("zoom") as HTMLButtonElement;
-  let all = false, asking = false;
-  // Phone only, and only while nothing asks: a card on screen is the one thing to tap.
-  const zoomLabel = () => { const label = all ? "Zoom in" : "Zoom out"; zoom.hidden = !engine.portrait || asking || guestTour; /* the tour frames every shot itself */ zoom.textContent = label; zoom.setAttribute("aria-label", label); };
-  zoom.addEventListener("click", () => { all = !all; engine.seeAll(all); zoomLabel(); });
-  addEventListener("resize", zoomLabel); zoomLabel();
+  // Zoom out cycles station -> line -> city -> station in every source (story, sim, live, replay). The story takes the
+  // camera itself during its city reveal (view.city), and the button steps aside until the card comes.
+  let manual: CityZoom = "station", asking = false, painted = "";
+  const paintZoom = (hidden: boolean) => {
+    const label = zoomLabel(manual), key = `${hidden}|${label}`;
+    if (key === painted) return;
+    painted = key; zoom.hidden = hidden; zoom.textContent = label; zoom.setAttribute("aria-label", label);
+  };
+  zoom.addEventListener("click", () => { manual = nextZoom(manual, pixelOn()); paintZoom(zoom.hidden); });
+  paintZoom(false);
 
   const toast = document.getElementById("toast")!;
   const accessibility = wireDeckAccessibility(cv, document.getElementById("card-host")!, toast);
@@ -343,14 +382,16 @@ const seed = Number(params.get("seed")) || 0;
     connections.tick();
     const base = inspector.view(source.view());
     firstRun?.step(dt);
-    const shown = payoff.view(connections.view(away ? away.view(base) : base), dt);
-    const view = oneAsk(firstRun ? firstRun.view(shown) : shown);
+    const asked = connections.view(away ? away.view(base) : base), ending = storyEnding?.() ?? null;
+    const shown = payoff.view(ending && asked.card ? { ...asked, card: dressSignIn(asked.card, ending, asked.city) } : asked, dt);
+    const underlying = oneAsk(firstRun ? firstRun.view(shown) : shown);
+    const storyCity = underlying.city; // only the story sets it: the reveal owns the camera
+    if (storyCity || storyRun?.phase() === "reveal") manual = "station"; // the reveal owns the camera from the rocket (beat 0: the launch shot) to the card
+    if (!!underlying.card !== asking) { asking = !!underlying.card; if (asking) manual = "station"; } // a new question brings the camera back to it
+    const view = !storyCity && manual !== "station"
+      ? { ...underlying, city: manualCity(manual, cityLabel(location.search)), caption: manual === "city" ? null : underlying.caption } : underlying;
+    paintZoom(zoomHidden(view, storyCity, storyRun, firstRun) || guestTour); // the tour frames every shot itself
     document.body.classList.toggle("first-run", !!firstRun?.playing());
-    if (!!view.card !== asking) {
-      asking = !!view.card;
-      if (asking && all) { all = false; engine.seeAll(false); } // a new question brings the camera back to it
-      zoomLabel();
-    }
     const work = (view as import('./data/view').LiveDeckView).work;
     cv.dataset.workId = work?.id ?? '';
     cv.dataset.workStop = work?.stop ?? '';

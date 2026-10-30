@@ -75,6 +75,83 @@ export interface ShippyView {
   at: StopId | "corner"; // corner = folded up in the top-left of the screen
 }
 
+// ---------- the city (third zoom level; web/src/deck2d/city/SPEC.md) ----------
+// Zoom out once: the whole line. Zoom out again: the line is one lit island among six over the clouds. The five other
+// islands are scenery only: nothing on screen may say or imply they work. GitHub is the only real source.
+/** The five scenery islands, in reveal order (beat 3). Beat 5 dims them in reverse. */
+export type CityIsland = "errors" | "traffic" | "inbox" | "customers" | "marketing";
+export const CITY_ISLANDS: readonly CityIsland[] = ["errors", "traffic", "inbox", "customers", "marketing"];
+/** Each island's label under it, in the caption font. */
+export const CITY_LABEL: Record<CityIsland, string> = {
+  errors: "Errors", traffic: "Traffic", inbox: "Inbox", customers: "Customers", marketing: "Marketing",
+};
+/** station = the usual camera (unchanged), line = the whole line, city = the ring of six islands. */
+export type CityZoom = "station" | "line" | "city";
+/** The story's reveal beats (SPEC.md section 1). Omitted on a CityView = the manual city from the Zoom button. */
+export type CityBeat = "line" | "city" | "islands" | "grow" | "dim" | "card";
+/** One city-zoom picture. Progress-driven like deck.islandProgress and Stop.building: the source owns time, the city
+ *  layer draws a pure function of this plus its own tiny transition clocks. */
+export interface CityView {
+  zoom: CityZoom;
+  beat?: CityBeat;
+  /** 0 = dark, 1 = fully lit. In between = seconds into the light step / CITY_TIMING.light (runway lamps, dither, lit).
+   *  Dropping back to 0 is a step to dark (beat 5), never a fade. */
+  lit: Record<CityIsland, number>;
+  /** A brass "Coming soon" plate under the island's label. */
+  plates: Record<CityIsland, boolean>;
+  /** City zoom camera: frame this island (phone pans to it), or null = fit the whole ring. Ignored at other zooms. */
+  focus: CityIsland | null;
+  /** The line's label: the repo name ("your repo" in the story, owner/name live). */
+  label: string;
+}
+/** City art grid: 1 city px = CITY_PX world units = 2 deck art px. Island sprites are authored in city px; the line is
+ *  drawn at ART_PX into its own buffer and halved nearest-neighbor, so the whole city frame is one pixel grid. */
+export const CITY_PX = 10;
+/** The reveal clock, in seconds (SPEC.md section 1). The story and the city layer both read these; tests pin them. */
+export const CITY_TIMING = {
+  rocket: 4.0, // beat 0: from the hero crate shipping (shipped + 1) to the first zoom out
+  move: 0.6, // every reveal camera move: zoom out, pan to an island, back to the ring
+  line: 1.2, // beat 1 hold, after its move
+  city: 1.5, // beat 2 hold, after its move
+  light: 2.6, // beat 3 per island: lit runs 0 -> 1 over this, after the move (move + light = 3.2 s per island, so a caption runs at 17-21 characters a second)
+  lamp: 0.06, // runway lamps light this far apart, from the lit end outward (seconds into light)
+  lamps: 12, // at most this many lamps on one bridge (lamp i lights at i * lamp, the last at 0.66)
+  dither: 0.72, // seconds into light: the 2x2 checker of lit over dark
+  lit: 0.84, // seconds into light: fully lit, lamp + halo on (the island's caption is up from the end of its move)
+  arcDots: 30, // Customers: the dotted arc, lit from the line's rocket spot to the Customers pad
+  arcDot: 0.02, // seconds apart (dot j at lit + j * arcDot, the last at 1.42)
+  capsule: 1.94, // seconds into light: Customers' capsule sits down on its pad, one dust puff (after the last arc dot, 1.42)
+  beacon: 1.02, // seconds into light: Marketing's mast-tip beacon lights
+  grow: 2.5, // beat 4 hold on "The factory must grow.", after the move back to the ring
+  dimGap: 0.15, // beat 5: islands step to dark this far apart, in reverse order
+  dark: 1.5, // beat 5 hold after the last island dims, then the card
+  reducedIsland: 3.0, // reduced motion: each island's caption is a cut, held this long with the island still dark (5 x 3.0 between beat city and grow)
+} as const;
+/** Every word the city shows. Plain, short, and nothing that claims the five islands work. */
+export const CITY_COPY = {
+  line: "That's one line.",
+  city: "Here's the rest of the factory.",
+  /** Two lines each (a newline between them; #toast shows the break at city zoom). The tense stays honest: what will come in. */
+  island: {
+    errors: "Sentry will send in crashes\nfrom your real product.",
+    traffic: "Cloudflare will show how\npeople use your app.",
+    inbox: "Your email and support tickets\nwill come in here.",
+    customers: "PostHog funnels will show\nwhere customers drop off.",
+    marketing: "Next: customer acquisition\nand automated marketing.",
+  } as Record<CityIsland, string>,
+  grow: "The factory must grow.",
+  dim: "For now: one line. Your repo.",
+  plate: "Coming soon",
+  repo: "your repo",
+  card: { title: "Start with your repo.", line: "GitHub first. The rest lights up later.", yes: "Sign in with GitHub", no: "Replay" },
+  /** The canvas's accessible name while the city shows. */
+  canvas: "The factory city: your line is lit. Errors, Traffic, Inbox, Customers and Marketing are coming soon.",
+} as const;
+/** City camera shots: "city" = the whole ring, "city-<island>" = that island (SPEC.md section 1). Kept out of Shot on
+ *  purpose (the engine's station shots index STOP_X by Shot): sources set view.city.focus; ?shot=city|city-<island>
+ *  previews parse into this type and mean { zoom: "city", focus } on a manual city. */
+export type CityShot = "city" | `city-${CityIsland}`;
+
 /** Everything the screen shows, at one moment. Sources (data/, story/) produce it; engine/ draws it. */
 export type Shot = "shippy" | "boiler" | "line" | StopId;
 
@@ -96,6 +173,9 @@ export interface DeckView {
     islandProgress?: number; // 0..1 while building
     boiler?: number; // 0..1: the steam engine rising into place (0 = not there yet). Omitted = standing
   };
+  /** The city zoom levels. Omitted = station zoom, exactly as before the city existed. The story sets it during the
+   *  reveal; main.ts sets it for the manual Zoom button (end-of-beat-5 picture, no captions). */
+  city?: CityView;
 }
 
 /** Where a DeckView comes from: the scripted first run or the real factory. */
@@ -125,7 +205,13 @@ export type DeckEvent =
   | { type: "launch-stage"; stage: "island-rising" | "island-up" | "bridge" | "bridge-done" | "tower" | "rocket-lowering" | "rocket-seated" } // launch/
   | { type: "tap"; target: TapTarget } // interact/ (docs/context/pixel-deck.md)
   | { type: "shippy-arrive"; target: TapTarget }
-  | { type: "interact"; target: TapTarget; action: string };
+  | { type: "interact"; target: TapTarget; action: string }
+  // city/ (SPEC.md section 3): engine emits city-zoom; the city layer emits the rest from view.city crossings
+  | { type: "city-zoom"; level: CityZoom } // the effective zoom level changed (not on the first frame)
+  | { type: "city-lamp"; island: CityIsland; lamp: number; of: number } // one runway lamp lit (lamp 0 = the lit end)
+  | { type: "city-lit"; island: CityIsland } // an island stepped to fully lit
+  | { type: "city-all-lit" } // view.city.beat entered "grow"
+  | { type: "city-dim"; island: CityIsland }; // an island stepped back to dark
 
 /** Anything on the deck you can tap; Shippy walks to standX and does action. interact/targets.ts builds these. */
 export interface TapTarget {

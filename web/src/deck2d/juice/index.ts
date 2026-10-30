@@ -19,7 +19,7 @@ export * from "./pixel";
 export const createLayer: CreateLayer = (a, bus) => (pixelOn() ? createJuiceLayer(a, bus) : { update() {}, draw() {} });
 
 export const attachJuice: AttachJuice = (bus, host, where) => {
-  const deck = new DeckSound((s, at) => sound.play(s, at), undefined, playBuild);
+  const deck = new DeckSound((s, at, semitones) => sound.play(s, at, false, semitones), undefined, playBuild);
   // the page passes document.body: pin effects to the viewport so they never scroll or add scrollbars
   if (host === document.body) host.classList.add("djuice-viewport");
   const px = pixelOn(); // the pixel layer (createLayer) draws the effects; DOM overlays would break the grid

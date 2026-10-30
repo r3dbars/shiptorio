@@ -1,5 +1,6 @@
 // The quiet construction kit: ratchets, rivets, steam, a crackle, a thunk and a ship's bell (Justin's soundboard picks:
 // Crowbar, Ignite, Hammer, Gear engage, Ship's bell). The deck's build, grow and island steps ring these through juice/.
+// The city reveal rings three more, all quieter than bell_small: a lamp tick, a brass tap and a thud.
 // Mute and volume follow the engine's settings; it plays on a bus of its own.
 
 import { sound } from "./engine";
@@ -13,7 +14,11 @@ export type Cue =
   | "crackle_small"
   | "thunk" // the brass ONLINE plate stamps on
   | "bell" // the ship's bell rings it in
-  | "bell_small";
+  | "bell_small"
+  // the city reveal (city/SPEC.md section 5). Quiet, and no louder than bell_small: they sit under the music.
+  | "city_tick" // a runway lamp comes on: 880 Hz, play() lifts it a semitone per lamp
+  | "city_tap" // an island lights: a soft brass tap on C4, play() lifts it up the chord
+  | "city_thud"; // an island goes dark: a soft low thud
 
 // Voices are plain data the engine plays through tone() and noise(), so levels and timing can be tested without Web Audio.
 // at is seconds from the cue; vol is before the master volume (settings.volume ** 2 * 0.6).
@@ -22,7 +27,8 @@ export type Voice =
   | { k: "noise"; dur: number; vol: number; at: number; lp?: number; hp?: number; bp?: number; sweepTo?: number; rate?: number; attack?: number };
 
 // a struck brass bell: a hum note under it, then inharmonic partials that ring and fade at their own pace
-const bell = (f: number, v: number, at: number, dur: number): Voice[] =>
+// (attack: a low bell needs a few ms to get its first wave up to level; the ship's bell strikes at 2 ms)
+const bell = (f: number, v: number, at: number, dur: number, attack = 0.002): Voice[] =>
   ([[0.5, 0.5], [1, 1], [1.19, 0.45], [1.5, 0.35], [2, 0.3], [2.74, 0.16], [3.76, 0.08]] as const).map(([r, g], i) => ({
     k: "tone" as const,
     f: f * r,
@@ -30,7 +36,7 @@ const bell = (f: number, v: number, at: number, dur: number): Voice[] =>
     type: "sine" as const,
     vol: v * g,
     at,
-    attack: 0.002,
+    attack,
   }));
 
 export const BUILD_RECIPE: Record<Cue, Voice[]> = {
@@ -84,10 +90,39 @@ export const BUILD_RECIPE: Record<Cue, Voice[]> = {
   ],
   bell: [...bell(784, 0.1, 0.12, 2.2), ...bell(784, 0.045, 0.5, 1.6)],
   bell_small: bell(784, 0.045, 0.1, 1.4),
+  // A runway lamp: one short triangle pip, its octave, and a hair of click. Under 40 ms, so twelve of them 60 ms apart
+  // stay twelve separate ticks.
+  city_tick: [
+    { k: "tone", f: 880, dur: 0.036, type: "triangle", vol: 0.075, at: 0, attack: 0.002 },
+    { k: "tone", f: 1760, dur: 0.022, type: "sine", vol: 0.022, at: 0, attack: 0.001 },
+    { k: "noise", dur: 0.01, vol: 0.028, bp: 4200, at: 0, attack: 0.001 },
+  ],
+  // A knuckle on a small brass bell: a short, low ring on C4 (play() climbs it up the chord as the islands light), a
+  // triangle for body and a muffled tap. Warm: even the highest partial stays near 1 kHz on the first island.
+  city_tap: [
+    ...bell(262, 0.03, 0, 0.45, 0.008),
+    { k: "tone", f: 262, dur: 0.3, type: "triangle", vol: 0.02, at: 0, attack: 0.008 },
+    { k: "noise", dur: 0.02, vol: 0.02, bp: 1800, at: 0 },
+  ],
+  // A heavy lamp going out: a short sine drop, a triangle so small speakers hear it, a muffled knock.
+  city_thud: [
+    { k: "tone", f: 170, to: 78, dur: 0.2, type: "sine", vol: 0.07, at: 0, attack: 0.004 },
+    { k: "tone", f: 340, to: 156, dur: 0.09, type: "triangle", vol: 0.025, at: 0 },
+    { k: "noise", dur: 0.05, vol: 0.03, lp: 700, at: 0 },
+  ],
 };
 
 // A rough loudness ceiling: the sum of a cue's voice levels. Tests hold the routine taps well under the big moments.
 export const recipePeak = (v: Voice[]) => v.reduce((s, x) => s + x.vol, 0);
+/** How long a cue sounds, in seconds: the end of its last voice. */
+export const recipeLength = (v: Voice[]) => v.reduce((s, x) => Math.max(s, x.at + x.dur), 0);
+/** A cue's voices lifted by `semitones` (negative = down). Tones move, noise keeps its colour. Returns the recipe itself at 0. */
+export function voicesFor(cue: Cue, semitones = 0): Voice[] {
+  const voices = BUILD_RECIPE[cue];
+  if (!Number.isFinite(semitones) || semitones === 0) return voices;
+  const k = 2 ** (semitones / 12);
+  return voices.map((v) => (v.k === "tone" ? { ...v, f: v.f * k, ...(v.to === undefined ? {} : { to: v.to * k }) } : v));
+}
 export const ROUTINE_PEAK = 0.25;
 export const ROUTINE_CUES: readonly Cue[] = ["chalk", "ratchet", "rivet", "puff"];
 
@@ -108,11 +143,11 @@ export function out(): AudioNode {
   return bus;
 }
 
-export function play(cue: Cue, delay = 0) {
+export function play(cue: Cue, delay = 0, semitones = 0) {
   if (!sound.canPlay) return;
   const o = out();
   const t = sound.now + delay;
-  for (const v of BUILD_RECIPE[cue]) {
+  for (const v of voicesFor(cue, semitones)) {
     if (v.k === "tone") sound.tone({ f: v.f, to: v.to, dur: v.dur, type: v.type, vol: v.vol, at: t + v.at, attack: v.attack, out: o });
     else sound.noise({ dur: v.dur, vol: v.vol, at: t + v.at, lp: v.lp, hp: v.hp, bp: v.bp, sweepTo: v.sweepTo, rate: v.rate, attack: v.attack, out: o });
   }

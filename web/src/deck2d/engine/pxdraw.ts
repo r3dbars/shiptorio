@@ -29,7 +29,7 @@ function visibleColumns(cx: CanvasRenderingContext2D, x0: number, x1: number): [
  * the back, a sun-lit right edge, brass rivets) with one chevron per plate, a brass front lip, an iron front face
  * with steel roller hubs, soot. Each bay supplies its own accumulated movement phase; no cargo means a stationary
  * belt. */
-export function beltRun(cx: CanvasRenderingContext2D, ax: number, ay: number, bx: number, by: number, len: number, t: number, speed: number, blockedAt: (worldX: number) => boolean | "jam" | "wait" = () => false, phaseAt: (worldX: number) => number = () => 0) {
+export function beltRun(cx: CanvasRenderingContext2D, ax: number, ay: number, bx: number, by: number, len: number, t: number, speed: number, blockedAt: (worldX: number) => boolean | "jam" | "wait" = () => false, phaseAt: (worldX: number) => number = () => 0, dir: 1 | -1 = 1) {
   const x0 = g(ax), x1 = g(ax + (bx - ax) * Math.min(1, len / Math.hypot(bx - ax, by - ay)));
   // Columns off the canvas would draw nothing, so they're skipped (a phone sees a fraction of the belt).
   const [v0, v1] = visibleColumns(cx, x0, x1);
@@ -47,7 +47,7 @@ export function beltRun(cx: CanvasRenderingContext2D, ax: number, ay: number, bx
     // the track. Row 0 is the gap in the back rail's shadow; the plates are cool steel, lit at the back (it faces the
     // sun), darker toward the front lip, so the warm crates pop off them.
     const shift = Math.floor(phaseAt(x * P) * speed / P);
-    const k = ((x - shift) % SEG + SEG) % SEG;
+    const k = dir > 0 ? ((x - shift) % SEG + SEG) % SEG : ((x + shift) % SEG + SEG) % SEG; // dir -1: the plates run left
     const tr = !blocked ? TRACK : held === WAIT ? WAIT_TRACK : JAM_TRACK;
     for (let r = 0; r < 6; r++) px(cx, x, y + 2 + r, 1, 1, tr[r]);
     if (k === 0) px(cx, x, y + 2, 1, 6, C.soot[0]); // plate seam
@@ -55,7 +55,7 @@ export function beltRun(cx: CanvasRenderingContext2D, ax: number, ay: number, bx
     else if (k === SEG - 1) { px(cx, x, y + 3, 1, 1, blocked ? held[1] : C.steel[3]); px(cx, x, y + 4, 1, 3, blocked ? held[0] : C.steel[2]); } // its sun-lit right edge
     else if (k === SEG - 2) { px(cx, x, y + 3, 1, 1, C.brass[4]); px(cx, x, y + 6, 1, 1, C.brass[2]); } // rivets, brass as jewelry
     // One chevron per plate. Healthy plates travel right; a held bay (yellow or red) keeps its whole pattern still.
-    const d = k - 5;
+    const d = dir > 0 ? k - 5 : 7 - k; // the chevron points the way the plates run
     if (d === 0 || d === 1) { px(cx, x, y + 3, 1, 1, signal[2]); px(cx, x, y + 6, 1, 1, signal[1]); }
     if (d === 1 || d === 2) { px(cx, x, y + 4, 1, 1, signal[2]); px(cx, x, y + 5, 1, 1, signal[1]); }
     if (d === 2) px(cx, x, y + 6, 1, 1, signal[0]); // the chevron's shadow on the plate, falling down-left of its tip
@@ -67,6 +67,46 @@ export function beltRun(cx: CanvasRenderingContext2D, ax: number, ay: number, bx
     px(cx, x, y + 9, 1, 1, hub === 6 ? C.steel[2] : hub === 7 ? C.steel[3] : hub === 13 ? C.iron[3] : C.iron[1]);
     px(cx, x, y + 10, 1, 1, hub === 6 ? C.steel[0] : hub === 7 ? C.steel[1] : hub === 13 && x % 42 === 13 ? C.copper[0] : C.iron[0]);
     px(cx, x, y + 11, 1, 1, C.soot[0]);
+  }
+}
+
+/** The rows of [y0, y1) that can land on the canvas: visibleColumns turned on its side. */
+function visibleRows(cx: CanvasRenderingContext2D, y0: number, y1: number): [number, number] {
+  const m = cx.getTransform?.(), h = cx.canvas?.height;
+  if (!m || !h || m.b !== 0 || m.c !== 0 || !(m.d > 0)) return [y0, y1];
+  return [Math.max(y0, Math.floor(-m.f / m.d / P) - 2), Math.min(y1, Math.ceil((h - m.f) / m.d / P) + 2)];
+}
+/** The same belt standing upright, for the city's vertical sky bridges: one run from world y `ay` down to `by` (ay <= by)
+ * centred on world x, 12 art px wide, plates 14 art px long. It is beltRun turned a quarter turn so the sun-lit back
+ * rail (with the status line) is on the right: soot, iron face, brass lip, the steel track lit toward the right, the
+ * status rail, soot. `phase` is the accumulated movement in seconds (one value: a bridge has one bay); dir 1 runs the
+ * plates and chevrons down, -1 up. No cast shadow: a bridge hangs in open sky. */
+export function beltRunV(cx: CanvasRenderingContext2D, x: number, ay: number, by: number, t: number, speed: number, phase = 0, dir: 1 | -1 = 1) {
+  const x0 = g(x) - Math.floor(BELT_H / 2), y0 = g(ay), y1 = g(by);
+  const [v0, v1] = visibleRows(cx, y0, y1);
+  const shift = Math.floor(phase * speed / P);
+  for (let y = v0; y < v1; y++) {
+    const end = y === y0 || y === y1 - 1, post = y % 28 === 0, postLit = y % 28 === 1;
+    px(cx, x0 + 11, y, 1, 1, C.soot[0]);
+    // the back rail on the lit side: the status line (cyan while it runs), a brass stud on every post
+    px(cx, x0 + 10, y, 1, 1, end ? RUN[2] : post ? C.brass[2] : postLit ? C.brass[4] : RUN[1]);
+    // the track, steel lit toward the sun on the right, one chevron per plate
+    const k = dir > 0 ? ((y - shift) % SEG + SEG) % SEG : ((y + shift) % SEG + SEG) % SEG;
+    for (let c = 0; c < 6; c++) px(cx, x0 + 4 + c, y, 1, 1, TRACK[5 - c]);
+    if (k === 0) px(cx, x0 + 4, y, 6, 1, C.soot[0]); // plate seam
+    else if (k === 1) px(cx, x0 + 5, y, 4, 1, C.steel[3]); // the plate's sun-lit top edge
+    else if (k === SEG - 1) px(cx, x0 + 5, y, 4, 1, C.steel[0]); // its shaded bottom edge
+    else if (k === SEG - 2) { px(cx, x0 + 8, y, 1, 1, C.brass[4]); px(cx, x0 + 5, y, 1, 1, C.brass[2]); } // rivets
+    const d = dir > 0 ? k - 5 : 7 - k; // the chevron points the way the plates run
+    if (d === 0 || d === 1) { px(cx, x0 + 8, y, 1, 1, RUN[2]); px(cx, x0 + 5, y, 1, 1, RUN[1]); }
+    if (d === 1 || d === 2) { px(cx, x0 + 7, y, 1, 1, RUN[2]); px(cx, x0 + 6, y, 1, 1, RUN[1]); }
+    if (d === 2) px(cx, x0 + 5, y, 1, 1, RUN[0]);
+    // the brass lip and the iron face with a roller hub under every plate
+    px(cx, x0 + 3, y, 1, 1, end ? RUN[2] : postLit ? C.brass[4] : C.brass[2]);
+    const hub = y % SEG;
+    px(cx, x0 + 2, y, 1, 1, hub === 6 ? C.steel[2] : hub === 7 ? C.steel[3] : hub === 13 ? C.iron[3] : C.iron[1]);
+    px(cx, x0 + 1, y, 1, 1, hub === 6 ? C.steel[0] : hub === 7 ? C.steel[1] : hub === 13 && y % 42 === 13 ? C.copper[0] : C.iron[0]);
+    px(cx, x0, y, 1, 1, C.soot[0]);
   }
 }
 

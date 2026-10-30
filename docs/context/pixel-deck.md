@@ -10,6 +10,8 @@ Justin, 2026-10-29: the 2D pixel deck is the permanent version. It's on by defau
 - One owner per folder at a time: `engine/` (camera, sky, clouds, belt, crates, lever), `stations/`, `props/`
   (code hull, clutter, boiler, orb), `shippy/`, `card/`, `story/`, `data/`, `grow/`, `build/`, `launch/`, `juice/`.
 - Everything moving is drawn in code. Pictures are only for static things (sky, city, cloud strips).
+- `city/` is the third zoom level (line, then city) and the story's ending: five scenery islands that say where this goes,
+  and nothing on them claims to work. The Zoom button cycles station, line, city in every source. Read `city/README.md`.
 
 ## Art rules (don't break these)
 

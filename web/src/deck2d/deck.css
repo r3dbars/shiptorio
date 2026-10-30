@@ -82,3 +82,53 @@ body.first-run .toast { width: calc(100% - 24px); white-space: normal; text-alig
   font-size: 12px; line-height: 1.4; color: var(--ink); background: #121e2b; border: 2px solid #a36915; box-shadow: 0 3px 0 #000; cursor: pointer; }
 .whatis b { display: block; margin-bottom: 2px; font-weight: 400; color: #fdc727; }
 @media (min-width: 900px) and (min-height: 560px) { .whatis { font-size: 16px; max-width: 340px; padding: 10px 14px; } }
+
+/* The city (city/labels.ts): scenery only, so just words: one label under each island and the line, and after the dim a
+   quiet brass COMING SOON plate under each island's label. DOM text in the caption font on an opaque soot chip, at 12 px / 16 px
+   (phone / desktop) for the labels and the plates alike, so Silkscreen lands on whole device px (12 px is 3 per Silkscreen px
+   at dpr 2, 16 px is 2 at dpr 1) and the boxes match city/camera.ts LABEL_CSS (label 16 / 20 tall, plate 20 / 24 tall). The
+   chip's 1 px edge is an inset shadow, so it never changes the box. Text is #c0988e (dark), #eed3c5 (lit), #fdec9a (the island
+   the story is showing right now, and the line) on #0a0604, all above 7:1. The plate is the same soot chip with a brass-brown
+   edge and dim brass text (#c98115 on #0a0604 is 6.4:1), so it says COMING SOON without out-shouting the line's #fdec9a, the
+   brightest text in the ring. aria-hidden: the canvas names the city, and captions stay in #toast. A plate appears as a step,
+   never a fade. The Zoom button sits above the labels. */
+.city-labels { position: fixed; inset: 0; z-index: 5; pointer-events: none; overflow: hidden; }
+.city-tag { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.city-label { font-size: 12px; line-height: 1; padding: 2px 4px; white-space: nowrap; color: #c0988e; background: #0a0604; box-shadow: inset 0 0 0 1px #432f29; }
+.city-label.lit { color: #eed3c5; }
+.city-label.now { color: #fdec9a; }
+.city-label.line { color: #fdec9a; max-width: min(64vw, 440px); overflow: hidden; text-overflow: ellipsis; }
+.city-plate { font-size: 12px; line-height: 1; padding: 2px 4px; text-transform: uppercase; white-space: nowrap; color: #c98115; background: #0a0604; border: 2px solid #6d370c; box-shadow: 0 2px 0 #0a0604; }
+@media (min-width: 900px) and (min-height: 560px) { .city-label { font-size: 16px; } .city-plate { font-size: 16px; padding: 2px 6px; } }
+/* Pixel text stays pixel text: no font smoothing on the labels, the plates and the reveal's captions (macOS would grey the
+   square edges of Silkscreen's pixels otherwise). */
+.city-label, .city-plate, body[data-deck-zoom="city"] .toast, body[data-city-beat]:not([data-city-beat=""]) .toast { -webkit-font-smoothing: none; font-smooth: never; }
+/* An island's caption is two lines (CITY_COPY.island, joined by a newline): show the break, only at city zoom. */
+body[data-deck-zoom="city"] .toast { white-space: pre-line; line-height: 1.25; }
+/* ... and at city zoom it sits on the same opaque soot chip as the labels, so it reads over the sunset's bright clouds. It is as
+   wide as its longest line (a phone's lines are at most 340 px at 14 px: 362 px with the padding and edge, in a 366 px band). */
+body[data-deck-zoom="city"] .toast { width: max-content; max-width: calc(100% - 24px); padding: 4px 10px; background: #0a0604; border: 1px solid #432f29; }
+/* The reveal's first caption ("That's one line.") is at line zoom, so it gets the same chip for the whole reveal, from the line
+   beat on. data-city-beat is "" whenever the story is not in its reveal (the engine sets it to the empty string, so the bare
+   attribute selector would match every page): only a real beat counts, and manual and live captions stay as they were. */
+body[data-city-beat]:not([data-city-beat=""]) .toast { width: max-content; max-width: calc(100% - 24px); padding: 4px 10px; background: #0a0604; border: 1px solid #432f29; }
+/* A phone's city caption is 12 px, like its labels: 3 device px per Silkscreen px at dpr 2, and a two-line island caption
+   (at most 30 characters a line: 245 px of text, a 267 px chip) stays two lines down to a 320 px screen. */
+@media (max-width: 899px) { body[data-deck-zoom="city"] .toast { font-size: 12px; } }
+/* No caption, no chip: an empty caption is not left as an empty soot box while it fades out (the card beat, the manual city). */
+body[data-deck-zoom="city"] .toast:empty { visibility: hidden; }
+/* Reduced motion: a caption cuts in and out, it does not fade. */
+@media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+.zoom { z-index: 6; }
+body[data-deck-zoom="city"] .shippy-tools { display: none; }
+/* The card takes focus when it comes up (main.ts, for screen readers) but it is not a control: no focus ring on the card itself.
+   (Chrome's ring on a dark page is #99c8ff and #eeeeee, a light frame round the whole plate.) Its buttons keep their own ring. */
+.ic-card[tabindex="-1"]:focus { outline: none; }
+/* The reveal's last card (city beat "card") says "Sign in with GitHub", which is longer than its button: the button gets the
+   wider column and its words stay on one line; under 520 px the two buttons stack (Replay above, Sign in below, DOM order).
+   The Sign in button is two art px taller and a little narrower inside, so its g clears the stripe along the bottom.
+   Scoped to that beat, so every other card is exactly as it was. */
+body[data-city-beat="card"] .ic-card .ic-actions { grid-template-columns: minmax(0, .75fr) minmax(0, 1.5fr); }
+body[data-city-beat="card"] .ic-card .ic-btn b { overflow: visible; text-overflow: clip; white-space: nowrap; }
+body[data-city-beat="card"] .ic-card .ic-btn.approve { min-height: calc(var(--p) * 22); padding-inline: calc(var(--p) * 3); }
+@media (max-width: 519px) { body[data-city-beat="card"] .ic-card .ic-actions { grid-template-columns: minmax(0, 1fr); } }

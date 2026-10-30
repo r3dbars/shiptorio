@@ -1,7 +1,10 @@
 import {
-  ART_PX, BELT_Y, DECK_DX, DECK_END, HULL, snap, FLOOR_Y, LAUNCH_Y, LOOK, PALETTE, PALETTE_48, STOPS, STOP_X,
-  type ArtLoader, type DeckBus, type DeckLayer, type DeckView, type Item, type LayerSlot, type Shot, type ShippyModule, type Stop, type StopId,
+  ART_PX, BELT_Y, CITY_COPY, CITY_PX, DECK_DX, DECK_END, HULL, snap, FLOOR_Y, LAUNCH_Y, LOOK, PALETTE, PALETTE_48, STOPS, STOP_X,
+  type ArtLoader, type CityView, type CityZoom, type DeckBus, type DeckLayer, type DeckView, type Item, type LayerSlot, type Shot, type ShippyModule, type Stop, type StopId,
 } from "../contract";
+import { cityLabel, manualCity, parseCityShot, type CityModule } from "../city";
+import { EDGE, createCityMove, type CityScreen } from "../city/camera";
+import { LINE_BOX } from "../city/layout";
 import { pixelOn } from "../../flags";
 import { createPixelCanvas } from "./pixel";
 import * as pd from "./pxdraw";
@@ -10,8 +13,10 @@ import { BOILER_H, BOILER_W, boilerFrame } from "../props/boiler2d";
 import { stationSize, type StationId } from "../stations";
 import { advanceBeltDistance, beltConnectionAt } from "./flow";
 import { needsAttention, type AttentionView } from "../stations/attention";
-import { anchoredCenter, frameShot, pixelZoom, settleCamera, SHOT_RATE, wholeScale } from "./camera";
+import { anchoredCenter, CITY_CAM_RATE, frameShot, pixelZoom, settleCamera, SHOT_RATE, wholeScale } from "./camera";
 import { DIM, dimPixels } from "./dim";
+import { halve2x, quantPhase } from "./halve";
+import { SKY, SKY_BAND, SKY_FOOT, SKY_TOP, paintOut, ringLineRow, skyColumns, skyDarken, skyFills, skyLift, skyPlan, type SkyBand, type SkyLayout } from "./sky";
 
 // stations/ (its own thread) draws each machine in pixel code; until it lands, pixel mode shows the snapped webp.
 type DrawStation = (cx: CanvasRenderingContext2D, id: StopId, state: string, t: number, x: number, feetY: number, scale?: number, attention?: boolean) => void;
@@ -28,6 +33,9 @@ const ORB = HULL.orb;
  * edge of the floor behind Repo and Planner; ?px=0 keeps the small boiler-on picture. */
 const BOILER = { x: DECK_DX ? 280 : 240, base: 182 };
 const BOUNDS = { x0: -20, x1: PAD.x + 1533 * PAD.s + 20, y0: -30, y1: DECK_DX ? 800 : 670 }; // pixel mode: the whole underside, lanterns and all
+/** World x just past the pixel launch islet's last opaque column (launch/px.ts: island-3.png drawn at the ring's x - 53 art
+ *  px, opaque to its column 95). A phone's line zoom keeps it whole. */
+const ISLET_RIGHT = (Math.round(STOP_X.launch / ART_PX) - 53 + 96) * ART_PX;
 const SPEED = 170, GAP = 50, CRATE = 42;
 // pixel mode: the lever stands on the floor in front of Review (Shippy pulls it from review + 150, facing left)
 const LEVER = DECK_DX ? { x: STOP_X.review + 92, base: 330, h: 78 } : { x: STOP_X.review + 92, base: FLOOR_Y + 48, h: 78 };
@@ -62,9 +70,11 @@ export interface Engine {
   /** A station's box on screen in CSS px (top-centre x/y, bottom y), or null when it isn't tappable right now. */
   anchor(id: StopId | "engine"): { x: number; y: number; bottom: number } | null;
   readonly portrait: boolean;
+  /** Which zoom the camera is at right now (view.city?.zoom, a ?shot=city preview, or station). */
+  readonly zoom: CityZoom;
 }
 
-export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus, shippy: ShippyModule, layers: DeckLayer[] = [], options: { onMachineSelect?: (id: StopId) => void; onPowerSelect?: () => void; onTapEmpty?: () => void } = {}): Engine {
+export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus, shippy: ShippyModule, layers: DeckLayer[] = [], options: { onMachineSelect?: (id: StopId) => void; onPowerSelect?: () => void; onTapEmpty?: () => void; city?: CityModule } = {}): Engine {
   const owned = new Set(layers.flatMap((l) => l.replaces ?? []));
   const slot = (s: LayerSlot) => { for (const l of layers) l.draw(cx, s); };
   const screen = cv.getContext("2d")!;
@@ -72,11 +82,16 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   // Pixel mode (contract: the pixel canvas): draw into a buffer at art resolution, blit at a whole-number scale,
   // snap every pixel to the 48 colors (?pq=0 skips the snap, for speed checks).
   const px = pixelOn() ? createPixelCanvas(cv, ART_PX, new URLSearchParams(location.search).get("pq") === "0" ? undefined : PALETTE_48) : null;
+  // The city zoom (city/SPEC.md): its own pixel canvas on the city grid (1 px = CITY_PX world = 2 art px), only with the pixel deck.
+  const city = px ? options.city : undefined;
+  const cityPx = city ? createPixelCanvas(cv, CITY_PX, new URLSearchParams(location.search).get("pq") === "0" ? undefined : PALETTE_48) : null;
+  const reduced = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)");
   const rehearsingShippy = new URLSearchParams(location.search).get("source") === "shippy-demo";
   const rehearsingMachines = new URLSearchParams(location.search).get("source") === "machine-demo";
   let W = 0, H = 0, DPR = 1, t = 0;
   const resize = () => { DPR = Math.min(2, devicePixelRatio || 1); W = innerWidth; H = innerHeight; cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); };
   addEventListener("resize", resize); resize();
+  document.body.dataset.deckZoom = "station"; document.body.dataset.cityBeat = "";
 
   const crates = new Map<string, Crate>();
   const beltPhases = new Map<StopId, number>();
@@ -84,13 +99,70 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   const puffs: Puff[] = [];
   const rocket = { y: 0, v: 0, mode: "ready" as "ready" | "count" | "up" | "away" | "down", t: 0 };
   let pendingLaunches = 0;
+  let rocketHeld = false; // the city reveal (view.city.beat) keeps the hero rocket away; when the story lets go it is back on its pad
   let prev: DeckView | null = null, lever = 0;
 
   let deckW = DECK_END, islandUp = true, islandIn = true; // how much platform is built (deck.size / deck.island)
 
   // ---------- camera ----------
   const cam = { x: 1400, y: 300, s: 0.3, manual: 0, all: false, pin: null as StopId | null };
+  const cityMove = createCityMove(); // city zoom: a new k or a long hop cuts, a short hop glides on a fixed smoothstep
+  const RING_VIEW = manualCity("city"); // the city framing the whole ring (no island in focus): the sky hangs from it
   const portrait = () => W / H <= 1.2;
+  // Zoom levels: station (the usual camera, untouched), line (the whole line, whole-number scale), city (the ring of
+  // islands on the city grid). view.city decides; a ?shot=city preview stands in when the source sends none.
+  let zoom: CityZoom = "station", zoomSeen = false, cityView: CityView | null = null, cityLabelWas: string | null = null, cityBroken = false;
+  // What the city camera keeps clear (city/camera.ts CityScreen), measured once a frame and only on a phone while the city or
+  // its line zoom is up: the manual city keeps clear of the Zoom button and has no caption band; at beat "card" the ring stands
+  // above the sign-in card. Station zoom reads nothing from the page.
+  let screenNow: CityScreen = { w: W, h: H, dpr: DPR, portrait: portrait() };
+  const screenInfo = () => screenNow;
+  function measureScreen() {
+    const s: CityScreen = { w: W, h: H, dpr: DPR, portrait: portrait() };
+    if (s.portrait && city && cityView && cityView.zoom !== "station") {
+      if (!cityView.beat) {
+        const button = document.getElementById("zoom")?.getBoundingClientRect();
+        if (button && button.height > 0) s.top = Math.ceil(button.bottom) + EDGE;
+        s.band = 0;
+      } else if (cityView.beat === "card") {
+        const top = cardTop();
+        if (top !== null) s.cardTop = top;
+      }
+    }
+    screenNow = s;
+  }
+  /** The sign-in card's top on screen, CSS px, where it settles: its layout box, not its slide-in (or a drag), so the camera
+   *  starts its one glide as the card starts to slide up. Null while there is none. */
+  function cardTop(): number | null {
+    const card = document.querySelector<HTMLElement>(".ic-card:not(.ic-ghost)");
+    if (!card || card.hidden || !card.offsetHeight) return null;
+    const host = card.offsetParent as HTMLElement | null;
+    return (host ? host.getBoundingClientRect().top + host.clientTop : 0) + card.offsetTop;
+  }
+  /** The line's middle (world). The reveal's zoom from the line to the city is a match cut: this stays on its screen spot. */
+  const LINE_MID = { x: (LINE_BOX.x + LINE_BOX.w / 2) * CITY_PX, y: (LINE_BOX.y + LINE_BOX.h / 2) * CITY_PX };
+  /** At the reveal's line zoom, where the line's middle is on screen this frame (CSS px); null anywhere else, at the Zoom
+   *  button's line zoom and under reduced motion (those cut straight to the ring). */
+  function matchSpot() {
+    if (zoom !== "line" || !px || !city || !cityView?.beat || reduced?.matches) return null;
+    return toScreen(LINE_MID.x, LINE_MID.y);
+  }
+  /** The city camera at scale s (CSS px per world unit) that keeps the line's middle on that spot. */
+  const matchCut = (spot: { x: number; y: number }, s: number) => ({ x: LINE_MID.x - (spot.x - W / 2) / s, y: LINE_MID.y - (spot.y - H / 2) / s, s });
+  const zoomOf = (v: DeckView): CityZoom => {
+    cityView = v.city ?? previewCity;
+    const z = cityView?.zoom ?? "station";
+    return z === "city" && (!city || !cityPx || cityBroken) ? "line" : z; // no pixel canvas, no city: the line is as far as it goes
+  };
+  // The city is scenery: if it ever throws, the deck must not stop with it. Say so once and stay on the line.
+  function cityFailed(e: unknown) { cityBroken = true; cx = screen; console.error("The city failed; staying on the line.", e); }
+  function setZoom(level: CityZoom) {
+    zoom = level; cam.manual = 0; // a new level takes the camera back from a drag
+    document.body.dataset.deckZoom = level;
+    if (zoomSeen) bus.emit({ type: "city-zoom", level });
+    if (level === "city") { cityLabelWas = cv.getAttribute("aria-label"); cv.setAttribute("aria-label", CITY_COPY.canvas); }
+    else if (cityLabelWas !== null) { cv.setAttribute("aria-label", cityLabelWas); cityLabelWas = null; }
+  }
   const grow = layers.find((l) => l.bounds);
   const builder = layers.find((l) => l.build)?.build;
   const deckEnd = () => grow?.bounds?.().x1 ?? deckW + 40;
@@ -123,7 +195,9 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     return { x: x1 <= x0 ? all.x : Math.max(x0, Math.min(x1, x)), y: all.y - 20, s };
   }
   // Story shots (DeckView.shot, or ?shot= for previews): the first run frames one thing at a time.
-  const previewShot = new URLSearchParams(location.search).get("shot") as Shot | null;
+  const rawShot = new URLSearchParams(location.search).get("shot");
+  const previewCity = parseCityShot(rawShot, cityLabel(location.search)); // ?shot=city and ?shot=city-<island> preview the city
+  const previewShot = (previewCity ? null : rawShot) as Shot | null;
   function subject(shot: Exclude<Shot, "line">) {
     if (shot === "shippy") {
       const actor = shippy as ShippyModule & { readonly state?: { x: number } };
@@ -141,6 +215,16 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   }
   function target(v: DeckView) {
     const all = fitAll();
+    if (zoom === "city" && city && cityView) { const c = city.camera(cityView, screenInfo()); return { x: c.x, y: c.y, s: c.k / (CITY_PX * DPR) }; }
+    if (zoom === "line") {
+      // A phone's line zoom shows the line at one art px per device px: wider than the screen. The launch islet (the rocket
+      // that just went up) stays whole, 8 device px inside the right edge; the Repo end clips instead.
+      const line = shotTarget("line", all);
+      if (!px || !portrait()) return line;
+      const k = Math.max(1, Math.round(line.s * ART_PX * DPR)), bw = Math.ceil(cv.width / k);
+      const ox = ISLET_RIGHT / ART_PX + Math.ceil(8 / k) - bw; // the buffer's first column, so the islet ends 8 device px in
+      return { ...line, x: (ox + bw / 2) * ART_PX };
+    }
     const shot = v.shot ?? previewShot;
     if (shot) return shotTarget(shot, all);
     if (cam.all) return all;
@@ -190,14 +274,15 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   let picked: StopId | "engine" | null = null; // the station whose "what is this" note is open
   const toScreen = (x: number, y: number) => {
     if (!px) return { x: W / 2 + (x - cam.x) * cam.s, y: H / 2 + (y - cam.y) * cam.s };
-    const [ox, oy] = px.toWorld(0, 0), [ux] = px.toWorld(1, 0); // world units per CSS px, from the blit itself
+    const grid = zoom === "city" && cityPx ? cityPx : px;
+    const [ox, oy] = grid.toWorld(0, 0), [ux] = grid.toWorld(1, 0); // world units per CSS px, from the blit itself
     const per = ux - ox;
     return { x: (x - ox) / per, y: (y - oy) / per };
   };
   // Four brass corners around the picked station: still, 1 art px lines with a soot edge. Calm: nothing pulses.
   function pickedDraw(v: DeckView) {
     const b = picked && boxOf(picked, v);
-    if (!b || !px) return;
+    if (!b || !px || cityDraw) return;
     const P = ART_PX, arm = 6 * P, x0 = snap(b.x0 + 10), x1 = snap(b.x1 - 10), y0 = snap(b.y0 + 5), y1 = snap(b.y1 - 20);
     // each corner = two arms (x, y, w, h); the soot pass draws them one art px bigger all round
     const arms = [[x0, y0, 1, 1], [x1, y0, -1, 1], [x0, y1, 1, -1], [x1, y1, -1, -1]].flatMap(([x, y, dx, dy]) => [
@@ -210,8 +295,9 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
 
   // drag to pan, pinch or wheel to zoom
   const ptrs = new Map<number, [number, number]>(); let pinch = 0, moved = 0;
-  cv.addEventListener("pointerdown", (e) => { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, [e.clientX, e.clientY]); moved = 0; });
+  cv.addEventListener("pointerdown", (e) => { if (zoom === "city") return; cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, [e.clientX, e.clientY]); moved = 0; });
   cv.addEventListener("pointermove", (e) => {
+    if (zoom === "city") return; // the city is a picture: no drag, no pinch
     const p = ptrs.get(e.pointerId); if (!p) return;
     ptrs.set(e.pointerId, [e.clientX, e.clientY]);
     moved += Math.abs(e.clientX - p[0]) + Math.abs(e.clientY - p[1]);
@@ -228,6 +314,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     }
   });
   const up = (e: PointerEvent) => {
+    if (zoom === "city") { ptrs.delete(e.pointerId); pinch = 0; return; } // and taps never open what-is notes there
     if (e.type === "pointerup" && moved < 6 && ptrs.size === 1 && prev) {
       const [x, y] = px ? px.toWorld(e.clientX, e.clientY) : [cam.x + (e.clientX - W / 2) / cam.s, cam.y + (e.clientY - H / 2) / cam.s];
       const inside = (b: Box | null) => !!b && x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1;
@@ -242,6 +329,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   cv.addEventListener("pointerup", up); cv.addEventListener("pointercancel", up);
   cv.addEventListener("wheel", (e) => {
     e.preventDefault();
+    if (zoom === "city") return;
     cam.manual = Infinity;
     // Chromium exposes macOS trackpad pinches as small ctrl+wheel deltas.
     const delta = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? H : 1);
@@ -249,16 +337,17 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   }, { passive: false });
   // Safari/WKWebView use gesture events instead of ctrl+wheel for a trackpad pinch.
   let gestureScale = 1;
-  cv.addEventListener("gesturestart", (e) => { e.preventDefault(); gestureScale = 1; cam.manual = Infinity; }, { passive: false });
+  cv.addEventListener("gesturestart", (e) => { e.preventDefault(); gestureScale = 1; if (zoom !== "city") cam.manual = Infinity; }, { passive: false });
   cv.addEventListener("gesturechange", (e) => {
     e.preventDefault();
+    if (zoom === "city") return;
     const gesture = e as Event & { scale: number; clientX?: number; clientY?: number };
     if (!(gesture.scale > 0)) return;
     zoomAt(gesture.clientX ?? W / 2, gesture.clientY ?? H / 2, gesture.scale / gestureScale);
     gestureScale = gesture.scale;
   }, { passive: false });
   cv.addEventListener("gestureend", (e) => { e.preventDefault(); gestureScale = 1; }, { passive: false });
-  cv.addEventListener("dblclick", () => { cam.manual = 0; cam.pin = null; });
+  cv.addEventListener("dblclick", () => { if (zoom === "city") return; cam.manual = 0; cam.pin = null; });
   function zoomAt(screenX: number, screenY: number, f: number) {
     const world = px ? px.toWorld(screenX, screenY) : [cam.x + (screenX - W / 2) / cam.s, cam.y + (screenY - H / 2) / cam.s];
     cam.s = Math.max(fitAll().s * 0.8, Math.min(1.6, cam.s * f));
@@ -290,6 +379,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     if (p && v.shippy.pose !== p.shippy.pose) bus.emit({ type: "shippy", pose: v.shippy.pose });
     if (px && owned.has("rocket")) {
       if (p && v.shipped > p.shipped) pendingLaunches += v.shipped - p.shipped;
+      if (v.city?.beat) pendingLaunches = 0; // the reveal: the hero rocket is the last one up until the story lets go
       if (islandUp && pendingLaunches > 0 && rocket.mode === "ready") { pendingLaunches--; rocket.mode = "count"; rocket.t = 0; }
     } else if (p && islandUp && v.shipped > p.shipped && (rocket.mode === "ready" || rocket.mode === "down")) { rocket.mode = "count"; rocket.t = 0; }
 
@@ -326,24 +416,30 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     prev = v;
   }
 
-  function rocketStep(dt: number) {
+  function rocketStep(dt: number, v: DeckView) {
+    // The city reveal holds the hero rocket away (it never lands under the city); when the story lets go (Replay, reset) it
+    // is back on its pad without a sound or a puff.
+    const hold = !!v.city?.beat;
+    if (rocketHeld && !hold) { rocket.mode = "ready"; rocket.t = 0; rocket.y = 0; rocket.v = 0; }
+    rocketHeld = hold;
     rocket.t += dt;
     if (rocket.mode === "count" && rocket.t > 0.6) { rocket.mode = "up"; rocket.t = 0; rocket.v = 0; bus.emit({ type: "launch" }); }
     else if (px && owned.has("rocket")) {
       // Keep camera/event ownership in sync with the pixel layer's full return flight.
       if (rocket.mode === "up" && rocket.t >= FLIGHT.ignition + FLIGHT.ascent) { rocket.mode = "away"; rocket.t = 0; }
-      else if (rocket.mode === "away" && rocket.t >= FLIGHT.coast) { rocket.mode = "down"; rocket.t = 0; }
+      else if (rocket.mode === "away" && rocket.t >= FLIGHT.coast && !hold) { rocket.mode = "down"; rocket.t = 0; }
       else if (rocket.mode === "down" && rocket.t >= FLIGHT.landing + FLIGHT.settle) { rocket.mode = "ready"; rocket.t = 0; }
     }
     else if (rocket.mode === "up") {
       rocket.v += 820 * dt; rocket.y -= rocket.v * dt;
       if (rocket.y > -400) for (let i = 0; i < 2; i++) puffs.push({ x: STOP_X.launch + (Math.random() - 0.5) * 60, y: LAUNCH_Y - 4, vx: (Math.random() - 0.5) * 140, vy: -10 - Math.random() * 20, t: 0, life: 1.3, r: 14 + Math.random() * 14 });
       if (rocket.y < -1500) { rocket.mode = "away"; rocket.t = 0; }
-    } else if (rocket.mode === "away" && rocket.t > 0.7) { rocket.mode = "down"; rocket.y = -600; }
+    } else if (rocket.mode === "away" && rocket.t > 0.7 && !hold) { rocket.mode = "down"; rocket.y = -600; }
     else if (rocket.mode === "down") { rocket.y += -rocket.y * Math.min(1, dt * 5); if (Math.abs(rocket.y) < 1) { rocket.y = 0; rocket.mode = "ready"; } }
   }
 
   // ---------- drawing ----------
+  let cityDraw = false; // true while the line is drawn into the small buffer for the city zoom: no badges, plates or stacks
   const img = (n: string) => art.get(n);
   function put(name: string, x: number, base: number, h: number) {
     const im = img(name); if (!im) return 0;
@@ -477,7 +573,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     if (px) {
       const blocked = blockedZones(v);
       const blockedAt = (x: number) => blocked.find((zone) => x >= zone.left && x <= zone.right)?.kind ?? false;
-      for (const g of segs) pd.beltRun(cx, g.ax, g.ay, g.bx, g.by, islandUp ? g.len : Math.min(g.len, deckEnd() - 100 - g.ax), t, SPEED, blockedAt, x => beltPhases.get(beltConnectionAt(x)) ?? 0);
+      for (const g of segs) pd.beltRun(cx, g.ax, g.ay, g.bx, g.by, islandUp ? g.len : Math.min(g.len, deckEnd() - 100 - g.ax), t, SPEED, blockedAt, x => cityDraw ? quantPhase(beltPhases.get(beltConnectionAt(x)) ?? 0, SPEED) : beltPhases.get(beltConnectionAt(x)) ?? 0);
       return;
     }
     const b = img("belt"); if (!b) return;
@@ -492,9 +588,10 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     }
   }
   function crate(c: Crate) {
-    const [x, y] = at(c.d);
+    // city zoom halves the picture: crates move in whole city px so they never shimmer, on the odd art columns the halving samples so both outlines survive
+    const [ax, y] = at(c.d), x = cityDraw ? Math.round(ax / CITY_PX) * CITY_PX + ART_PX : ax;
     if (px) {
-      if (c.fade > 0.5) { pd.crate(cx, x, y, c.look as Item["look"]); if (c.badge) pd.crateBadge(cx, x, y, c.badge); }
+      if (c.fade > 0.5) { pd.crate(cx, x, y, c.look as Item["look"]); if (c.badge && !cityDraw) pd.crateBadge(cx, x, y, c.badge); }
       return;
     }
     if (c.look === "wait") glow(x, y - 18, 46, "255,70,50", 0.3);
@@ -519,7 +616,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
       const x = STOP_X[id], top = BELT_Y + L.drop - L.h;
       if (px) pd.beacon(cx, x, top, t, hold);
       else { glow(x, top, 130, "255,60,40", 0.22 + 0.08 * Math.sin(t * 2.4)); put("beacon", x, top + 18, 54); }
-      if (s.waiting && put("plate", x - 6, BELT_Y + 106, 52)) {
+      if (!cityDraw && s.waiting && put("plate", x - 6, BELT_Y + 106, 52)) {
         cx.fillStyle = "#2b1a0a"; cx.textAlign = "center"; cx.textBaseline = "middle"; cx.font = "15px Silkscreen, monospace";
         const [a, b] = s.waiting.split(" ");
         cx.fillText(a, x - 6, BELT_Y + 71); if (b) cx.fillText(b, x - 6, BELT_Y + 88);
@@ -555,47 +652,10 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     for (let i = puffs.length - 1; i >= 0; i--) if (puffs[i].t >= puffs[i].life) puffs.splice(i, 1);
   }
 
-  function frame(v: DeckView, dt: number) {
-    t += dt; lever = Math.max(0, lever - dt);
-    take(v, dt); rocketStep(dt);
-    const shot = v.shot ?? previewShot;
-    if (shot !== lastShot) { lastShot = shot; cam.manual = 0; } // a new story shot takes the camera back from a drag
-    if (performance.now() >= cam.manual) {
-      const tg = target(v), rate = shot ? SHOT_RATE : undefined;
-      if (first) Object.assign(cam, tg);
-      else {
-        cam.x = settleCamera(cam.x, tg.x, dt, ART_PX / 4, rate);
-        cam.y = settleCamera(cam.y, tg.y, dt, ART_PX / 4, rate);
-        cam.s = settleCamera(cam.s, tg.s, dt, 0.0001, rate);
-      }
-      arrived = cam.x === tg.x && cam.y === tg.y && cam.s === tg.s;
-      first = false;
-    }
-    for (const l of layers) l.update(dt, v);
-    const act = builder?.shippyAct?.(); // a running build calls Shippy over to weld
-    shippy.update(dt, act ? { pose: act.pose, at: act.at } : v.shippy);
-    const quake = builder?.shake?.() ?? 0;
-
-    const qx = (Math.random() - 0.5) * quake, qy = (Math.random() - 0.5) * quake;
-    if (px) {
-      cx = px.begin({ x: cam.x + qx, y: cam.y + qy, s: cam.s });
-      const bw = cx.canvas.width, bh = cx.canvas.height, world = cx.getTransform();
-      cx.setTransform(1, 0, 0, 1, 0, 0);
-      cx.fillStyle = "#291b17"; cx.fillRect(0, 0, bw, bh);
-      // The cloud sea is far away, so it lives in screen space: it starts at a fixed height (under the deck at the
-      // usual framing) and only drifts with a slow parallax, so zooming or panning moves the deck over it, never with it.
-      const floor = Math.round(bh * (portrait() ? SEA_AT + 0.04 : SEA_AT));
-      sky(bw, bh, 1 / ART_PX, floor);
-      farClouds(bw, bh, floor - Math.round(bh * 0.05), bh * 0.2, 5, 0.12, 0.85);
-      farClouds(bw, bh, Math.round(bh * 0.86), bh * 0.3, 12, 0.3, 0.95);
-      cx.setTransform(world);
-    } else {
-      cx.setTransform(DPR, 0, 0, DPR, 0, 0);
-      cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = "high";
-      cx.fillStyle = "#2a1410"; cx.fillRect(0, 0, W, H);
-      sky(W, H, cam.s);
-      cx.setTransform(DPR * cam.s, 0, 0, DPR * cam.s, DPR * (W / 2 - (cam.x + qx) * cam.s), DPR * (H / 2 - (cam.y + qy) * cam.s));
-    }
+  // The world pieces, from the far sky layer to the front clouds, into whatever `cx` is now: the pixel buffer at station
+  // and line zoom, the small line buffer at city zoom (`small`: no badges, plates or intake stack, crates on the city grid).
+  function drawWorld(v: DeckView, dt: number, small: boolean) {
+    cityDraw = small;
     slot("sky-far");
     // pixel mode: the deck floats in open air (Justin: the clouds looked attached to it), so the cloud sea sits well
     // below the rocks and the orb; the near layer only fills the bottom of the frame
@@ -623,7 +683,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     slot("line");
     rocketDraw();
     const live = v as DeckView & { intake?: (Item & { badge?: string })[]; work?: { id: string; stop: StopId; badge: string } };
-    if (px && live.intake?.length) {
+    if (px && !cityDraw && live.intake?.length) {
       const stack = [[0,0],[-65,0],[-130,0],[-30,-45],[-95,-45],[-65,-90]];
       for (let i = 0; i < Math.min(stack.length, live.intake.length); i++) pd.crate(cx, STOP_X.repo - 135 + stack[i][0], BELT_Y + stack[i][1], 'plain');
       pd.crateBadge(cx, STOP_X.repo - 200, BELT_Y - 100, String(live.intake.length));
@@ -632,7 +692,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     for (const id of STOPS) station(v, id);
     slot("stations");
     pickedDraw(v);
-    if (px && live.work) {
+    if (px && !cityDraw && live.work) {
       const c = crates.get(live.work.id);
       if (c) {
         const [x, y] = at(c.d);
@@ -644,9 +704,208 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     puffsDraw(dt);
     if (!px) clouds(600, 1.6, 12, 0.95); // pixel mode keeps every cloud behind the deck, so nothing ever touches it
     slot("front");
+    cityDraw = false;
+  }
+
+  function frame(v: DeckView, dt: number) {
+    t += dt; lever = Math.max(0, lever - dt);
+    take(v, dt); rocketStep(dt, v);
+    const level = zoomOf(v), changed = level !== zoom;
+    measureScreen();
+    const spot = changed && level === "city" ? matchSpot() : null; // read off the line zoom's own last frame
+    if (changed) setZoom(level);
+    zoomSeen = true; // the first frame's zoom is not news
+    const beat = cityView?.beat ?? "";
+    if (document.body.dataset.cityBeat !== beat) document.body.dataset.cityBeat = beat;
+    const shot = v.shot ?? previewShot;
+    let shotCut = false;
+    if (shot !== lastShot) { shotCut = shot === "launch" && lastShot !== undefined; lastShot = shot; cam.manual = 0; } // a new story shot takes the camera back from a drag
+    if (performance.now() >= cam.manual) {
+      // A new zoom level cuts x, y and the scale in the same frame, and so does the story's launch shot (the reveal's rocket
+      // climbs inside one fixed whole-number frame). The city glides (city/camera.ts createCityMove); the line glides x and y
+      // at CITY_CAM_RATE and cuts the scale (whole numbers only); reduced motion cuts every move at line and city zoom. The
+      // reveal's cut from the line to the city is a match cut: its first frame keeps the line's middle where the line zoom
+      // had it, and the next frames glide to the ring (0.6 s, inside beat 2's hold).
+      const tg = target(v);
+      if (first || changed || shotCut || (zoom !== "station" && reduced?.matches)) { Object.assign(cam, spot ? matchCut(spot, tg.s) : tg); cityMove.reset(); }
+      else if (zoom === "city") Object.assign(cam, cityMove.step(cam, tg, dt, screenInfo()).pose);
+      else {
+        const rate = zoom === "line" ? CITY_CAM_RATE : shot ? SHOT_RATE : undefined;
+        cam.x = settleCamera(cam.x, tg.x, dt, ART_PX / 4, rate);
+        cam.y = settleCamera(cam.y, tg.y, dt, ART_PX / 4, rate);
+        cam.s = zoom === "line" ? tg.s : settleCamera(cam.s, tg.s, dt, 0.0001, rate);
+      }
+      arrived = cam.x === tg.x && cam.y === tg.y && cam.s === tg.s;
+      first = false;
+    }
+    if (city && !cityBroken) { try { city.update(dt, cityView ?? undefined, screenInfo()); } catch (e) { cityFailed(e); } }
+    for (const l of layers) l.update(dt, v);
+    const act = builder?.shippyAct?.(); // a running build calls Shippy over to weld
+    shippy.update(dt, act ? { pose: act.pose, at: act.at } : v.shippy);
+    if (zoom === "city" && city && cityPx && !cityBroken) {
+      try { drawCity(v, dt, city, cityPx); return; } catch (e) { cityFailed(e); } // this frame falls through to the usual picture
+    }
+    const quake = builder?.shake?.() ?? 0;
+
+    const qx = (Math.random() - 0.5) * quake, qy = (Math.random() - 0.5) * quake;
+    if (px) {
+      cx = px.begin({ x: cam.x + qx, y: cam.y + qy, s: cam.s });
+      if (cv.dataset.pixelZoom !== String(px.k)) cv.dataset.pixelZoom = String(px.k);
+      const bw = cx.canvas.width, bh = cx.canvas.height, world = cx.getTransform();
+      cx.setTransform(1, 0, 0, 1, 0, 0);
+      cx.fillStyle = "#291b17"; cx.fillRect(0, 0, bw, bh);
+      if (zoom === "line") citySky(bw, bh, lineSkyY()); // the line zoom stands in the city's sky, so beats 1 and 2 share one backdrop
+      else {
+        // The cloud sea is far away, so it lives in screen space: it starts at a fixed height (under the deck at the
+        // usual framing) and only drifts with a slow parallax, so zooming or panning moves the deck over it, never with it.
+        const floor = Math.round(bh * (portrait() ? SEA_AT + 0.04 : SEA_AT));
+        sky(bw, bh, 1 / ART_PX, floor);
+        farClouds(bw, bh, floor - Math.round(bh * 0.05), bh * 0.2, 5, 0.12, 0.85);
+        farClouds(bw, bh, Math.round(bh * 0.86), bh * 0.3, 12, 0.3, 0.95);
+      }
+      cx.setTransform(world);
+    } else {
+      cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = "high";
+      cx.fillStyle = "#2a1410"; cx.fillRect(0, 0, W, H);
+      sky(W, H, cam.s);
+      cx.setTransform(DPR * cam.s, 0, 0, DPR * cam.s, DPR * (W / 2 - (cam.x + qx) * cam.s), DPR * (H / 2 - (cam.y + qy) * cam.s));
+    }
+    drawWorld(v, dt, false);
     if (px) { px.end(); cx = screen; cx.imageSmoothingEnabled = false; }
     cx.setTransform(DPR, 0, 0, DPR, 0, 0);
     shippy.drawCorner(cx, 14, 14, 76);
+    city?.place(undefined, toScreen); // the labels belong to the city only
+  }
+
+
+  // ---------- the city frame ----------
+  // The line is drawn exactly as at station zoom, but into its own buffer at ART_PX (world x -40..4000, y -400..840: 808 x 248
+  // art px, both origins even), then halved 2:1 into the city buffer, so the whole city frame is one pixel grid.
+  const LINE_BUF = { x: -40, y: -400, w: 4040, h: 1240 };
+  let lineBuf: { cv: HTMLCanvasElement; g: CanvasRenderingContext2D; half: ImageData; hcv: HTMLCanvasElement; hg: CanvasRenderingContext2D } | null = null;
+  function lineBuffer() {
+    if (lineBuf) return lineBuf;
+    const w = LINE_BUF.w / ART_PX, h = LINE_BUF.h / ART_PX, cv2 = document.createElement("canvas"), hcv = document.createElement("canvas");
+    cv2.width = w; cv2.height = h; hcv.width = w / 2; hcv.height = h / 2;
+    const g = cv2.getContext("2d", { willReadFrequently: true })!, hg = hcv.getContext("2d")!;
+    g.imageSmoothingEnabled = false; hg.imageSmoothingEnabled = false;
+    return (lineBuf = { cv: cv2, g, half: new ImageData(w / 2, h / 2), hcv, hg });
+  }
+  // ---------- the city's sky (engine/sky.ts) ----------
+  // The sky picture, dimmed like the deck's, at a whole-number scale with its skyline behind the line wherever the camera
+  // framed the ring; on a tall screen bands of its upper sky stack upward, deepening toward the zenith, its cloud sea runs
+  // on downward, and the cloud strips drift over the bottom. Each layout has its own copy, with the picture's floating
+  // islands painted out. Screen space: the sky follows a city camera move at 0.08 and the strips at 0.2, in whole px.
+  const skies = new Map<SkyLayout, HTMLCanvasElement | HTMLImageElement>();
+  function skyArt(layout: SkyLayout) {
+    const base = dimArt("sky"); if (!base) return null;
+    let c = skies.get(layout);
+    if (!c) {
+      const fills = skyFills(layout);
+      if (!fills.length) c = base;
+      else {
+        const copy = document.createElement("canvas"); copy.width = base.width; copy.height = base.height;
+        const g = copy.getContext("2d", { willReadFrequently: true })!; g.drawImage(base, 0, 0);
+        const data = g.getImageData(0, 0, copy.width, copy.height);
+        paintOut(data.data, copy.width, copy.height, fills);
+        g.putImageData(data, 0, 0); c = copy;
+      }
+      skies.set(layout, c);
+    }
+    return c;
+  }
+  /** A layout's sky, its top SKY_TOP rows only, `dark` ramp steps darker (sky.ts skyDarken): what the bands above the
+   *  picture are cut from. Made once per layout and step. */
+  const skyTops = new Map<string, HTMLCanvasElement>();
+  function skyTop(layout: SkyLayout, sk: HTMLCanvasElement | HTMLImageElement, dark: number) {
+    const key = `${layout} ${dark}`;
+    let c = skyTops.get(key);
+    if (!c) {
+      c = document.createElement("canvas"); c.width = SKY.w; c.height = SKY_TOP;
+      const g = c.getContext("2d", { willReadFrequently: true })!; g.drawImage(sk, 0, 0);
+      const data = g.getImageData(0, 0, c.width, c.height);
+      skyDarken(data.data, c.width, dark);
+      g.putImageData(data, 0, 0); skyTops.set(key, c);
+    }
+    return c;
+  }
+  /** The ring's centre (city px) and the buffer row the line's top would sit on at the ring, for a buffer `bh` rows tall.
+   *  Null without a city (the sky then hangs at a fixed height). */
+  function ringRow(bh: number) {
+    if (!city || cityBroken) return null;
+    try {
+      // the line zoom hangs it from the ring as the reveal frames it: a phone's manual city sits lower (under the Zoom button,
+      // no caption band), and its line would float above the skyline at the line zoom
+      const y = city.camera(RING_VIEW, zoom === "line" ? { w: W, h: H, dpr: DPR, portrait: portrait() } : screenInfo()).y / CITY_PX;
+      return { y, row: ringLineRow(bh, y, BOUNDS.y0 / CITY_PX) };
+    } catch (e) { cityBroken = true; console.error("The city failed; staying on the line.", e); return null; }
+  }
+  /** Rows `sy` .. `sy + rows` of the sky, the columns a buffer W wide shows with the picture at x, taken `b.shift` columns
+   *  further along, at row b.y, whole scale n, upside down when `b.flip` and left for right when `b.mirror`. */
+  function skyBand(sk: CanvasImageSource, W: number, sy: number, rows: number, x: number, n: number, b: SkyBand) {
+    const [c0, c1] = skyColumns(W, x, n), left = x + c0 * n, right = x + c1 * n;
+    cx.save();
+    cx.translate(b.mirror ? left + right : 0, b.flip ? b.y + rows * n : b.y);
+    cx.scale(b.mirror ? -1 : 1, b.flip ? -1 : 1);
+    cx.drawImage(sk, c0 + b.shift, sy, c1 - c0, rows, left, 0, right - left, rows * n);
+    cx.restore();
+  }
+  /** One cloud strip at whole scale n and full alpha, mirrored every other tile, drifting `speed` world units a second. */
+  function cloudStrip(W: number, y: number, n: number, speed: number) {
+    const c = dimArt("clouds"); if (!c) return;
+    const w = c.width * n, h = c.height * n, off = Math.floor((t * speed) / ART_PX) % (2 * w);
+    for (let x = -off, i = 0; x < W; x += w, i++) {
+      if (i % 2) { cx.save(); cx.translate(x + w, y); cx.scale(-1, 1); cx.drawImage(c, 0, 0, w, h); cx.restore(); }
+      else cx.drawImage(c, x, y, w, h);
+    }
+  }
+  /** The reveal's line zoom hangs the sky where the match cut's first city frame will (that frame's camera y), so the cut does
+   *  not move the skyline or the strips; null anywhere else: the sky hangs where the ring hangs it. */
+  function lineSkyY(): number | null {
+    const spot = matchSpot();
+    if (!spot) return null;
+    try { return matchCut(spot, city!.camera(RING_VIEW, screenInfo()).k / (CITY_PX * DPR)).y; }
+    catch (e) { cityBroken = true; console.error("The city failed; staying on the line.", e); return null; } // mid-frame: as ringRow
+  }
+  /** The sky into the buffer W x H (screen space, identity transform). `camY`: the city camera's world y, which the sky
+   *  follows at SKY_PARALLAX from the ring's framing; at line zoom lineSkyY (null: the sky stays where the ring hangs it). */
+  function citySky(W: number, H: number, camY: number | null) {
+    const layout: SkyLayout = portrait() ? "portrait" : "landscape", ring = ringRow(H), still = !!reduced?.matches;
+    const dy = ring && camY !== null ? camY / CITY_PX - ring.y : 0;
+    const plan = skyPlan(W, H, ring?.row ?? Math.round(H * 0.45), layout, skyLift(dy, still));
+    const sk = skyArt(layout);
+    if (sk) {
+      const { n } = plan, from = SKY_BAND.from;
+      for (const b of plan.above) skyBand(skyTop(layout, sk, b.dark), W, b.from, b.rows, plan.x, n, b);
+      cx.drawImage(sk, 0, from, SKY.w, SKY.h - from, plan.x, plan.y + from * n, SKY.w * n, (SKY.h - from) * n);
+      for (const b of plan.below) skyBand(sk, W, SKY.h - SKY_FOOT, SKY_FOOT, plan.x, n, b);
+    }
+    plan.strips.forEach((y, i) => cloudStrip(W, y, plan.n, still ? 0 : 2 + 2 * i));
+  }
+  function drawCity(v: DeckView, dt: number, module: CityModule, buf: ReturnType<typeof createPixelCanvas>) {
+    cx = buf.begin({ x: cam.x, y: cam.y, s: cam.s });
+    if (cv.dataset.pixelZoom !== String(buf.k)) cv.dataset.pixelZoom = String(buf.k);
+    const dest = cx, bw = dest.canvas.width, bh = dest.canvas.height, world = dest.getTransform();
+    dest.setTransform(1, 0, 0, 1, 0, 0);
+    dest.fillStyle = "#291b17"; dest.fillRect(0, 0, bw, bh);
+    citySky(bw, bh, cam.y);
+    dest.setTransform(world);
+    module.drawBack(dest);
+    const L = lineBuffer();
+    L.g.setTransform(1, 0, 0, 1, 0, 0); L.g.clearRect(0, 0, L.cv.width, L.cv.height);
+    L.g.setTransform(1 / ART_PX, 0, 0, 1 / ART_PX, -LINE_BUF.x / ART_PX, -LINE_BUF.y / ART_PX);
+    cx = L.g;
+    drawWorld(v, dt, true);
+    L.g.setTransform(1, 0, 0, 1, 0, 0);
+    halve2x(L.g.getImageData(0, 0, L.cv.width, L.cv.height).data, L.cv.width, L.cv.height, L.half.data);
+    L.hg.putImageData(L.half, 0, 0);
+    cx = dest;
+    dest.drawImage(L.hcv, LINE_BUF.x, LINE_BUF.y, LINE_BUF.w, LINE_BUF.h); // 404 x 124 px at one buffer px each
+    module.drawFront(dest);
+    buf.end(); cx = screen; cx.imageSmoothingEnabled = false;
+    cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    module.place(cityView ?? undefined, toScreen);
   }
 
   return {
@@ -657,11 +916,13 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     settled() { return arrived; },
     pick(id) { picked = id; },
     anchor(id) {
+      if (zoom === "city") return null; // no what-is notes over the city
       const b = prev && boxOf(id, prev);
       if (!b) return null;
       const top = toScreen((b.x0 + b.x1) / 2, b.y0), bottom = toScreen(b.x0, b.y1);
       return { x: top.x, y: top.y, bottom: bottom.y };
     },
     get portrait() { return portrait(); },
+    get zoom() { return zoom; },
   };
 }

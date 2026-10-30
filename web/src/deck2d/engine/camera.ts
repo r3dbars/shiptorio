@@ -19,6 +19,8 @@ export function settleCamera(value: number, target: number, dt: number, toleranc
 
 /** Story shots ease slower than the automatic camera, so each move reads as one calm move. */
 export const SHOT_RATE = 2.4;
+/** The line and city zooms glide x and y at this rate (about 95% of the way in 0.6 s, CITY_TIMING.move); the scale cuts. */
+export const CITY_CAM_RATE = 5;
 
 export interface Screen { w: number; h: number; dpr: number; artPx: number; pixel: boolean }
 

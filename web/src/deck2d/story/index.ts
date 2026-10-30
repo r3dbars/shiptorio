@@ -5,25 +5,29 @@
 //   2 There's always a bottleneck: crates pile at Review, waiting on your call ("REVIEW WAITING"). Never "the
 //     bottleneck is you".
 //   3 Swipe, and it moves: approving releases the pile and rockets launch. The reward: a Gate builds in.
-//   4 Approve twice more and it's automatic: Shippy unfolds, walks to Review, takes the lever. Then the next jam
-//     shows up somewhere else, and the last card asks to connect the real repo.
+//   4 Approve twice more and it's automatic: Shippy unfolds, walks to Review, takes the lever. One crate then rolls the
+//     whole line with no card, its rocket goes up, and the camera zooms out: the line is one island among six, the
+//     other five light up and go dark again (reveal.ts, city/SPEC.md). The last card asks you to start with your repo.
 // ONE thing moves at a time (Justin, 2026-10-28: "shit flashing and pinging all over the place"): build-outs are a
 // strict serial script, each plays to the end, then a short rest; the line pauses new crates while one plays.
 // Pure sim: no DOM, no canvas. The engine draws view() and animates crates by item id.
 import { STAGE_AT } from "../build/build";
 import { GROW_SECONDS } from "../grow/index";
 import { LAUNCH_BUILD_SECONDS } from "../launch/timeline";
-import { STOPS, type CardView, type DeckSource, type DeckView, type Item, type ShippyView, type StopId } from "../contract";
+import { CITY_COPY, STOPS, type CardView, type DeckSource, type DeckView, type Item, type ShippyView, type StopId } from "../contract";
 import type { AttentionView } from "../stations/attention";
+import { revealAt } from "./reveal";
 
 export interface StoryOptions {
   seed?: number; // same seed, same story (crate titles, spawn jitter)
   speed?: number; // accepted for the contract's signature; the page already scales dt by ?speed
   swipes?: number; // 1: the short front-door version, end right after the first swipe clears the jam (default 3)
-  onConnect?(): void; // the last card's yes: "Want to see the real one?" Default: go to the app to sign in
+  onConnect?(): void; // the last card's yes: "Sign in with GitHub" (the short story: "See my repo"). Default: go to the app to sign in
+  reducedMotion?: boolean; // prefers-reduced-motion: the city reveal plays as cuts (camera cuts, all five islands at once)
+  startAt?: "reveal"; // start the full story at the city reveal (shots, recording takes); ignored by the short story
 }
 
-export type StoryPhase = "build" | "bottleneck" | "swipe" | "automatic" | "next-jam" | "end";
+export type StoryPhase = "build" | "bottleneck" | "swipe" | "automatic" | "reveal" | "end";
 
 export interface Story extends DeckSource {
   phase(): StoryPhase;
@@ -54,6 +58,7 @@ const GROW_SEC = GROW_SECONDS;
 const ISLAND_SEC = Math.min(LAUNCH_BUILD_SECONDS, 8);
 const FIXES = ["login typo", "broken docs link", "button label", "footer link", "empty state copy", "page title"];
 const CALL_PILE = 3; // crates waiting at Review before the first card slides up
+const PREROLL = 0.5; // startAt "reveal": seconds of a running line before the hero rocket goes up
 const PILE_CAP = 9; // stop adding crates past this so the heap stays readable
 
 // The small working line the story opens on: everything but the Gate, island up. Whenever the island is up the deck
@@ -92,7 +97,7 @@ export function createStory(opts: StoryOptions = {}): Story {
       budget: 2 as number | null, // how many crates Review may still pass (the first two ship). null = no limit
       reviewSvc: SVC.review,
       approvals: 0, card: null as CardView | null, laterUntil: 0, asked: [] as string[], // crate titles already on a card
-      autoReview: false, jam: null as StopId | null, nextJam: null as StopId | null,
+      autoReview: false, jam: null as StopId | null,
       shippy: { pose: "folded", at: "corner" } as ShippyView,
       caption: null as string | null, captionAt: 0,
       timers: [] as { at: number; fn: () => void }[],
@@ -102,11 +107,14 @@ export function createStory(opts: StoryOptions = {}): Story {
       follow: null as string | null, // the crate the camera rides along with (beat 4's no-card crate)
       watch: null as StopId | null, // where the camera parks while Shippy takes the lever (rockets would pull it away)
       pace: 1, // > 1 slows every stop, so the one no-card crate reads on camera
+      revealT: null as number | null, // seconds since reveal t = 0 (the no-card crate left Launch); null = not started
+      shippedFrozen: null as number | null, // view.shipped from reveal t = 0 on: no more rockets under the city
     };
   }
   const after = (sec: number, fn: () => void) => S.timers.push({ at: S.t + sec, fn });
   const setPhase = (p: StoryPhase) => { S.phase = p; S.phaseT = 0; };
   const nextBuilt = (i: number) => { for (let j = i + 1; j < STOPS.length; j++) if (S.st[STOPS[j]].built) return STOPS[j]; return null; };
+  const onLine = (id: string) => STOPS.some((s) => S.st[s].q.some((c) => c.id === id)); // a crate until it leaves the Launch queue
 
   function spawn() {
     if (S.st.review.q.length >= PILE_CAP) return;
@@ -212,11 +220,14 @@ export function createStory(opts: StoryOptions = {}): Story {
     // The next call: once the pile is back and nothing is building, a beat after the last swipe.
     if (p === "swipe" && !S.card && !S.laterUntil && idle() && S.approvals > 0 && S.t - S.lastCallAt >= 3 && S.st.review.q.length >= CALL_PILE) showCall();
     if (p === "swipe" && !S.card && S.laterUntil > 0 && S.t >= S.laterUntil) { S.laterUntil = 0; showCall(); }
+    if (p === "automatic" && S.follow && !onLine(S.follow)) beginReveal(); // it shipped this sub-step: reveal t = 0
+    if (p === "reveal" && S.revealT == null && S.t >= PREROLL - 1e-9) { S.shipped++; beginReveal(); } // startAt: the hero rocket
   }
 
   // Beat 4, the climax: the third yes hands Review to Shippy, and the next crate rolls the whole line with no card while
   // the camera rides along. One thing at a time: Shippy takes the lever (the AUTOMATED stamp lands), the pile drains,
-  // then the one crate nobody had to call, then the next jam, then the last card.
+  // then the one crate nobody had to call. When it leaves Launch its rocket goes up and the city reveal takes over
+  // (beginReveal), ending on the last card.
   function goAuto() {
     setPhase("automatic");
     S.card = null;
@@ -229,25 +240,41 @@ export function createStory(opts: StoryOptions = {}): Story {
       { say: "Review runs itself now." }, { rest: 1.4 }, { run: () => { S.shippy = { pose: "happy", at: "review" }; } },
       { until: () => !STOPS.some((id) => S.st[id].q.length) }, { rest: REST_SEC },
       { run: () => { S.watch = null; S.pace = 1.6; S.follow = `story-${S.nextId}`; spawn(); S.caption = "Shippy's got these now. No card."; S.captionAt = S.t; } },
-      { until: () => !STOPS.some((id) => S.st[id].q.some((c) => c.id === S.follow)) },
-      { run: () => { S.follow = null; S.pace = 1; } }, { rest: 1.2 },
-      { run: () => { setPhase("next-jam"); S.nextJam = "checks"; S.jam = "checks"; S.spawnEvery = 1.0; S.spawnT = 0.9; } },
-      { say: "You're free to fix the next jam." }, { rest: 3.6 },
-      { run: () => {
-        setPhase("end");
-        S.caption = null;
-        S.card = {
-          id: STORY_CARD.connect,
-          title: "That's your repo. Want to see the real one?",
-          dots: null,
-          line: "Connect GitHub and this deck runs on your real code.",
-          stop: "repo",
-          yes: "See my repo",
-          no: "Replay",
-          setup: true,
-        };
-      } },
-    );
+    ); // director() starts the reveal the moment that crate has left Launch
+  }
+
+  // Reveal t = 0 (SPEC section 1): the hero rocket goes up. From here the story only drives the city (revealAt). The line
+  // keeps rolling, calmer; Review stays Shippy's; Shippy stays on the line's island; no further rocket ever launches.
+  function beginReveal() {
+    setPhase("reveal");
+    S.revealT = 0; S.shippedFrozen = S.shipped;
+    S.follow = null; S.watch = null; S.jam = null; S.pace = 1;
+    S.spawnEvery = 1.6; S.spawnT = S.spawnEvery - 0.1; // the first crate rolls at once
+    S.shippy = { pose: "happy", at: "review" };
+  }
+
+  // One sub-step of the reveal clock; the caption follows the beat, and at the end the sign-in card slides up.
+  function tickReveal(h: number) {
+    if (S.phase !== "reveal" || S.revealT == null) return;
+    S.revealT += h;
+    const r = revealAt(S.revealT, !!opts.reducedMotion, CITY_COPY.repo);
+    if (r.caption !== undefined) S.caption = r.caption;
+    if (!r.done) return;
+    setPhase("end");
+    S.card = {
+      id: STORY_CARD.connect, title: CITY_COPY.card.title, line: CITY_COPY.card.line, yes: CITY_COPY.card.yes, no: CITY_COPY.card.no,
+      setup: true, stop: "repo", dots: null,
+    };
+  }
+
+  // startAt "reveal": the full story's last minute on its own. Everything is built and Review is Shippy's; PREROLL of a
+  // running line, then the hero rocket (shipped goes up, see director) is reveal t = 0 and the city takes over.
+  function startAtReveal() {
+    for (const id of STOPS) S.st[id].built = true;
+    S.autoReview = true; S.budget = null; S.reviewSvc = 0.35;
+    S.shippy = { pose: "happy", at: "review" };
+    S.spawnEvery = 1.6; S.spawnT = S.spawnEvery - 0.1;
+    setPhase("reveal");
   }
 
   // The short version (a guest at the front door): the one swipe clears the jam, the released crates ship, the line
@@ -276,6 +303,7 @@ export function createStory(opts: StoryOptions = {}): Story {
       if (S.spawnEvery > 0) { S.spawnT += h; while (S.spawnT >= S.spawnEvery) { S.spawnT -= S.spawnEvery - (S.rand() - 0.5) * 0.3; spawn(); } }
       play(h);
       flow(h);
+      tickReveal(h);
       const due = S.timers.filter((x) => S.t >= x.at);
       S.timers = S.timers.filter((x) => S.t < x.at);
       for (const x of due) x.fn();
@@ -293,17 +321,23 @@ export function createStory(opts: StoryOptions = {}): Story {
       // Every bottleneck in the story waits on your call, so it's yellow (attention), never red (stuck).
       if (id === "review" && s.built && !reviewOpen() && s.q.length) { state = "idle"; waiting = "REVIEW WAITING"; }
       if (automated) state = "auto";
-      if (id === S.nextJam) { state = "idle"; waiting = "CHECKS WAITING"; }
       return { id, built: s.built, state, automated, items: s.q.map(({ id, title, look }) => ({ id, title, look })), ...(waiting ? { waiting } : {}) };
     });
     const call = S.jam && stops.find((s) => s.id === S.jam)?.waiting ? S.jam : null;
+    const city = S.revealT != null ? revealAt(S.revealT, !!opts.reducedMotion, CITY_COPY.repo).city : undefined; // omitted in beat 0
+    // Beat 0, the hero rocket (and the startAt preroll before it): the camera cuts to the launch pad (shot "launch") and stays
+    // there until beat 1's zoom out takes over, CITY_TIMING.rocket (4.0) seconds in. revealAt leaves `city` out until exactly
+    // then (with the same microsecond slack), so a view never has both.
+    const rocket = S.phase === "reveal" && !city;
     return {
-      stops, jam: null, attention: call ? [call] : [], card: S.card ? { ...S.card } : null, shippy: { ...S.shippy }, shipped: S.shipped, caption: S.card ? null : S.caption,
+      stops, jam: null, attention: call ? [call] : [], card: S.card ? { ...S.card } : null, shippy: { ...S.shippy }, shipped: S.shippedFrozen ?? S.shipped, caption: S.card ? null : S.caption,
       ...(S.follow ? { followItem: S.follow } : {}), ...(S.watch ?? S.jam ? { focus: S.watch ?? S.jam! } : {}),
+      ...(rocket ? { shot: "launch" as const } : {}),
       deck: {
         size: S.size, island: S.island,
         ...(S.islandProgress != null ? { islandProgress: S.islandProgress } : {}),
       },
+      ...(city ? { city } : {}),
     };
   }
 
@@ -333,7 +367,11 @@ export function createStory(opts: StoryOptions = {}): Story {
     S.laterUntil = S.t + 4;
   }
 
-  function reset() { S = fresh(); S.script = opening(); fns.forEach((fn) => fn()); }
+  function reset() {
+    S = fresh();
+    if (opts.startAt === "reveal" && (opts.swipes ?? 3) >= 3) startAtReveal(); else S.script = opening();
+    fns.forEach((fn) => fn());
+  }
   reset();
 
   return {

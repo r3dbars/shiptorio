@@ -3,11 +3,15 @@
 // own. Calm pass (Justin 2026-10-28, "flashing and pinging all over"): one cue per beat, and nothing while the deck
 // is just running (crates, machines starting, Shippy walking are silent). Your swipes always play; a build rings
 // once when it's done; launch and automated are the big moments. What's left still goes through the calm floor.
+// The city reveal (city/SPEC.md section 5) is the one place the deck adds sounds, and they stay quiet: a lamp tick, a
+// brass tap and a thud from the build kit (sound/kit.ts), plus the shipped chord an octave down when every island is
+// lit. A zoom step is silent. Kit cues skip the engine's 90 ms same-sound gap and the calm floor, which a runway needs
+// (its lamps come 60 ms apart and every one has to play). Mute silences them like everything else.
 
 import { calmSounds, freshCalm, type CalmMemory } from "../sound/calm";
 import type { Cue as BuildCue } from "../sound/kit";
 import type { Sfx } from "../sound/engine";
-import type { DeckEvent as ContractEvent, ShippyPose, StopId, StopState } from "../contract";
+import { CITY_TIMING, type CityIsland, type DeckEvent as ContractEvent, type ShippyPose, type StopId, type StopState } from "../contract";
 
 // The build/grow/launch layers' events. Declared here too so juice compiles before and after they reach the contract.
 type GrowPhase = "beams" | "plates" | "rails" | "glow" | "rocks" | "done";
@@ -20,8 +24,9 @@ export type DeckEvent =
   | { type: "build-stage"; stop: StopId; stage: BuildStage }
   | { type: "launch-stage"; stage: LaunchStage };
 
-/** Seconds after the event each sound starts. sfx = the engine's sounds; build = the quiet construction kit (sound/kit.ts). */
-export type Cue = { sfx: Sfx; at: number } | { build: BuildCue; at: number };
+/** Seconds after the event each sound starts. sfx = the engine's sounds; build = the quiet construction kit (sound/kit.ts).
+ *  semitones (city reveal) lifts a kit cue, or lowers the shipped chord, from its usual pitch. */
+export type Cue = { sfx: Sfx; at: number; semitones?: number } | { build: BuildCue; at: number; semitones?: number };
 
 const STATE: Record<StopState, Cue[]> = {
   idle: [],
@@ -60,6 +65,16 @@ const LAUNCH_STAGE: Record<LaunchStage, Cue[]> = {
 };
 const kit = (c: BuildCue | null): Cue[] => (c ? [{ build: c, at: 0 }] : []);
 
+// ---- the city reveal ----
+/** The brass tap is a note of the shipped chord and climbs as the five islands light: C E G C E (semitones above C4). */
+export const CITY_TAP_SEMITONES: Record<CityIsland, number> = { errors: 0, traffic: 4, inbox: 7, customers: 12, marketing: 16 };
+/** The thud sinks a whole tone for each island that goes dark (Marketing first, Errors last), so the dim settles. */
+export const CITY_THUD_SEMITONES: Record<CityIsland, number> = { errors: -8, traffic: -6, inbox: -4, customers: -2, marketing: 0 };
+/** Every island lit: the shipped chord, an octave down. */
+export const CITY_CHORD_SEMITONES = -12;
+/** Lamp k ticks k semitones above 880 Hz. A bad lamp number can't reach the speakers as NaN or a squeal. */
+const lampSemitones = (lamp: number) => (Number.isFinite(lamp) ? Math.min(CITY_TIMING.lamps - 1, Math.max(0, Math.round(lamp))) : 0);
+
 export function cuesFor(e: DeckEvent): Cue[] {
   switch (e.type) {
     case "build-start": return [];
@@ -79,6 +94,12 @@ export function cuesFor(e: DeckEvent): Cue[] {
     case "launch": return [{ sfx: "launch", at: 0 }];
     case "automated": return [{ sfx: "permit_grant", at: 0 }];
     case "shippy": return SHIPPY[e.pose];
+    // the city reveal: each is one quiet kit cue, so a runway's ticks (60 ms apart) all play
+    case "city-lamp": return [{ build: "city_tick", at: 0, semitones: lampSemitones(e.lamp) }];
+    case "city-lit": return [{ build: "city_tap", at: 0, semitones: CITY_TAP_SEMITONES[e.island] }];
+    case "city-all-lit": return [{ sfx: "shipped", at: 0, semitones: CITY_CHORD_SEMITONES }];
+    case "city-dim": return [{ build: "city_thud", at: 0, semitones: CITY_THUD_SEMITONES[e.island] }];
+    case "city-zoom": return []; // the camera move carries itself (SPEC.md section 5)
     default: return []; // tap / shippy-arrive / interact: not wired yet
   }
 }
@@ -88,7 +109,7 @@ export const ALARM_GAP_MS = 8000;
 const ALARMS = new Set<Sfx>(["stamp_fail", "caught"]);
 
 /** The deck's own calm memory, so a busy belt can't drown out a swipe. */
-const isSfx = (c: Cue): c is { sfx: Sfx; at: number } => "sfx" in c;
+const isSfx = (c: Cue): c is { sfx: Sfx; at: number; semitones?: number } => "sfx" in c;
 const STAGED_MS = 20_000; // how long a staged build counts as "already rang"
 
 export class DeckSound {
@@ -96,9 +117,9 @@ export class DeckSound {
   private alarmAt = -Infinity;
   private staged = new Map<StopId, number>();
   constructor(
-    private play: (s: Sfx, delaySeconds: number) => void,
+    private play: (s: Sfx, delaySeconds: number, semitones?: number) => void,
     private now: () => number = () => performance.now(),
-    private playBuild: (c: BuildCue, delaySeconds: number) => void = () => {},
+    private playBuild: (c: BuildCue, delaySeconds: number, semitones?: number) => void = () => {},
   ) {}
 
   /** Plays what's due for this event and returns it. */
@@ -114,8 +135,10 @@ export class DeckSound {
       else this.alarmAt = now;
     }
     for (const c of out) {
-      if (isSfx(c)) this.play(c.sfx, c.at);
-      else this.playBuild(c.build, c.at);
+      // the pitch goes along only when the cue has one, so every older sound is called exactly as before
+      const pitch: [] | [number] = c.semitones === undefined ? [] : [c.semitones];
+      if (isSfx(c)) this.play(c.sfx, c.at, ...pitch);
+      else this.playBuild(c.build, c.at, ...pitch);
     }
     return out;
   }

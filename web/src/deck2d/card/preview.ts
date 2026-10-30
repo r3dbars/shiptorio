@@ -22,7 +22,7 @@ const STORY = (): CardView[] => [
 // One of each kind the deck really deals, with the longest words those kinds use (story/, data/view.ts, data/connections.ts).
 const KINDS: Record<string, CardView> = {
   story: DECK()[0],
-  "story-end": { id: "story-end", title: "That's your repo. Want to see the real one?", dots: null, line: "Connect GitHub and this deck runs on your real code.", stop: "launch", yes: "See my repo", no: "Replay" },
+  "story-end": { id: "story-end", title: "Start with your repo.", dots: null, line: "GitHub first. The rest lights up later.", stop: "repo", yes: "Sign in with GitHub", no: "Replay", setup: true },
   flow: { id: "flow", title: "Plan for #42: Checkout total ignores the coupon code", dots: { have: 1, need: 3 }, line: "Shippy: The total skips the discount when the cart has more than one item. Files: web/src/cart.ts Approve 2 more like this and it's automatic.", stop: "planner", yes: "Start build", no: "Later", guide: "shippy" },
   launch: { id: "launch", title: "Ship the checkout fix?", dots: null, line: "Shippy: Checks passed. This merges real code.", stop: "launch", yes: "Ship it", no: "Later", hold: true },
   "setup-power": { id: "connection-setup-power", title: "Connect your coding engine", dots: null, line: "Shippy: Connect the local runner to use your Codex or Meta Muse Code subscription. Connecting never starts a coding job.", stop: "builder", yes: "Set up engine", no: "Close", setup: true },

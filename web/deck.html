@@ -19,10 +19,14 @@
     <link rel="preload" href="/deck/art/rocket.webp" as="image" type="image/webp" />
     <link rel="preload" href="/deck/art/flame.webp" as="image" type="image/webp" />
     <link rel="preload" href="/deck/art/plate.webp" as="image" type="image/webp" />
+    <!-- Before deck.css lands: the sunset's own dark, never a white page, and no unstyled Zoom button. main.ts sets
+         data-deck-ready after the first frame has drawn; the engine sets data-deck-zoom when it is created, before that
+         frame, so that attribute let the button show before the picture did. -->
+    <style>html, body { margin: 0; background: #2a1410; } body:not([data-deck-ready]) #zoom { visibility: hidden; }</style>
   </head>
   <body class="deck-page">
     <canvas id="world" aria-label="Your factory: a floating deck with one line from the repo to the rocket"></canvas>
-    <button id="zoom" class="zoom" type="button" aria-label="See the whole factory" hidden>See all</button>
+    <button id="zoom" class="zoom" type="button" aria-label="Zoom out">Zoom out</button>
     <div id="card-host"></div>
     <p id="toast" class="toast" aria-live="polite"></p>
     <script type="module" src="/src/deck2d/main.ts"></script>

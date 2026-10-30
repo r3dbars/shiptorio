@@ -124,3 +124,13 @@ test("pixel effects draw whole art px in palette colors, light layer at 25/50/75
     }
   expect(plateWidth("AUTOMATED")).toBeLessThanOrEqual(44); // fits over a station
 });
+
+// ---- the city reveal (deck2d-juice-city.test.ts has the detail) ----
+
+test("every city beat is one cue at most", () => {
+  const all: DeckEvent[] = [
+    { type: "city-lamp", island: "errors", lamp: 0, of: 12 }, { type: "city-lit", island: "traffic" }, { type: "city-all-lit" },
+    { type: "city-dim", island: "inbox" }, { type: "city-zoom", level: "line" },
+  ];
+  for (const e of all) expect(cuesFor(e).length).toBeLessThanOrEqual(1);
+});
