@@ -591,7 +591,11 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const key = (m?: BrainMemory) => m?.current ? `${m.current.bottleneck.id}|${m.current.unlock.id}|${m.current.unlock.title}` : "";
       if (key(before) !== key(result.memory)) await this.refreshDecisions();
     };
-    void run().catch(error => this.log("error", `Bottleneck brain failed: ${String(error)}`)).finally(() => { this.brainBusy = false; });
+    void run().catch(error => this.log("error", `Bottleneck brain failed: ${String(error)}`)).finally(() => {
+      this.brainBusy = false;
+      // A Look pressed while this pass ran would otherwise wait for the next tick.
+      if (this.brainForce) { this.brainKickedAt = 0; void this.refreshDecisions().catch(() => {}); }
+    });
   }
 
   /** The day's model budget as one fraction (calls or tokens, whichever is further along); null with no ledger. */

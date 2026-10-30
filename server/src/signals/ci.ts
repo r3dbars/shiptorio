@@ -204,7 +204,7 @@ export interface CiCache {
   put<T>(key: string, value: T): Promise<void>;
 }
 /** at = when runs were read, triedAt = last fetch attempt. runs null = never read. denied = no Actions access. */
-interface CiSnapshot { at: number; triedAt: number; runs: WorkflowRun[] | null; denied?: boolean; dirty?: boolean; fromChecks?: boolean }
+interface CiSnapshot { at: number; triedAt: number; runs: WorkflowRun[] | null; denied?: boolean; dirty?: boolean; fromChecks?: boolean; openPrs?: number[] }
 const cacheKey = (repo: string) => `ci:runs:v1:${repo}`;
 
 /** KV-backed cache (the Worker's CACHE binding), with a per-isolate map when there's no binding. */
@@ -227,6 +227,8 @@ export interface CiContext {
   force?: boolean;
   /** Test seam. Defaults to the GitHub App installation client. */
   fetchRuns?: (repo: string, token: string, sinceIso: string) => Promise<WorkflowRun[]>;
+  /** Test seam for the open PR numbers read alongside Actions runs. */
+  fetchOpenPrs?: (repo: string, token: string) => Promise<number[]>;
   /** Test seam for the fallback when the App can't read Actions. Defaults to check runs (checks: read). */
   fetchChecks?: (repo: string, token: string, defaultBranch: string) => Promise<WorkflowRun[]>;
 }
@@ -244,6 +246,10 @@ export async function fetchRuns(repo: string, token: string, sinceIso: string): 
 /** Our GitHub App asks for checks: read, not Actions, so /actions/runs is a 403 on a real install. Check runs on the
  * open PRs' heads and on the default branch say the same things that matter most (red main, a check blocking PRs),
  * shaped as runs so one derive serves both. Found by the real-loop proof: a red PR never reached Shippy. */
+export async function fetchOpenPrs(repo: string, token: string): Promise<number[]> {
+  return (await gh<{ number: number }[]>(`/repos/${repo}/pulls?state=open&per_page=100`, token)).map(p => p.number);
+}
+
 export async function fetchCheckRuns(repo: string, token: string, defaultBranch: string): Promise<WorkflowRun[]> {
   type CheckRun = { id: number; name: string; head_sha: string; status: string; conclusion: string | null; started_at: string | null; completed_at: string | null; html_url: string };
   const checks = async (ref: string) => (await gh<{ check_runs?: CheckRun[] }>(`/repos/${repo}/commits/${encodeURIComponent(ref)}/check-runs?per_page=50`, token)).check_runs ?? [];
@@ -287,7 +293,9 @@ export async function readCiSignals(ctx: CiContext, now: number): Promise<BrainS
       // Once Actions said no, go straight to check runs: asking again costs a call and can fail other ways.
       snapshot = snapshot?.fromChecks
         ? { at: now, triedAt: now, runs: await checks(), fromChecks: true }
-        : { at: now, triedAt: now, runs: await (ctx.fetchRuns ?? fetchRuns)(repo, token, new Date(now - WINDOW_MS).toISOString()) };
+        : { at: now, triedAt: now, runs: await (ctx.fetchRuns ?? fetchRuns)(repo, token, new Date(now - WINDOW_MS).toISOString()),
+          // Which PRs are still open, so a red one counts at full confidence. One call; unknown on a failure.
+          openPrs: ctx.openPrs ? undefined : await (ctx.fetchOpenPrs ?? (ctx.fetchRuns ? undefined : fetchOpenPrs))?.(repo, token).catch(() => undefined) };
     } catch (error) {
       const denied = !snapshot?.fromChecks && error instanceof OutboundError && (error.status === 403 || error.status === 404);
       // No Actions access: fall back to check runs. Otherwise keep the old runs (they age out on freshUntil) and
@@ -301,7 +309,7 @@ export async function readCiSignals(ctx: CiContext, now: number): Promise<BrainS
   if (snapshot.denied) return [cantRead(repo, snapshot.at)];
   if (!snapshot.runs) return [];
   // Check runs are read only on open PRs' heads, so every PR they name is open.
-  const openPrs = ctx.openPrs ?? (snapshot.fromChecks ? [...new Set(snapshot.runs.flatMap(r => r.pull_requests?.map(p => p.number) ?? []))] : undefined);
+  const openPrs = ctx.openPrs ?? snapshot.openPrs ?? (snapshot.fromChecks ? [...new Set(snapshot.runs.flatMap(r => r.pull_requests?.map(p => p.number) ?? []))] : undefined);
   return deriveCiSignals(snapshot.runs, { repo, defaultBranch: ctx.defaultBranch, observedAt: snapshot.at, openPrs });
 }
 

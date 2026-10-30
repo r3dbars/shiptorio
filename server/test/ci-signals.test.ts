@@ -169,6 +169,13 @@ describe("CI collector: reading cheaply", () => {
     expect(kept.map(s => s.confidence)).toEqual(again.map(s => s.confidence));
   });
 
+  it("reads which PRs are open alongside Actions runs, so a red PR counts at full confidence", async () => {
+    const failing = { id: 1, name: "check", head_branch: "seed", head_sha: "a".repeat(40), event: "pull_request", status: "completed", conclusion: "failure", created_at: new Date(now - 3_600_000).toISOString(), updated_at: new Date(now - 3_500_000).toISOString(), html_url: "https://github.com/x/y/runs/1", pull_requests: [{ number: 39 }] };
+    const read = (open: number[]) => ciCollector.read(ctx({ fetchRuns: async () => [failing], fetchOpenPrs: async () => open }), now);
+    expect((await read([39])).find(s => s.kind === "ci_blocking")!.confidence).toBe(1);
+    expect((await read([12])).some(s => s.kind === "ci_blocking")).toBe(false); // closed PRs don't count
+  });
+
   it("keeps the last runs when GitHub hiccups, and backs off a full poll", async () => {
     const c = ctx({ fetchRuns: async () => cloggedRuns });
     await ciCollector.read(c, now);
