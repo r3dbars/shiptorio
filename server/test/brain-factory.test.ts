@@ -1,9 +1,11 @@
 import { credentialEnv } from "./credential-fixture";
+import { generateKeyPairSync } from "node:crypto";
 import { authorizedDB, membershipCache, authorizedSocket, browserEnv } from "./browser-fixture";
 import { afterEach, describe, expect, it, mock } from "bun:test";
 import { FactoryState, type Diagnosis, type Item, type ServerToWeb } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
-import type { BrainMemory } from "../src/diagnose";
+import { emptyMemory, ruleDiagnosis, type BrainMemory } from "../src/diagnose";
+import { signalId } from "@shiptorio/shared";
 
 mock.module("cloudflare:workers", () => ({ DurableObject: class {
   ctx: unknown; env: unknown;
@@ -18,7 +20,7 @@ afterEach(() => { globalThis.fetch = realFetch; });
 const waiting: Item = { id: "gh-7", source: "github_issue", title: "Checkout button does nothing", kind: "bug", state: "queued", district: "web", updatedAt: Date.now() - 2 * 3_600_000, attempts: 0 } as Item;
 
 /** The real Durable Object with in-memory storage, the "brain" flag on, and no network. */
-function fixture(items: Item[]) {
+function fixture(items: Item[], extraEnv: Record<string, unknown> = {}) {
   globalThis.fetch = (async () => { throw new Error("offline in tests"); }) as unknown as typeof fetch;
   const state = FactoryState.parse({ repo: "r3dbars/demo", baseBranch: "main", districts: [], ...starterLine(), items, science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0, move: null, deck: [] });
   const data = new Map<string, unknown>([["state", structuredClone(state)], ["meta", { repo: state.repo, installationId: 1 }], ["openMoves", []]]);
@@ -32,6 +34,8 @@ function fixture(items: Item[]) {
   };
   const DB = { prepare(sql: string) {
     if (sql.startsWith("SELECT u.id") || sql.startsWith("SELECT u.login")) return { bind: () => ({ first: async () => ({ id: 1, login: "test-player" }) }) };
+    // GitHub's pacing ledger: every slot free, no cooldown.
+    if (sql.includes("INSERT INTO api_limits")) return { bind: () => ({ first: async () => ({ next_at: Date.now() + 1000 }), run: async () => ({ success: true }) }) };
     return { bind: () => ({ first: async () => null, all: async () => ({ results: [] }), run: async () => ({ success: true }) }) };
   } };
   const CACHE = { ...membershipCache, get: async (key: string) => key === "flags:v1:global:brain" ? "true" : membershipCache.get(key) };
@@ -39,8 +43,8 @@ function fixture(items: Item[]) {
   const socket = authorizedSocket((raw: string) => events.push(JSON.parse(raw)));
   let exclusive: Promise<unknown> = Promise.resolve();
   const ctx = { storage, acceptWebSocket() {}, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => { const next = exclusive.then(fn); exclusive = next.catch(() => {}); return next; }, getWebSockets: () => [socket] };
-  const factory = new Factory(ctx as never, credentialEnv({ ...browserEnv, CACHE, DB: authorizedDB(DB) }) as never) as unknown as {
-    load(): Promise<unknown>; refreshDecisions(): Promise<void>; webSocketMessage(ws: unknown, raw: string): Promise<void>;
+  const factory = new Factory(ctx as never, credentialEnv({ ...browserEnv, CACHE, DB: authorizedDB(DB), ...extraEnv }) as never) as unknown as {
+    load(): Promise<unknown>; refreshDecisions(): Promise<void>; webSocketMessage(ws: unknown, raw: string): Promise<void>; onPullClosed(pr: number, merged: boolean, sha?: string): Promise<void>;
     brainBusy: boolean; brainKickedAt: number; state: FactoryState;
   };
   /** One tick: refresh the deck, let the brain's pass finish, refresh again so its card is dealt. */
@@ -108,6 +112,63 @@ describe("the bottleneck brain in the real factory", () => {
     expect((f.data.get("brainSignals") as { readAt: Record<string, number> }).readAt.factory).toBeGreaterThan(readAt);
     expect(looked.current?.bottleneck.id).toBe("factory:no_agent:repo");
     expect(looked.runs.count).toBe(first.runs.count); // no model here, so the rule answered: no run spent
+  });
+
+  it("yes on a red PR files a fix issue and puts it on the line; when the fix merges, the red PR gets it", async () => {
+    // A real App key, and GitHub's pacing ledger with every slot free.
+    const f = fixture([], {
+      GITHUB_APP_ID: "fix-loop-test",
+      GITHUB_APP_PRIVATE_KEY: generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey.export({ format: "pem", type: "pkcs8" }).toString(),
+    });
+    const calls: string[] = [];
+    const issue = { number: 50, state: "open", title: 'Fix "check" failing on #39', body: "", user: { login: "r3dbars" }, author_association: "OWNER", labels: [], updated_at: "2026-10-30T19:00:00Z", html_url: "https://github.com/r3dbars/demo/issues/50" };
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input instanceof Request ? input.url : input), method = init?.method ?? "GET";
+      calls.push(`${method} ${url.replace("https://api.github.com", "")}`);
+      if (url.includes("/access_tokens")) return Response.json({ token: "fixture-installation-token", expires_at: new Date(Date.now() + 3600000).toISOString() });
+      if (url.endsWith("/pulls/39") && method === "GET") return Response.json({ state: "open", title: "Shipping note", html_url: "https://github.com/r3dbars/demo/pull/39", head: { repo: { full_name: "r3dbars/demo" } } });
+      if (url.endsWith("/repos/r3dbars/demo/issues") && method === "POST") return Response.json(issue, { status: 201 });
+      if (url.endsWith("/issues/50")) return Response.json(issue);
+      if (url.includes("/issues/50/comments")) return Response.json([]);
+      if (url.endsWith("/pulls/39/update-branch")) return Response.json({ message: "Updating pull request branch." }, { status: 202 });
+      return Response.json({ message: "Not Found" }, { status: 404 });
+    }) as unknown as typeof fetch;
+    const red = { id: signalId("ci", "ci_blocking", "check"), source: "ci" as const, kind: "ci_blocking", scope: "check", title: '"check" is failing on #39, so it can\'t ship.', severity: 0.7, confidence: 1,
+      evidence: [{ label: "Failing on #39", url: "https://github.com/r3dbars/demo/actions/runs/1" }], observedAt: Date.now(), freshUntil: Date.now() + 3_600_000 };
+    const r = ruleDiagnosis([red], emptyMemory(), Date.now(), { repo: "r3dbars/demo" })!;
+    expect(r.unlock.action).toMatchObject({ tool: "fix_failing_pr", args: { pr: 39, workflow: "check" } });
+    f.data.set("brainMemory", { ...emptyMemory(), current: { ...r, shownAt: Date.now() }, lastAt: Date.now(), mainKey: "x" });
+    f.data.set("brainSignals", { signals: [red], readAt: { ci: Date.now(), repo: Date.now(), factory: Date.now(), sentry: Date.now(), posthog: Date.now(), feedback: Date.now(), goals: Date.now() } });
+    await f.factory.load(); await f.factory.refreshDecisions();
+    expect(f.saved().deck?.some(m => m.id === `unlock:${red.id}`)).toBe(true);
+    await f.send({ type: "choose_move", moveId: `unlock:${red.id}`, optionId: "continue" });
+    expect(calls).toContain("POST /repos/r3dbars/demo/issues");
+    expect(f.saved().items.some(i => i.id === "gh-50")).toBe(true);
+    expect(f.data.get("fixesPr:50")).toEqual({ pr: 39, sameRepo: true });
+
+    // The fix ships as PR #51: Shippy updates #39 from main so its checks run on the fix, once.
+    const state = f.data.get("state") as FactoryState;
+    state.items = state.items.map(i => i.id === "gh-50" ? { ...i, state: "on_pad" as const, prNumber: 51 } : i);
+    f.data.set("state", state); (f.factory as unknown as { state: FactoryState | null }).state = null;
+    await f.factory.onPullClosed(51, true, "abc").catch(() => {});
+    await f.factory.onPullClosed(51, true, "abc").catch(() => {});
+    expect(calls.filter(c => c === "PUT /repos/r3dbars/demo/pulls/39/update-branch")).toHaveLength(1);
+  });
+
+  it("after a problem clears, Shippy follows up once with a card that says so", async () => {
+    const f = fixture([waiting]);
+    await f.tick();
+    const state = f.data.get("state") as FactoryState;
+    state.items = state.items.map(i => ({ ...i, state: "launched" as const }));
+    f.data.set("state", state);
+    (f.factory as unknown as { state: FactoryState | null }).state = null;
+    await f.tick();
+    const win = f.saved().deck?.find(m => m.id.startsWith("win:"));
+    expect(win).toMatchObject({ title: "That's fixed", options: [{ label: "Nice" }, { label: "Hide" }] });
+    expect(win!.why).toContain("is clear now");
+    await f.send({ type: "choose_move", moveId: win!.id, optionId: "continue" });
+    await f.tick();
+    expect(f.saved().deck?.some(m => m.id.startsWith("win:"))).toBe(false);
   });
 
   it("Later parks the bottleneck instead of dealing it again", async () => {

@@ -495,12 +495,30 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   /** The brain's current card, from its stored memory. The "brain" flag (default off) gates it. */
   private async brainCard(derived: { bottleneck: FactoryState["bottleneck"] }): Promise<Move | null> {
     if (!await flagEnabled(this.env, "brain")) return null;
-    const cur = (await this.ctx.storage.get<BrainMemory>("brainMemory"))?.current;
-    if (!cur) return null;
+    const memory = await this.ctx.storage.get<BrainMemory>("brainMemory");
+    const cur = memory?.current;
+    if (!cur) return this.winCard(memory);
     const move = unlockMove(cur.bottleneck, cur.unlock, cur.shownAt);
     // A queue-jam card stands on the jam's station, so the deck doesn't also deal the plain bottleneck card.
     const jam = derived.bottleneck;
     return cur.bottleneck.id.startsWith("factory:queue_jam") && jam ? { ...move, stage: jam.stage, focus: jam.stationId ?? jam.stage } : move;
+  }
+
+  /** Shippy's follow-up: the last unlock that worked, once, until the player taps it. Never over a live problem. */
+  private async winCard(memory: BrainMemory | undefined): Promise<Move | null> {
+    const win = memory?.cleared[0];
+    if (!win || Date.now() - win.clearedAt > 6 * 3_600_000 || await this.ctx.storage.get<number>("brainWinSeen") === win.clearedAt) return null;
+    return {
+      id: `win:${win.bottleneckId}`, title: "That's fixed", why: `Shippy checked again: "${win.title.replace(/\.$/, "")}" is clear now.`,
+      kind: "unblock", createdAt: win.clearedAt, attention: "suggest",
+      options: [{ id: "continue", label: "Nice", recommended: true, actions: [] }, { id: "later", label: "Hide", recommended: false, actions: [] }],
+    };
+  }
+
+  private async seeWin(card: Move) {
+    const win = (await this.ctx.storage.get<BrainMemory>("brainMemory"))?.cleared[0];
+    if (win && card.id === `win:${win.bottleneckId}`) await this.accountPut("brainWinSeen", win.clearedAt);
+    await this.refreshDecisions();
   }
 
   /**
@@ -549,7 +567,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         await this.save();
         this.broadcast({ type: "patch", patch: { holdingBack, liveBottleneck: s.liveBottleneck } });
       }
-      for (const c of result.cleared) this.log("info", `Unblocked: ${c.title}.`);
+      for (const c of result.cleared) this.log("success", `Unblocked: ${c.title.replace(/\.$/, "")}.`);
       if (result.decided) {
         const log = await this.ctx.storage.get<Diagnosis[]>("brainDiagnoses") ?? [];
         await this.accountPut("brainDiagnoses", [result.diagnosis, ...log].slice(0, 50));
@@ -581,11 +599,62 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     this.brainKickedAt = 0; // the slot is free: look again on the next tick
   }
 
+  /**
+   * Yes on a red PR: file one issue that says what's failing, and put it on the line. Its plan still waits for the
+   * player's yes. When the fix merges, onPullClosed brings it into the red PR so its checks run again.
+   */
+  private async fixFailingPr(args: Record<string, unknown>): Promise<boolean> {
+    const pr = Number(args.pr), workflow = String(args.workflow ?? "CI").slice(0, 80);
+    if (!this.meta || !Number.isSafeInteger(pr) || pr < 1) return false;
+    const repo = this.meta.repo;
+    try {
+      const token = await installationToken(this.env, this.meta.installationId);
+      const pull = await gh<{ state: string; title: string; html_url: string; head: { repo: { full_name: string } | null } }>(`/repos/${repo}/pulls/${pr}`, token);
+      if (pull.state !== "open") { this.log("info", `#${pr} isn't open anymore, so there's nothing to fix.`); return false; }
+      let issue = await this.ctx.storage.get<number>(`fixIssueFor:${pr}`);
+      if (!issue) {
+        const url = typeof args.url === "string" && args.url.startsWith("https://github.com/") ? args.url : pull.html_url;
+        issue = (await gh<{ number: number }>(`/repos/${repo}/issues`, token, { method: "POST", body: JSON.stringify({
+          title: `Fix "${workflow}" failing on #${pr}`.slice(0, 200),
+          body: [`Shippy found the "${workflow}" check failing on #${pr} (${pull.title.slice(0, 120)}), so it can't ship.`, "", `Failing run: ${url}`, "",
+            `Make "${workflow}" pass on the default branch. Fix the code the check exercises; don't weaken or skip the check, and don't change what #${pr} is for.`].join("\n"),
+        }) })).number;
+        await this.accountPut(`fixIssueFor:${pr}`, issue);
+        await this.accountPut(`fixesPr:${issue}`, { pr, sameRepo: pull.head.repo?.full_name.toLowerCase() === repo.toLowerCase() });
+      }
+      const started = await this.startInboxIssue(issue, await this.runAccount() ?? "shippy");
+      if ("waitingFor" in started) { this.log("info", `Filed #${issue} for the red check on #${pr}. It starts once PR #${started.waitingFor} is done.`); return true; }
+      this.log("success", `Filed #${issue} to fix "${workflow}" on #${pr}. Approve its plan and the Builder fixes it.`, `gh-${issue}`);
+      return true;
+    } catch (error) {
+      this.log("warn", `Couldn't start the fix for #${pr}: ${String(error).slice(0, 160)}`);
+      return false;
+    }
+  }
+
+  /** The fix for a red PR merged: update that PR from the default branch so its checks run on the fix. */
+  private async bringFixInto(issue: number, fixPr: number) {
+    const target = await this.ctx.storage.get<{ pr: number; sameRepo: boolean; done?: boolean }>(`fixesPr:${issue}`);
+    if (!target || target.done || !this.meta) return;
+    await this.accountPut(`fixesPr:${issue}`, { ...target, done: true }); // a merge webhook and our own launch both land here
+    if (!target.sameRepo) { this.log("info", `The fix for #${target.pr} merged in #${fixPr}. #${target.pr} comes from a fork, so its author needs to update it.`); return; }
+    try {
+      const token = await installationToken(this.env, this.meta.installationId);
+      await gh(`/repos/${this.meta.repo}/pulls/${target.pr}/update-branch`, token, { method: "PUT", body: "{}" });
+      this.log("success", `The fix merged in #${fixPr}. Shippy brought it into #${target.pr}, and its checks are running again.`);
+      this.brainForce = true; this.brainKickedAt = 0; // look again soon; the check takes a few minutes
+    } catch (error) {
+      this.log("warn", `The fix merged in #${fixPr}, but #${target.pr} couldn't be updated: ${String(error).slice(0, 160)}`);
+    }
+  }
+
   /** Continue on an unlock card: run its one safe action (or the browser opens its link), and watch whether it worked. */
   private async chooseBrainMove(card: Move, option: Move["options"][number]): Promise<boolean> {
+    if (card.id.startsWith("win:")) { await this.seeWin(card); return true; }
     if (!card.id.startsWith("unlock:")) return false;
     if (option.id === "later") { await this.swipe(card, "defer"); return true; }
     const action = option.actions[0];
+    if (action?.tool === "fix_failing_pr" && !await this.fixFailingPr(action.args)) return true; // said why in the log; the card stays
     if (action?.tool === "connect_source" && (action.args.kind === "sentry" || action.args.kind === "posthog")) await this.connectMine(action.args.kind);
     else if (action?.tool === "inspect_bottleneck") this.log("info", card.why);
     else if (action?.tool === "ask_goal") { await this.publishGauntletMove(null); await this.offerGoalMove(true); }
@@ -752,6 +821,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   private async swipe(move: Move, why: "defer" | "once" | "kind" | "spark" | "wrong", intent?: {id: string; userId: number; scope: string}) {
+    if (move.id.startsWith("win:")) return this.seeWin(move);
     await this.decisionData();
     if (why !== "defer" && move.id.startsWith("unlock:")) await this.tapBrainCard(move.id.slice(7), "later");
     const book = this.deckBook!, key = moveKey(move), before = book.decisions[key] && structuredClone(book.decisions[key]);
@@ -2556,6 +2626,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
   async onPullClosed(prNumber: number, merged: boolean, mergeSha?: string): Promise<void> {
     if (!(await this.load())) return;
+    const fix = merged ? this.state!.items.find(i => i.prNumber === prNumber && i.id.startsWith("gh-")) : undefined;
+    try { await this.closePull(prNumber, merged, mergeSha); }
+    finally { if (fix) await this.bringFixInto(Number(fix.id.slice(3)), prNumber); }
+  }
+
+  private async closePull(prNumber: number, merged: boolean, mergeSha?: string): Promise<void> {
     const creditKey = `launchCredit:${prNumber}`;
     if (merged) {
       // An item's active PR changes on rework. Credit belongs to the merged PR forever.
