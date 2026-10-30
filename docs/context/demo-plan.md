@@ -1,33 +1,27 @@
-# Plan to Nov 3 (demo video)
+# Plan to the Nov 4 submission
 
-Written 2026-10-29 by the "Plan what's next and load up Codex" thread. Every agent reads this before picking work.
-Shot list and voiceover: [demo-script.md](demo-script.md).
-Deadline: Meta hackathon cutoff Nov 4 8 PM CT, aim to be done Nov 3 evening. Feature freeze ~Nov 1 (after that:
-bugs, polish, reliability). Justin films the demo video himself on the real deck.
+Current direction from Justin, **2026-10-30**. The deck is the whole product. No new tour work, features,
+screens or settings. Polish, simplify and clean up the existing loop. Shot list: [demo-script.md](demo-script.md).
+This schedule replaces the Oct 29 plan to keep building through Nov 2.
 
-## The rule (Justin, 2026-10-29 18:01)
+## Day by day
 
-"As simple as possible ... continuously work on the loop that we have. Make it more simple, more clear, more
-friendly for end users, and more polished." No new features, screens or settings. Deleting beats adding.
-
-## Day by day (Justin's schedule, 2026-10-29)
-
-Product is polished and done by **end of Monday Nov 2**. Tuesday and Wednesday are filming only. Every batch stays
-polish, simplify and cleanup. No new features on any day.
-
-| Day | Justin | Agents (Claude + Codex) | Gate at end of day |
+| Day | Justin | Agents | Gate |
 | --- | --- | --- | --- |
-| Thu Oct 29 | Paste batches | Codex #43-#74 land on dev; Claude reviews every PR | dev green |
-| Fri Oct 30 (full day) | Tap Promote #571, Launch Testing #19/#20, hold Ship it on Testing PR #27. Play dev on phone + desktop: one real ship with the rocket, then 3 same-kind Testing issues for the level-up | Fix what Justin and the playtest threads find, same day | **Promotion 1** dev → main (shiptorio.com) |
-| Sat Oct 31 (~4h) | Play the full loop as a newcomer; list what feels off | Fix the list; last visual/art changes | dev green |
-| Sun Nov 1 (~4h) | Dress rehearsal of the demo script (docs/context/demo-script.md) on shiptorio.dev | **Art and copy freeze at end of day.** Record the replay trace from a real run | **Promotion 2** dev → main |
-| Mon Nov 2 (finish) | Final run-through on phone + desktop; stock Testing with fresh issues for filming | Bug fixes only, smallest possible diffs | **Final promotion** dev → main by evening; then main is frozen |
-| Tue Nov 3 + Wed Nov 4 | Film and edit the video; submit before 8 PM CT Wed (aim Tue night) | Nothing merges to main. Emergency fixes only if Justin asks | Submitted |
+| Fri Oct 30 | Prove one real ship by hand: approve a plan, local agent builds, hold Ship it, verify merge and rocket | Fix existing-loop blockers; finish documentation and cleanup in small PRs | Real ship evidenced separately from fixtures |
+| Sat Oct 31 | Final phone and desktop run-through | Finish necessary fixes; no new tour work | **Freeze** |
+| Sun Nov 1 | **Record** the demo of the working deck | Fix recording blockers only | Recorded take |
+| Mon Nov 2–Tue Nov 3 | Edit the video and prepare submission | Necessary existing-loop fixes only | Submission ready |
+| Wed Nov 4 | **Submit by noon CT** | No new scope | Submitted; event cutoff is 8 PM CT |
 
-Rules for the freeze points:
-- After Sunday: no art, layout or copy changes unless Justin asks. Bugs only.
-- After Monday's promotion: main does not move. dev may take fixes, but nothing is promoted without Justin.
-- Every promotion needs the full suite green (`release-validation`). If it's red, fix forward the same day.
+The shaft map, build mode, multi-repo empire and pricing are parked. No agent performs Justin's real ship
+or a production promotion as part of repo cleanup. `main` moves only when Justin requests it; #571 remains
+his promotion decision. CI success, a merge into dev and a staging deployment are separate receipts.
+
+## Existing work and ownership
+
+The Oct 29 status notes and ownership tables below are background for avoiding conflicts, not proof of
+current live state or authorization to start another feature. The Oct 30 schedule above wins.
 
 ## The demo in one line
 
@@ -67,7 +61,7 @@ A plan that also edits code/config (for example `package.json`) keeps its origin
 
 Verification boundaries: fixture tests exercise the real approval and runner-claim methods, including lease/reconnect behavior. A new four-issue run on shiptorio.dev is still player acceptance; fixture success is not a claim that four live jobs ran.
 
-## The five moves
+## Earlier work tracks (Oct 29; no new scope)
 
 1. **Finish one real ship on camera.** PR #27 merged from the deck, rocket flies. Then 3 more same-kind Testing
    issues so the level-up happens live.

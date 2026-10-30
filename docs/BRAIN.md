@@ -68,7 +68,7 @@ Every `Diagnosis` (signals in, bottleneck, unlock, reason) is stored so the eval
 | Repo flow | `server/src/signals/repo.ts` (factory:* lives in `signals/index.ts`) | `prs_waiting_on_you`, `prs_stale`, `branches_stale`, `backlog_growing`, `issues_untriaged`, `slow_merge`, `ship_rate_drop`, `prs_dropped`, `backlog_empty`, `approve_queue`, `repo_missing`. Five cached list calls per 15 min. `no_tests`, `big_prs` not built yet |
 | Player goals + taps | `server/src/signals/goals.ts`, `taps.ts` | `goal_*`, `card_ignored`, `later_streak`, `never_reason` |
 | Loop core | `server/src/signals/index.ts` (registry), `server/src/diagnose.ts`, `server/src/unlocks.ts` (playbook) | collect → diagnose → deal → close, wired into `Factory` |
-| Map | `web/src/map/shaft/` | the bottleneck's `area` lights its floor; no new HUD |
+| Deck | `web/src/deck2d/data/view.ts` | Shippy and the current card point to the work waiting on the player |
 | Eval | `server/scripts/brain-eval/` | fixtures of `BrainSignal[]` → expected `area` + main signal id (or `null`) + acceptable `play` ids |
 
 New kinds: add them to `SIGNAL_KINDS` in the same PR. Grading is exact on `area` and the main signal id;

@@ -41,7 +41,7 @@ When you learn or decide something that will matter tomorrow, add it to the righ
 | [encrypted-credentials.md](encrypted-credentials.md) | How mine credentials are stored |
 | [ops.md](ops.md) | Diagnostics, Sentry, backup and recovery |
 | [docs-site.md](docs-site.md) | The public docs site at /docs |
-| [landing.md](landing.md) | The shiptorio.com landing page |
+| [landing.md](landing.md) | Deck entry, preview access and the retained production landing page |
 
 ## Parked (code still exists, not in the demo)
 
