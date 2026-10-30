@@ -27,3 +27,8 @@ test('page 1 carries Shippy\'s suggested first issue; later pages and failures d
   expect((await issueInbox('o/r', '', 2, read, suggest)).suggested).toBeUndefined();
   expect((await issueInbox('o/r', '', 1, read, async () => { throw Error('spark'); })).suggested).toBeUndefined();
 });
+
+test('issues already on the line are not offered again', async () => {
+  const read = async <T>() => [{ id: 1, number: 30, title: 'on the pad', state: 'open' }, { id: 2, number: 40, title: 'fresh', state: 'open' }] as T;
+  expect((await issueInbox('o/r', '', 1, read, undefined, new Set([30]))).issues.map(i => i.number)).toEqual([40]);
+});

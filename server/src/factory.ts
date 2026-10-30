@@ -1135,6 +1135,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     return true;
   }
 
+  /** Issue numbers already past Repo (anything but fresh ore or launched), so the inbox stops offering them. */
+  async lineIssues(): Promise<number[]> {
+    if (!(await this.load())) return [];
+    return this.state!.items.filter(i => !["ore", "launched"].includes(i.state)).map(i => Number(/^gh-(\d+)$/.exec(i.id)?.[1])).filter(n => n > 0);
+  }
+
   async startInboxIssue(number: number, requestedBy: string) {
     if (!(await this.load()) || !this.meta || !Number.isSafeInteger(number) || number < 1) throw new Error("Invalid issue selection");
     const active = this.state!.items.find(i => i.prNumber && ["inspecting", "on_pad", "passed"].includes(i.state));

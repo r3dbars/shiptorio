@@ -724,7 +724,8 @@ app.get("/api/repos/:owner/:repo/issues", async c => {
     ask: askSpark({ ...c.env, budgetRepo: repo, budgetAccount: () => budgetAccount(c.env.DB, repo) }),
     cache: c.env.CACHE,
   });
-  return c.json(await issueInbox(repo, token, page, undefined, suggest));
+  const onLine = new Set(await (await factory(c.env, repo)).lineIssues().catch(() => [] as number[]));
+  return c.json(await issueInbox(repo, token, page, undefined, suggest, onLine));
 });
 
 app.get("/api/repos", async (c) => {
