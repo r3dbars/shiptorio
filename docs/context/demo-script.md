@@ -1,6 +1,6 @@
 # Demo video script (2:00)
 
-Written 2026-10-29 for the Meta hackathon video (cutoff Nov 4 8 PM CT, aim Nov 3). Justin films it himself on the
+Written 2026-10-29 for the Meta hackathon video (schedule updated Oct 30: freeze Oct 31, record Nov 1, submit Nov 4 noon CT; cutoff 8 PM CT). Justin films it himself on the
 real deck. Follows the locked story (docs/context/demo-plan.md): software is a factory → there's always a
 bottleneck, waiting on your calls → swipe and it moves → approve twice more and it's automatic → the rocket ships.
 Artifact version: https://claude.ai/artifact/12QE9JhGHZrRL6XKASVWRk
