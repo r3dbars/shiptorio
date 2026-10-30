@@ -1,5 +1,6 @@
 // A fresh player, real local Worker/D1/DO, fixture GitHub and a fixture local Codex runner.
 // No real sign-in, paid model call or GitHub write. The browser only reaches the first issue card.
+import { walkTour } from './walk-tour.mjs';
 import { execFileSync } from 'node:child_process';
 import { createHmac, generateKeyPairSync } from 'node:crypto';
 import { mkdirSync, readdirSync, readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
@@ -84,15 +85,14 @@ try { for (const [index,view] of views.entries()) {
       else { assert.equal(await page.locator('.connection-tools').count(),0,'setup chips stay hidden before sign-in');assert.equal(await card().getByRole('button',{name:'Sign in',exact:true}).count(),0,'play the story before setup'); }
     });
     if(!baseline){
-      // The guest tour opens on Shippy's first card. This run takes its Skip, straight to sign-in (the staging smoke
-      // walks every card), so the two-minute budget measures setup, not reading.
+      // The guest tour opens on Shippy's first card and has no Skip, so this run reads every card; the two-minute
+      // budget below leaves the tour out and measures setup, not reading.
       await step('tour',async()=>{
         const first=page.locator('.ic-card:not(.ic-ghost)[data-card^="tour-"]');
         await first.waitFor({timeout:30000});assert.match(await first.innerText(),/Shippy/);
-        await first.locator('.later').click();
+        await walkTour(page);
         // Sign-in waits for the tour's own ask (the password comes up there, never before).
-        const ask=card().getByRole('button',{name:'Build mine',exact:true});
-        await ask.waitFor({timeout:30000});assert.equal(await card().getByRole('button',{name:'Sign in',exact:true}).count(),0);
+        assert.equal(await card().getByRole('button',{name:'Sign in',exact:true}).count(),0);
         assert.equal(await page.locator('.connection-tools').count(),0);
       });
     }
@@ -118,7 +118,8 @@ try { for (const [index,view] of views.entries()) {
     });
     // Shippy leads with his pick: the docs-only README issue beats the checkout bug (no Spark key here, so the fixed rule picks).
     await step('first-issue-card',async()=>{assert.match(await card().innerText(),baseline?/#1.*Checkout total/:/#2: README[\s\S]*I'd start with #2, because/);});
-    assert.ok(Date.now()-started<120000,'first issue must be reached in under two minutes');
+    const tourMs=steps.find(x=>x.name==='tour')?.ms??0;
+    assert.ok(Date.now()-started-tourMs<120000,'first issue must be reached in under two minutes (not counting the tour)');
     assert.deepEqual(errors,[],'no browser runtime errors');
     assert.ok(!requests.some(p=>p.endsWith('/start')),'browsing must not start a job');
     assert.equal(stub.state.pulls.length,0,'no PR before starting an issue');

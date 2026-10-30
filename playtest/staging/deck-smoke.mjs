@@ -67,7 +67,7 @@ export async function deckSmoke({ origin = 'https://shiptorio.dev', password, ou
         const signIn = page.getByRole('button', { name: 'Sign in', exact: true });
         // The tour ends on its own ask; only "Build mine" opens sign-in (and, on staging, the password).
         const ask = page.getByRole('button', { name: 'Build mine', exact: true });
-        for (let n = 0; n < 60 && !(await ask.count()); n++) { // a story card's first tap may finish its typed line
+        for (let n = 0; n < 120 && !(await ask.count()); n++) { // a story card's first tap may finish its typed line
           const beat = page.locator('.ic-card:not(.ic-ghost)[data-card^="tour-"] .approve');
           await Promise.race([beat.first().waitFor({ timeout: 30000 }).catch(() => {}), ask.waitFor({ timeout: 30000 }).catch(() => {})]);
           if (await ask.count()) break;

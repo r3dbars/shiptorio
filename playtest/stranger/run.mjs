@@ -7,6 +7,7 @@
 //
 // Friction log and what each step means: docs/context/new-user-path.md.
 
+import { walkTour } from "./walk-tour.mjs";
 import { execFileSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync, mkdtempSync } from "node:fs";
@@ -227,12 +228,11 @@ try {
     await page.waitForURL((u) => u.pathname === "/deck" && u.searchParams.get("source") === "live");
     await page.locator("[data-deck-ready]").waitFor({ timeout: UI_TIMEOUT });
   });
-  await step("Shippy's tour shows, then skip to Build mine", async () => {
+  await step("Shippy's tour plays through to Build mine", async () => {
     const first = page.locator('.ic-card:not(.ic-ghost)[data-card^="tour-"]');
     await first.waitFor({ timeout: UI_TIMEOUT });
     assert.match(await first.innerText(), /Shippy/);
-    await first.locator(".later").click();
-    await card().getByRole("button", { name: "Build mine", exact: true }).waitFor({ timeout: UI_TIMEOUT });
+    await walkTour(page, { timeout: UI_TIMEOUT }); // no Skip: Next through every card, hold Ship it
   });
   await step("sign in with GitHub (real, not the sandbox)", async () => {
     await card().getByRole("button", { name: "Build mine", exact: true }).click();
