@@ -45,6 +45,6 @@ it's automatic." (Justin's round 3 pick) An old streak from before learning neve
 - `server/src/factory.ts`: counts yeses on `choose_move`, resets on Edit/Later/Never, `runLearned()` in the tick
   answers one learned card per tick through the same runner handlers a tap uses (logged `approvedBy: "autonomy"`,
   card_taps action `auto`), `unlearn` message, `unlearnOnComeback`.
-- `web/src/ui/LearnDots.tsx`: the dots. Shown on the attention tray, the check-in deck, and the simple tray (#477).
+- The dots on the card (`dots: { have, need }` in the deck's card view, `web/src/deck2d/card/`): "Approve 2 more like this and it's automatic."
 - Sim: build cards learn the same way, so `?source=sim` shows it.
 - Tests: `server/test/learn.test.ts`, `server/test/deck-factory.test.ts` ("the factory learns what the player approves").

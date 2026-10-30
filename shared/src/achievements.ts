@@ -5,6 +5,7 @@
 // factory state in with `check`.
 
 import type { FactoryState } from "./model";
+import { dayKey, daysBetween } from "./progression";
 
 export interface Achievement {
   id: string;
@@ -101,20 +102,12 @@ export function mergeEarned(a: Earned, b: Earned): Earned {
   return { v: 1, got, streak: newer.streak, best: Math.max(a.best, b.best), last: newer.last };
 }
 
-const dayKey = (t: number) => {
-  const d = new Date(t);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-};
-const dayNum = (key: string) => {
-  const [y, m, d] = key.split("-").map(Number);
-  return Math.round(Date.UTC(y, m - 1, d) / 86_400_000);
-};
 
 /** A real move today (a ship, a card answered): the record's streak goes on or starts over. */
 export function markDay(e: Earned, now: number): Earned {
   const key = dayKey(now);
   if (e.last === key) return e;
-  const streak = e.last && dayNum(key) - dayNum(e.last) === 1 ? e.streak + 1 : 1;
+  const streak = e.last && daysBetween(e.last, key) === 1 ? e.streak + 1 : 1;
   return { ...e, streak, best: Math.max(e.best, streak), last: key };
 }
 

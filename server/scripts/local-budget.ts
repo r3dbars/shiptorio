@@ -11,6 +11,7 @@ export function localBudget(): Pick<SparkEnv, "DB" | "budgetAccount"> {
   db.exec("CREATE TABLE IF NOT EXISTS spark_usage(account TEXT, day TEXT, calls INTEGER DEFAULT 0, tokens INTEGER DEFAULT 0, PRIMARY KEY(account, day))");
   db.exec("CREATE TABLE IF NOT EXISTS spark_factory_budgets(repo TEXT PRIMARY KEY, daily_nano_usd INTEGER NOT NULL)");
   db.exec("CREATE TABLE IF NOT EXISTS spark_factory_calls(id TEXT PRIMARY KEY, repo TEXT, day TEXT, model TEXT, input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0, cached_tokens INTEGER DEFAULT 0, nano_usd INTEGER, settled INTEGER DEFAULT 0, account TEXT)");
+  db.exec("CREATE TABLE IF NOT EXISTS admin_controls(scope TEXT PRIMARY KEY, paused INTEGER NOT NULL DEFAULT 0)"); // reserveSpark checks the admin pause (#353)
   return {
     budgetAccount: async () => "local-smoke-check",
     DB: { prepare(sql: string) {

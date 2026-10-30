@@ -27,3 +27,26 @@ and `px.ts`; those remain. No tests were removed or disabled.
 Method: inspect Vite and HTML entrypoints, follow source imports and dynamic module patterns, then search the
 whole repository for each candidate and its exported names. A source-only import graph is insufficient for
 routes, fixture entrypoints and `import.meta.glob` modules.
+
+## Cleanup pass, 2026-10-30 afternoon (Claude, PRs #758 and #759)
+
+Removed with reference evidence: seven orphan scripts, an unreferenced evidence folder, dead JSX/visual-test/WebGL
+config, the CI baseline leftovers, six dead `shared/` exports, a duplicate `dayKey`, 26 React-era `copy.ts` exports,
+two dead glob paths, one `console.debug`, and 6.6 MB of public assets nothing serves (old landing hero, old gate loop,
+spark frames). Full check green on both.
+
+Found and deliberately left for after the freeze (each is a refactor, not a removal, so pixels or behavior could move):
+
+| Candidate | Where | Why it waits |
+| --- | --- | --- |
+| `clamp01`, `span`, cubic `easeOut` copied 4 to 6 times | `deck2d/{story/reveal,grow/index,shippy/shippy,build/build,build/pixel,launch/timeline}.ts` | Identical bodies; one `engine/math.ts` would do. Touches six animation files the day before the freeze. |
+| Hex-to-RGB (6 copies) and nearest-48 palette snap (3 copies) | `stations/palette`, `city/{connector,draw}`, `engine/{dim,pixel}`, `shippy/sheet` | Snap copies differ by a divisor; consolidating changes pixels unless done with the screenshot tests open. |
+| `clamp` (4), `plural` (4), HTML escape (8), SHA-256 hex (6), base64url (3) | `server/src/signals/*`, `server/src/{account-pages,ironPage,ops,access,connect,auth,signup,admin-god-page,accounts,admin-view,rate-limit,guests,account-lifecycle}.ts` | Pure duplication. `signup.hash`, `ironPage` and `sources/types.verifyHmac` look canonical. |
+| `spark.ts:93` inline Retry-After parsing | duplicates `rate-limit.retryAfterMs` | Small; verify the two agree on seconds vs HTTP-date first. |
+| About 260 `export` keywords on symbols only used in their own file | server signals, spark.ts types, deck2d juice/city/engine | Cosmetic. A knip run after the freeze. |
+| Test-only exports: `removePairing`, `sparkShare`, `recentLogs`, `funnelDays`, `priorityChoices`, `mergeProgress`, `liveStreak`, achievements `parseEarned`/`mergeEarned`/`markDay`, pricing `PLANS`/`FUEL_PACK`/`planMargin`, protocol `RunnerToServer`/`ServerToRunner` | shared, server, runner | Parked features (progression, pricing, empire) or test seams. Removing them removes their tests; a retirement decision, not cleanup. |
+| Routes with only test callers: `review/retry`, `starter-issue`, `runner/jobs`, `limits`, `admin/budget` | `server/src/index.ts` | Externally addressable; audit consumers first (same rule as the table above). |
+| `web/deck-ui-review.html` (820 KB) ships in the deck build | `web/vite.deck.config.ts` | A review tool in prod. Drop it from the inputs if nobody reviews there anymore. |
+| `react` + `@types/react` | `web/package.json`, only `sound/useFactorySound.ts` (test-only) and `@sentry/react` | Goes with the `web/src/sound/` decision above. |
+| `/art/*` pages (black-iron, cogworks, dioramas, style-lab, item-lab, art-prototype) and `docs/{loop,onboarding-mockup}.html` | `web/vite.config.ts`, `docs/` | Three.js and island-era art history, still served. Keep as history or retire together. |
+| `scripts/art/cut-build.py` still cuts the spark frames | `scripts/art/cut-build.py:95` | Re-running it recreates `fx-spark-*`; drop the spark entry when the script is next touched. |

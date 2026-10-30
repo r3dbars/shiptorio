@@ -1,15 +1,16 @@
 import { BudgetError, utcDay } from "./budget";
 
-// Nano-USD per token. Meta standard rates for Spark, checked 2026-10-26: https://dev.meta.ai/docs/pricing-rate-limits
-// Estimates, not a provider invoice.
+// Meta standard rates, nano-USD per token: https://dev.meta.ai/docs/pricing-rate-limits
+// Spark checked 2026-10-26 ($1.25/M in, $0.15/M cached, $4.25/M out). Wonder from third-party reports of Meta's
+// list price, 2026-10-16 ($4/M in, $0.20/M cached, $20/M out). Estimates, not a provider invoice.
+export const NANO_USD = 1_000_000_000;
 export const MODEL_PRICES: Record<string, { input: number; cached: number; output: number }> = {
   "muse-spark-1.3": { input: 1250, cached: 150, output: 4250 },
+  "muse-wonder-1.0": { input: 4000, cached: 200, output: 20000 },
 };
-// Any model without a confirmed rate card (Muse Wonder runs ~4x Spark per call) is charged 4x Spark,
-// so switching SPARK_MODEL can never slip past the daily dollar ceiling.
+// Any model without a rate card here is charged 4x Spark, so switching SPARK_MODEL can never slip past the daily dollar ceilings.
 export const FALLBACK_PRICE = { input: 5000, cached: 600, output: 17000 };
 export const modelPrice = (model: string) => MODEL_PRICES[model] ?? FALLBACK_PRICE;
-export const NANO_USD = 1_000_000_000;
 export const DEFAULT_DAILY_BUDGET = 5 * NANO_USD;
 /** Every signed-in account gets $5/day of model spend across all the factories it pays for. Resets 00:00 UTC. */
 export const ACCOUNT_DAILY_BUDGET = 5 * NANO_USD;

@@ -186,7 +186,7 @@ if (typeof document !== "undefined" && document.getElementById("world")) void (a
 // Each module lives in its own folder and is picked up here when it exists, so threads can land independently.
 type Mod = Record<string, unknown>;
 // Each folder's entry: index.ts, or the one file named after the folder's job (card/card.ts, data/source.ts).
-const mods = import.meta.glob<Mod>(["./{story,data,shippy,card,juice,grow,build,launch,props,city}/index.ts", "./card/card.ts", "./data/source.ts", "./shippy/shippy.ts", "./story/story.ts"]);
+const mods = import.meta.glob<Mod>(["./{story,shippy,card,juice,grow,build,launch,props,city}/index.ts", "./card/card.ts", "./data/source.ts", "./shippy/shippy.ts"]);
 const load = async (folder: string, name: string) => {
   for (const [path, get] of Object.entries(mods)) if (path.startsWith(`./${folder}/`)) { const m = await get(); if (m[name]) return m; }
   return null;

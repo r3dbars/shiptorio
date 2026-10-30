@@ -12,12 +12,6 @@ const APPROVE_TOOLS = new Set(["plan_runner_job", "approve_runner_job", "request
 // Cards the factory raises when it can't move on its own.
 const STEER_PREFIXES = ["stuck:", "reliability:", "failed:", "bottleneck:"];
 
-/** Steer outranks approve (a stuck line costs more than a parked one); suggestions come last. */
-export const ATTENTION_RANK: Record<Attention, number> = { steer: 0, approve: 1, suggest: 2 };
-
-/** How long a card waits before it may reach the player's phone. Suggestions never do. */
-export const ATTENTION_WAIT_MS: Record<Attention, number | null> = { steer: 10 * 60_000, approve: 30 * 60_000, suggest: null };
-
 export function attentionOf(move: Move, item?: Item): Attention {
   if (move.attention) return move.attention;
   const tools = move.options.flatMap((o) => o.actions.map((a) => a.tool));

@@ -5,6 +5,8 @@
 //   bun scripts/e2e/real-loop.ts status              who am I, is the runner online, what's on the line
 //   bun scripts/e2e/real-loop.ts ship 30             Testing #30 through Planner → Builder → Checks → Review → Gate → Launch
 //   bun scripts/e2e/real-loop.ts watch 10            record 10 minutes of what Shippy notices (cards, bottleneck, thoughts)
+//   bun scripts/e2e/real-loop.ts look              ~30s: make Shippy look at the repo now, print what he flags and suggests
+//                                                    (E2E_EXPECT="#39" exits 1 unless his card names it)
 //   bun scripts/e2e/real-loop.ts forget              start learned trust over (every yes this script tapped counts), so a
 //                                                    filmed take begins at zero dots
 //
@@ -31,11 +33,11 @@ const ORIGINS = new Set(["https://shiptorio.dev", "https://shiptorio.com", "http
 if (new URL(base).origin !== base || !ORIGINS.has(new URL(base).origin)) throw new Error("Unsupported SHIPTORIO_URL"); // an exact origin, nothing around it
 if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error("Set SHIPTORIO_REPO=owner/repo");
 if (repo === "r3dbars/shiptorio") throw new Error("The driver ships real merges; point it at a test repo");
-if (!["status", "ship", "watch", "forget"].includes(mode)) throw new Error("Use status, ship ISSUE, watch MINUTES or forget");
+if (!["status", "ship", "watch", "look", "forget"].includes(mode)) throw new Error("Use status, ship ISSUE, watch MINUTES, look or forget");
 const issue = mode === "ship" ? Number(arg) : 0;
 if (mode === "ship" && !(Number.isInteger(issue) && issue > 0)) throw new Error("Usage: real-loop.ts ship ISSUE");
 const itemId = `gh-${issue}`;
-const minutes = Number(mode === "watch" ? arg || 10 : process.env.E2E_MINUTES || 45);
+const minutes = Number(mode === "watch" ? arg || 10 : mode === "look" ? 1 : process.env.E2E_MINUTES || 45);
 
 const work = resolve(import.meta.dir, "../../runner/.work/e2e");
 const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
@@ -87,18 +89,24 @@ const runner = (await api<Record<string, unknown>>(`/api/repos/${repo}/runner/st
 await note("signed_in", { login: me?.login, base, repo });
 await note("runner", { runner });
 
-if (mode === "forget") {
-  // The same message "Ask me again" sends, with "*" for every kind (server/src/learn.ts forgetAll).
+/** Sends one message on its own socket once the snapshot is in, the way the deck would; returns that snapshot. */
+async function sendOnce(message: Record<string, unknown>): Promise<FactoryState> {
   const socket = new WebSocket(`${base.replace(/^http/, "ws")}/api/repos/${repo}/factory`, { headers: { cookie, origin: base } } as unknown as string[]);
-  const learned = await new Promise<unknown>((ok, fail) => {
+  const snapshot = await new Promise<FactoryState>((ok, fail) => {
     const timer = setTimeout(() => fail(new Error("no snapshot in 20s")), 20_000);
-    socket.onmessage = e => { const msg = JSON.parse(String(e.data)); if (msg.type === "snapshot") { clearTimeout(timer); ok(msg.state.learned ?? []); } };
+    socket.onmessage = e => { const msg = JSON.parse(String(e.data)); if (msg.type === "snapshot") { clearTimeout(timer); ok(msg.state); } };
     socket.onerror = () => fail(new Error("socket error"));
   });
-  socket.send(JSON.stringify({ type: "unlearn", key: "*" }));
+  socket.send(JSON.stringify(message));
   await Bun.sleep(3000);
   socket.close();
-  await note("forgot", { learnedBefore: learned });
+  return snapshot;
+}
+
+if (mode === "forget") {
+  // The same message "Ask me again" sends, with "*" for every kind (server/src/learn.ts forgetAll).
+  const snapshot = await sendOnce({ type: "unlearn", key: "*" });
+  await note("forgot", { learnedBefore: (snapshot as { learned?: unknown }).learned ?? [] });
   process.exit(0);
 }
 
@@ -280,9 +288,34 @@ async function watch() {
   result = `watched ${minutes} min: ${[...seen].filter(s => !s.startsWith("t:")).length} cards, ${[...seen].filter(s => s.startsWith("t:")).length} thoughts`;
 }
 
+async function look() {
+  // Shippy's whole loop in one pass: re-read GitHub, CI and the factory, pick ONE bottleneck, deal ONE card.
+  const known = new Set((state?.brain?.thoughts ?? []).map(t => t.id));
+  const unlocks = () => openCards().filter(m => m.id.startsWith("unlock:"));
+  await note("before", { holdingBack: state?.holdingBack ?? null, cards: unlocks().map(m => m.title) });
+  const asked = Date.now();
+  await sendOnce({ type: "brain_look" });
+  let fresh: NonNullable<FactoryState["brain"]>["thoughts"] = [];
+  while (Date.now() - asked < 45_000) {
+    fresh = (state?.brain?.thoughts ?? []).filter(t => !known.has(t.id) && t.decision === "diagnose");
+    if (fresh.length) break;
+    await page.waitForTimeout(1000);
+  }
+  await page.waitForTimeout(2500); // let the card land on the deck
+  for (const t of fresh) await note("thought", { by: t.by, model: t.model, title: t.title, outcome: t.outcome, reason: t.reason });
+  const neck = state?.holdingBack, card = unlocks()[0];
+  await note("after", { holdingBack: neck ?? null, card: card && { title: card.title, why: card.why, options: card.options.map(o => o.label) } });
+  await shot("shippy-look");
+  const said = `${neck?.title ?? "nothing holding back"} → ${card?.title ?? "no card"}`;
+  result = fresh.length ? `Shippy looked in ${((Date.now() - asked) / 1000).toFixed(0)}s (${fresh[0].by}): ${said}` : `no new look in 45s (day's cap or a look <20s ago?): ${said}`;
+  const expect = process.env.E2E_EXPECT;
+  if (expect && ![neck?.title, neck?.why, card?.title, card?.why].some(t => t?.includes(expect))) { result = `MISSED ${expect}: ${result}`; process.exitCode = 1; }
+}
+
 try {
   if (mode === "ship") await ship();
   else if (mode === "watch") await watch();
+  else if (mode === "look") await look();
   else { await page.waitForTimeout(4000); result = `status: ${state?.items.length ?? 0} items, ${openCards().length} cards`; await note("items", { items: state?.items.map(i => ({ id: i.id, state: i.state, pr: i.prNumber, title: i.title })) }); }
 } catch (e) {
   result = `failed: ${e instanceof Error ? e.message : String(e)}`;

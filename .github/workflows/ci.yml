@@ -14,10 +14,6 @@ concurrency:
 on:
   workflow_dispatch:
     inputs:
-      update_baselines:
-        description: Generate Linux visual baselines for review
-        type: boolean
-        default: false
       browser_grep:
         description: Optional focused browser diagnostic (empty runs every test)
         type: string
@@ -132,11 +128,9 @@ jobs:
           BROWSER_PROJECT: ${{ matrix.project }}
           BROWSER_SHARD: ${{ matrix.shard }}
           BROWSER_GREP: ${{ inputs.browser_grep }}
-          UPDATE_BASELINES: ${{ inputs.update_baselines }}
         run: |
           args=("--project=$BROWSER_PROJECT" "--shard=$BROWSER_SHARD/2")
           if [ -n "$BROWSER_GREP" ]; then args+=(--grep "$BROWSER_GREP"); fi
-          if [ "$UPDATE_BASELINES" = true ]; then args+=(--update-snapshots=all); fi
           bun run test:e2e "${args[@]}"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
@@ -145,7 +139,6 @@ jobs:
           path: |
             test-results/
             playwright-report/
-            tests/e2e/baselines/linux/
           retention-days: 7
   load:
     if: github.event_name != 'pull_request' || (github.event.pull_request.draft == false && github.base_ref != 'dev')
@@ -175,7 +168,7 @@ jobs:
     if: >-
       always() && needs.check.result == 'success' && needs.selfhost.result == 'success' &&
       needs.browser.result == 'success' && needs.load.result == 'success' &&
-      !inputs.update_baselines && inputs.browser_grep == ''
+      inputs.browser_grep == ''
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions:
