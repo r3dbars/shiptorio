@@ -130,6 +130,7 @@ Open PRs were reviewed before action. The cleanup PRs above were merged in their
   Its `shiptorio/runner-*` branch remains. Closing this superseded PR did not merge its code.
 
 - [#733](https://github.com/r3dbars/shiptorio/pull/733) remains with its active agent; no changes made.
+- [#739](https://github.com/r3dbars/shiptorio/pull/739) appeared after the initial inventory and was also left untouched.
 - [#571](https://github.com/r3dbars/shiptorio/pull/571), the promotion PR, was left untouched.
 - [#463](https://github.com/r3dbars/shiptorio/pull/463) remains for the player's Gate decision. No factory PR was merged.
 
