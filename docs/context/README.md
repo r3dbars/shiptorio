@@ -20,6 +20,8 @@ When you learn or decide something that will matter tomorrow, add it to the righ
 | [demo-script.md](demo-script.md) | The 2-minute demo video: shots and voiceover |
 | [codex-deck-handoff.md](codex-deck-handoff.md) | How Codex works on the deck |
 | [threads.md](threads.md) | Log of what each Claude thread and Codex task did |
+| [decisions.md](decisions.md) | Dated cleanup decisions, branch deletions and PR/issue closures |
+| [papercuts.md](papercuts.md) | Retained cleanup candidates that need a separate decision |
 | [testing.md](testing.md) | Test suites and how to run them |
 | [new-user-path.md](new-user-path.md) | The stranger run: a new account from sign-in to first card (`bun run stranger`) |
 
