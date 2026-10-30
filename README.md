@@ -53,6 +53,10 @@ small runner on your machine. Your sign-ins are the power plants. Nothing runs o
 The first few times, you approve everything. Approve the same kind of change a few times and the factory
 starts doing that step without asking. Ship it always waits for a human.
 
+<p align="center">
+  <img src="docs/readme/automatic-card.png" alt="A card with two of three trust dots filled: Approve fix for broken link? Approve this one and it's automatic." width="440">
+</p>
+
 ## Play
 
 - **Try it:** [shiptorio.dev](https://shiptorio.dev). Shippy walks you through a factory in about two minutes.
