@@ -101,15 +101,16 @@ export function reconcile(memory: BrainMemory, signals: readonly BrainSignal[], 
   };
 }
 
-export type RunCall = { run: boolean; why: string };
+/** capped: out of runs or budget for today. The rule (no model call) can still move the card. */
+export type RunCall = { run: boolean; why: string; capped?: true };
 
 /** Throttle: diagnose when the main signal changes or every 30 min; never in a burst, never past the caps. */
 export function shouldDiagnose(memory: BrainMemory, signals: readonly BrainSignal[], now: number, budget: { used: number; limit: number } | null): RunCall {
   const open = eligible(signals, memory, now);
   if (!open.length) return { run: false, why: "Nothing is holding the factory back." };
   const today = memory.runs.day === utcDay(now) ? memory.runs.count : 0;
-  if (today >= BRAIN.dailyRuns) return { run: false, why: `Already looked ${today} times today.` };
-  if (budget && budget.limit > 0 && budget.used >= budget.limit * BRAIN.budgetShare) return { run: false, why: "Saving the rest of today's thinking for planning and review." };
+  if (today >= BRAIN.dailyRuns) return { run: false, why: `Already looked ${today} times today.`, capped: true };
+  if (budget && budget.limit > 0 && budget.used >= budget.limit * BRAIN.budgetShare) return { run: false, why: "Saving the rest of today's thinking for planning and review.", capped: true };
   const since = memory.lastAt === undefined ? Infinity : now - memory.lastAt;
   if (since < BRAIN.minGapMs * 2 ** Math.min(memory.fails, 4)) return { run: false, why: "Looked a moment ago." };
   const changed = mainKey(open, now) !== memory.mainKey;
@@ -271,7 +272,9 @@ export async function runDiagnose(input: RunInput): Promise<RunResult> {
   if (!open.length) return quiet("Nothing is holding the factory back.", memory, !!input.memory.current);
   const call = shouldDiagnose(memory, signals, now, input.budget);
   const keep = memory.current && open.some(s => s.id === memory.current!.bottleneck.id) ? memory.current : undefined;
-  if (!call.run && keep) return { memory, diagnosis: { at: now, signals: fresh, bottleneck: keep.bottleneck, unlock: keep.unlock, reason: call.why }, decided: false, thought: false, cleared, why: call.why };
+  // Out of budget, a new main signal still gets a look from the rule, so a red PR can't wait for tomorrow behind an old card.
+  const ruleLook = call.capped && mainKey(open, now) !== memory.mainKey;
+  if (!call.run && keep && !ruleLook) return { memory, diagnosis: { at: now, signals: fresh, bottleneck: keep.bottleneck, unlock: keep.unlock, reason: call.why }, decided: false, thought: false, cleared, why: call.why };
   if (!call.run && memory.quiet && memory.mainKey === mainKey(open, now)) return quiet(call.why, memory, false);
   const place = (b: BrainBottleneck, u: BrainUnlock): BrainMemory => ({ ...memory, quiet: false, current: { bottleneck: b, unlock: u, shownAt: b.id === memory.current?.bottleneck.id ? memory.current.shownAt : now } });
   const rule = (fellBack: string | undefined, thought: boolean): RunResult => {

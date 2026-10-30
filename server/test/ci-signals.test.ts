@@ -173,5 +173,6 @@ describe("CI collector: reading cheaply", () => {
     const signals = await ciCollector.read(ctx({ fetchRuns: async () => { throw new GitHubError(403, "/x", "GET"); }, fetchChecks: async (_r, _t, branch) => { expect(branch).toBe("main"); return [failing]; } }), now);
     expect(signals.map(s => s.kind)).toContain("ci_blocking");
     expect(signals.find(s => s.kind === "ci_blocking")!.title).toContain("#39");
+    expect(signals.find(s => s.kind === "ci_blocking")!.severity).toBeGreaterThan(0.6); // louder than any backlog
   });
 });

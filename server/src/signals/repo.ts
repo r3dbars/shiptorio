@@ -131,7 +131,8 @@ export function repoSignals(snap: RepoSnapshot, options: RepoSignalOptions = {})
   const issueEvidence = (list: IssueLite[]): Evidence[] => [{ label: "Open issues", url: `https://github.com/${repo}/issues` }, ...list.slice(0, 4).map(i => ({ label: label(i.number, i.title), url: i.html_url }))];
   if (net >= REPO_LIMITS.backlogNet) push("backlog_growing", {
     title: `The issue backlog grew by ${net} this week: ${opened} opened, ${closed} closed.`,
-    severity: 0.25 + net / 20 + (net > netBefore ? 0.1 : 0),
+    // More asks coming in than going out is worth a look, but it never blocks a ship the way red CI does.
+    severity: Math.min(0.6, 0.25 + net / 20 + (net > netBefore ? 0.1 : 0)),
     metric: { value: net, unit: "issues", baseline: netBefore },
     evidence: issueEvidence(open.slice(-4).reverse()),
   });

@@ -618,8 +618,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const s = this.state!;
     if (!sparkConfigured(this.env) || !deck.length || this.state?.deck?.some(m => m.id === "planner-rest")) return;
     const key = Factory.deckKey(deck, s);
-    // Ranking is a nice-to-have next to planning and review: at most once a minute, backing off to 15 min while it fails.
-    const wait = Math.min(15 * 60_000, 60_000 * 2 ** this.gmFails);
+    // Ranking is a nice-to-have next to planning and review: at most every 5 min (a churning deck once burned
+    // a rank a minute for half an hour), backing off to 15 min while it fails.
+    const wait = Math.min(15 * 60_000, 5 * 60_000 * 2 ** this.gmFails);
     if (this.gm?.key === key || this.gmAsking || Date.now() - this.gmLastAt < wait) return;
     this.gmAsking = key; this.gmLastAt = Date.now();
     const brief = {

@@ -45,7 +45,8 @@ Every `Diagnosis` (signals in, bottleneck, unlock, reason) is stored so the eval
 - **Model calls go through `Factory.think()`** so they land in the decision log. One new decision:
   `diagnose`. Budget: the shared 400 calls / 1M tokens per day. Diagnose runs at most every 30 min, or
   sooner when the main signal changes, and at most 24 times a day. It obeys the same half-budget stop as
-  ranking, so it can never starve planning and review. Budget code belongs to Codex prompt #12 (spark,
+  ranking, so it can never starve planning and review. Past that stop, a new main signal still gets a
+  free rule pick, so a red PR doesn't wait until tomorrow behind an old card. Budget code belongs to Codex prompt #12 (spark,
   budget, spend, planning-retry); don't edit those files, call their helpers.
 - **One card, Continue / Later.** Never a list, never a dashboard by default (principle 11). Details sit
   behind "Why?".
