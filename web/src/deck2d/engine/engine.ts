@@ -38,6 +38,7 @@ const BOUNDS = { x0: -20, x1: PAD.x + 1533 * PAD.s + 20, y0: -30, y1: DECK_DX ? 
  *  px, opaque to its column 95). A phone's line zoom keeps it whole. */
 const ISLET_RIGHT = (Math.round(STOP_X.launch / ART_PX) - 53 + 96) * ART_PX;
 const SPEED = 170, GAP = 50, CRATE = 42;
+const CRATE_PACE = 1.2; // crates ride a little faster than the belt art scrolls (feel test 2026-10-30, "whole pile")
 // pixel mode: the lever stands on the floor in front of Review (Shippy pulls it from review + 150, facing left)
 const LEVER = DECK_DX ? { x: STOP_X.review + 92, base: 330, h: 78 } : { x: STOP_X.review + 92, base: FLOOR_Y + 48, h: 78 };
 
@@ -403,7 +404,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
       const want = stopD(s.id) - k * GAP;
       const before = c.d;
       c.previousD = before;
-      if (c.d !== want) c.d = advanceBeltDistance(c.d, want, SPEED * dt, cargoBlocked);
+      if (c.d !== want) c.d = advanceBeltDistance(c.d, want, SPEED * CRATE_PACE * dt, cargoBlocked);
       c.moving = c.d !== before;
       if (Math.abs(before - want) > 0.000001 && Math.abs(c.d - want) <= 0.000001 && k === 0) bus.emit({ type: "crate-arrive", stop: s.id, id: it.id });
     });
@@ -424,7 +425,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     if (rocketHeld && !hold) { rocket.mode = "ready"; rocket.t = 0; rocket.y = 0; rocket.v = 0; }
     rocketHeld = hold;
     rocket.t += dt;
-    if (rocket.mode === "count" && rocket.t > 0.6) { rocket.mode = "up"; rocket.t = 0; rocket.v = 0; bus.emit({ type: "launch" }); }
+    if (rocket.mode === "count" && rocket.t > 0.3) { rocket.mode = "up"; rocket.t = 0; rocket.v = 0; bus.emit({ type: "launch" }); }
     else if (px && owned.has("rocket")) {
       // Keep camera/event ownership in sync with the pixel layer's full return flight.
       if (rocket.mode === "up" && rocket.t >= FLIGHT.ignition + FLIGHT.ascent) { rocket.mode = "away"; rocket.t = 0; }
