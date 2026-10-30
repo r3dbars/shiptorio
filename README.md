@@ -81,6 +81,10 @@ bun run dev:web
 Open [localhost:5173/deck.html](http://localhost:5173/deck.html). Add `?source=sim` for a simulated factory.
 `bun run dev` starts the full Worker with a local database on [localhost:8787](http://localhost:8787).
 
+<p align="center">
+  <img src="docs/readme/deck-grows.gif" alt="The platform widens column by column behind a steel scaffold, then the crane builds the Builder" width="940">
+</p>
+
 To host it: [self-host on Cloudflare](docs/site/self-host.md) with your own GitHub App and Meta API key.
 Everything else is in the [docs](docs/site/index.md). Contributing: [AGENTS.md](AGENTS.md).
 
@@ -90,6 +94,27 @@ One Cloudflare Worker serves the game and the API. Each repo gets its own Durabl
 factory state, ticks on an alarm and streams to the browser over a websocket. GitHub events arrive through a
 GitHub App. The runner dials out from your machine, works in a git worktree, and pushes a branch; the server
 opens the PR. Secrets are encrypted per repo and never reach the browser or the logs.
+
+<p align="center">
+  <img src="docs/readme/under-the-hood.png" alt="Diagram: your machine runs the runner with Muse Code or Codex and pushes a branch; Cloudflare runs one Worker and one Durable Object per repo; GitHub sends issues and checks in and receives the PR; Meta Muse Wonder is Shippy's brain above; the deck in your browser below over a websocket" width="940">
+</p>
+
+## Coming soon: the rest of the city
+
+Your software factory is the first island. It sits in a city of them, and each one will plug into your line
+and feed it real work.
+
+<p align="center">
+  <img src="docs/readme/city-tour.gif" alt="The tour zooms out to the city, then visits each dark island with Shippy's card: Errors, Traffic, Inbox, Customers, Marketing, and ends on Want to build yours?" width="940">
+</p>
+
+- **Errors.** Sentry sends in crashes from your real product, so every bug turns into a fix on your line.
+- **Traffic.** Cloudflare shows how people really use your app, so you build what they need.
+- **Inbox.** Support tickets and email come in as work, straight onto your line.
+- **Customers.** PostHog shows where customers drop off, so you fix what's costing you users.
+- **Marketing.** Then customer acquisition and marketing, so people find what you ship.
+
+The factory must grow.
 
 ## Built at the Meta AI Developer Hackathon
 
