@@ -81,6 +81,10 @@ bun run dev:web
 Open [localhost:5173/deck.html](http://localhost:5173/deck.html). Add `?source=sim` for a simulated factory.
 `bun run dev` starts the full Worker with a local database on [localhost:8787](http://localhost:8787).
 
+<p align="center">
+  <img src="docs/readme/deck-grows.gif" alt="The platform widens column by column behind a steel scaffold, then the crane builds the Builder" width="940">
+</p>
+
 To host it: [self-host on Cloudflare](docs/site/self-host.md) with your own GitHub App and Meta API key.
 Everything else is in the [docs](docs/site/index.md). Contributing: [AGENTS.md](AGENTS.md).
 
