@@ -40,7 +40,7 @@ export default {async fetch(r,e,c){
   const { privateKey } = generateKeyPairSync('rsa', {modulusLength:2048,privateKeyEncoding:{type:'pkcs8',format:'pem'},publicKeyEncoding:{type:'spki',format:'pem'}});
   const base = wrangler.unstable_getMiniflareWorkerOptions(config).workerOptions;
   let outbound = 0;
-  const options = convertV4MiniflareOptions({port:0,d1Persist:join(dir,'d1'),kvPersist:join(dir,'kv'),durableObjectsPersist:join(dir,'do'),workers:[{name:'shiptorio-fixture',rootPath:dir,modules:true,scriptPath:join(dir,'entry.js'),compatibilityDate:'2026-10-01',compatibilityFlags:['nodejs_compat'],durableObjects:base.durableObjects,d1Databases:['DB'],kvNamespaces:['CACHE'],bindings:{PUBLIC_URL:'https://shiptorio.dev',TEST_USERS:'on',TEST_FACTORY_KEY:key,FIXTURE_INSTANCE:'shiptorio-fixture',SESSION_SECRET:'private-fixture',APP_PASSWORD:'private-preview',ALLOWED_LOGINS:'',GITHUB_APP_ID:'1',GITHUB_APP_PRIVATE_KEY:privateKey,GITHUB_WEBHOOK_SECRET:'fixture-hook',GITHUB_CLIENT_ID:'fixture',GITHUB_CLIENT_SECRET:'fixture',GITHUB_APP_SLUG:'shiptorio-stub',META_API_KEY:'fixture',SPARK_BASE_URL:'https://api.meta.ai/v1',SPARK_MODEL:'muse-spark-1.3'},outboundService:()=>{outbound++;throw Error('Native egress forbidden');}}]});
+  const options = convertV4MiniflareOptions({port:0,resourcePersistencePath:join(dir,'state'),workers:[{name:'shiptorio-fixture',rootPath:dir,modules:true,scriptPath:join(dir,'entry.js'),compatibilityDate:'2026-10-01',compatibilityFlags:['nodejs_compat'],durableObjects:base.durableObjects,d1Databases:['DB'],kvNamespaces:['CACHE'],bindings:{PUBLIC_URL:'https://shiptorio.dev',TEST_USERS:'on',TEST_FACTORY_KEY:key,FIXTURE_INSTANCE:'shiptorio-fixture',SESSION_SECRET:'private-fixture',APP_PASSWORD:'private-preview',ALLOWED_LOGINS:'',GITHUB_APP_ID:'1',GITHUB_APP_PRIVATE_KEY:privateKey,GITHUB_WEBHOOK_SECRET:'fixture-hook',GITHUB_CLIENT_ID:'fixture',GITHUB_CLIENT_SECRET:'fixture',GITHUB_APP_SLUG:'shiptorio-stub',META_API_KEY:'fixture',SPARK_BASE_URL:'https://api.meta.ai/v1',SPARK_MODEL:'muse-spark-1.3'},outboundService:()=>{outbound++;throw Error('Native egress forbidden');}}]});
   let mf = new Miniflare(options);
   const samples: object[] = [];
   const call = async (path: string, live: boolean, upgrade = false) => {
@@ -115,7 +115,7 @@ export default {async fetch(r,e,c){
       probe: async (restart=false) => {
         if(restart){await mf.dispose();mf=new Miniflare(options);await mf.ready;}
         const start=performance.now(), response=await call('/api/repos/test-fixture/test-newbie/factory',true,true);
-        if(response.status!==101)throw Error('Probe upgrade failed: '+response.status);
+        if(response.status!==101)throw Error('Probe upgrade failed: '+response.status+' '+await response.text());
         const socket=response.webSocket;
         const bytes=await new Promise<number>((resolve,reject)=>{
           const timeout=setTimeout(()=>reject(Error('Probe snapshot timeout')),10000);

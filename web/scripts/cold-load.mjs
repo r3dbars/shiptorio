@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import { benchmarkServer } from './perf-server.mjs';
+import { PROFILE, observePlayable, throttle } from './cold-load-profile.mjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const out=process.env.COLD_LOAD_OUT ?? mkdtempSync(join(tmpdir(),'cold-load-'));
@@ -19,7 +20,7 @@ const staticServer=benchmarkServer(join(root,'web/dist'));
 await new Promise(r=>staticServer.once('listening',r));
 let host,browser;
 const results=[];
-const profile={viewport:'iPhone 13',downloadMbps:9,uploadMbps:9,rttMs:150,cpuSlowdown:4,coldBrowserCache:true};
+const profile=PROFILE;
 const median=values=>[...values].sort((a,b)=>a-b)[Math.floor(values.length/2)];
 try {
   host=await coldLoadHost(root,`http://127.0.0.1:${staticServer.address().port}`);
@@ -32,31 +33,11 @@ try {
     const marks=[],documents=[],requests=[],sockets=[],errors=[];
     page.on('response',response=>{if(response.status()>=400 && !(response.status()===401 && !live && /\/(api\/me|auth\/logout)$/.test(new URL(response.url()).pathname)))errors.push(`${response.status()} ${new URL(response.url()).pathname}`);});
     await context.exposeBinding('coldLoadMark',(_,{name,start,timeOrigin,url})=>{if(url.startsWith(host.origin))marks.push({name,start,timeOrigin});});
-    await context.addInitScript(({live})=>{
-      const record=entry=>window.coldLoadMark({name:entry.name,start:entry.startTime,timeOrigin:performance.timeOrigin,url:location.href});
-      record({name:'navigation',startTime:0});
-      for(const type of ['mark','paint'])new PerformanceObserver(list=>list.getEntries().forEach(record)).observe({type,buffered:true});
-      // Card insertion precedes its entrance animation. The budget waits for a readable,
-      // on-screen card and, for live, a card matched by main.ts to the accepted state.
-      const visible=()=>{
-        const face=document.querySelector('.ic-card:not(.ic-ghost):not(.ic-empty)'), box=face?.getBoundingClientRect();
-        const ready=performance.getEntriesByName(live?'shiptorio:live-card':'shiptorio:first-card').length;
-        const line=face?.querySelector('.ic-line'), untyped=line?.querySelector('.ic-untyped');
-        if(ready && box?.height && box.top>=0 && box.bottom<=innerHeight && getComputedStyle(face).opacity==='1' && line?.textContent?.trim() && (!untyped || untyped.textContent!==line.textContent)) {
-          performance.mark('shiptorio:playable');
-          return;
-        }
-        requestAnimationFrame(visible);
-      };
-      requestAnimationFrame(visible);
-    },{live});
+    await context.addInitScript(observePlayable,{live});
     page.on('pageerror',error=>errors.push(error.message));
     cdp.on('Network.requestWillBeSent',e=>{requests.push({id:e.requestId,url:e.request.url,at:e.timestamp,wallTime:e.wallTime,type:e.type});if(e.type==='Document')documents.push(e);});
     cdp.on('Network.webSocketFrameReceived',e=>{try{const msg=JSON.parse(e.response.payloadData);if(msg.type==='snapshot')sockets.push({at:e.timestamp,repo:msg.state.repo,cardIds:(msg.state.deck??[]).map(m=>m.id),bytes:Buffer.byteLength(e.response.payloadData),pipeline:msg.state.pipeline});}catch{}});
-    await cdp.send('Network.enable');
-    await cdp.send('Network.setCacheDisabled',{cacheDisabled:true});
-    await cdp.send('Network.emulateNetworkConditions',{offline:false,latency:150,downloadThroughput:9e6/8,uploadThroughput:9e6/8});
-    await cdp.send('Emulation.setCPUThrottlingRate',{rate:4});
+    await throttle(cdp);
     await cdp.send('Tracing.start',{categories:'devtools.timeline,blink.user_timing,loading,v8',transferMode:'ReturnAsStream'});
     const before=host.samples.length;
     try {
@@ -71,8 +52,9 @@ try {
       const origin=Math.min(...marks.filter(m=>m.name==='navigation').map(m=>m.timeOrigin));
       const times={navigation:0};
       for(const m of marks)if(!(m.name in times))times[m.name]=Math.round((m.timeOrigin-origin+m.start)*10)/10;
-      const row={path,round,times,navigations:documents.length,requests:requests.map(r=>({url:new URL(r.url).pathname,type:r.type,ms:Math.round((r.wallTime*1000-origin)*10)/10})),snapshots:sockets,server:host.samples.slice(before)};
+      const row={path,round,times,milestones:marks.map(m=>({name:m.name,ms:Math.round((m.timeOrigin-origin+m.start)*10)/10})),navigations:documents.length,requests:requests.map(r=>({url:new URL(r.url).pathname,type:r.type,ms:Math.round((r.wallTime*1000-origin)*10)/10})),snapshots:sockets,server:host.samples.slice(before)};
       results.push(row);
+      writeFileSync(join(out,'rounds.json'),JSON.stringify({profile,results},null,2));
       console.log(name,JSON.stringify(times));
     } catch (error) {
       console.error(name, 'failed', {marks, requests, errors});
