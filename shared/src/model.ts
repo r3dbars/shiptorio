@@ -353,6 +353,8 @@ export const Thought = z.object({
   outcome: z.string(), // what it decided: "bug → web"
   reason: z.string(), // why, in its own words
   simulated: z.boolean().optional(), // sim mode only; never set by the live server
+  // The agent's tool calls for this decision, in order (diagnose: read_signal, read_factory, ... then diagnose).
+  steps: z.array(z.object({ tool: z.string(), reason: z.string(), result: z.string() })).max(8).optional(),
 });
 export type Thought = z.infer<typeof Thought>;
 export const Brain = z.object({
