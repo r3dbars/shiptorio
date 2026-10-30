@@ -96,7 +96,7 @@
       </div>
     </div>
     <div class="scores" id="scores"></div>
-    <div class="panel"><table><thead><tr><th>Scenario</th><th>Expected</th><th id="evalCols"></th></tr></thead><tbody id="evalRows"></tbody></table></div>
+    <div class="panel"><table><thead id="evalHead"></thead><tbody id="evalRows"></tbody></table></div>
   </section>
 
   <section id="tools" class="tab">
@@ -110,7 +110,7 @@ const api = async (path, body) => {
   const r = await fetch(path, body ? { method:"POST", headers:{ "content-type":"application/json" }, body: JSON.stringify(body) } : {});
   const j = await r.json(); if (!r.ok) throw new Error(j.error || r.statusText); return j;
 };
-const label = m => m === "rule" ? "Rule (no AI)" : m === "muse-spark-1.3" ? "Muse Spark 1.3" : m === "muse-wonder-1.0" ? "Muse Wonder 1.0" : m;
+const label = m => esc(m === "rule" ? "Rule (no AI)" : m === "muse-spark-1.3" ? "Muse Spark 1.3" : m === "muse-wonder-1.0" ? "Muse Wonder 1.0" : m);
 let SETUP, CASES = [], TOOLS, current = null, signals = [], dirty = false;
 
 document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
@@ -119,9 +119,9 @@ document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
 });
 
 function modelBoxes(el, name, defaults) {
-  el.innerHTML = SETUP.models.map(m => `<label style="margin-right:8px"><input type="checkbox" name="${name}" value="${m}" ${defaults.includes(m) ? "checked" : ""}> <span class="m-${m}">${label(m)}</span></label>`).join("");
+  el.innerHTML = SETUP.models.map(m => `<label style="margin-right:8px"><input type="checkbox" name="${name}" value="${esc(m)}" ${defaults.includes(m) ? "checked" : ""}> <span class="m-${esc(m)}">${label(m)}</span></label>`).join("");
 }
-const picked = name => [...document.querySelectorAll(`input[name=${name}]:checked`)].map(i => i.value);
+const picked = name => [...document.querySelectorAll(`input[name=${name}]:checked`)].map(i => i.value).filter(v => SETUP.models.includes(v));
 
 function renderCases() {
   const f = $("#filter").value.toLowerCase();
@@ -173,7 +173,7 @@ function gradeAnswer(a) {
 }
 function renderAnswer(a) {
   const b = a.bottleneck, u = a.unlock;
-  return `<div class="panel answer"><h3><span class="m-${a.model}">${label(a.model)}</span><span class="muted">${(a.wallMs / 1000).toFixed(1)}s · $${a.meter.usd.toFixed(4)} · ${a.meter.input + a.meter.output} tok</span></h3>
+  return `<div class="panel answer"><h3><span class="m-${esc(a.model)}">${label(a.model)}</span><span class="muted">${(a.wallMs / 1000).toFixed(1)}s · $${a.meter.usd.toFixed(4)} · ${a.meter.input + a.meter.output} tok</span></h3>
     ${gradeAnswer(a)}
     ${b ? `<div class="card"><div class="muted">${esc(b.area)} · confidence ${(+b.confidence).toFixed(2)} · by ${esc(b.by)}</div><div class="t">${esc(b.title)}</div><div>${esc(b.why)}</div>
       <hr style="border-color:#4a3f22"><div class="t">▶ ${esc(u.title)}</div><div>${esc(u.because)}</div><div class="muted">move <code>${esc(u.play)}</code> · ${esc(u.effort)} · ${u.action ? `button: ${esc(u.action.tool)}` : u.url ? `opens ${esc(u.url)}` : ""}</div></div>`
@@ -185,7 +185,7 @@ function renderAnswer(a) {
 $("#ask").onclick = async () => {
   const models = picked("tryModel"); if (!models.length) return;
   $("#ask").disabled = true;
-  $("#answers").innerHTML = models.map(m => `<div class="panel" id="ans-${m.replace(/\W/g, "")}"><span class="m-${m}">${label(m)}</span> <span class="muted">thinking…</span></div>`).join("");
+  $("#answers").innerHTML = models.map(m => `<div class="panel" id="ans-${m.replace(/\W/g, "")}"><span class="m-${esc(m)}">${label(m)}</span> <span class="muted">thinking…</span></div>`).join("");
   await Promise.all(models.map(async m => {
     const box = $("#ans-" + m.replace(/\W/g, ""));
     try { box.outerHTML = renderAnswer(await api("/api/think", { model: m, signals, goal: $("#goal").value })); }
@@ -208,7 +208,7 @@ function tally(rows, m) {
     usd, perDecision: thinks ? usd / thinks : 0, sec: thinks ? ms / thinks / 1000 : 0 };
 }
 function renderScores(rows, models) {
-  $("#scores").innerHTML = models.map(m => { const t = tally(rows, m); return `<div class="panel"><div class="m-${m}"><b>${label(m)}</b></div>
+  $("#scores").innerHTML = models.map(m => { const t = tally(rows, m); return `<div class="panel"><div class="m-${esc(m)}"><b>${label(m)}</b></div>
     <div class="score">${t.hit}</div><div class="muted">right problem (${t.n} scenarios)</div>
     <table><tr><td>Right signal</td><td>${t.signal}</td></tr><tr><td>Right move</td><td>${t.move}</td></tr><tr><td>Quiet when all clear</td><td>${t.quiet}</td></tr>
     <tr><td>Nags (flip, re-nag, false card)</td><td>${t.nags}</td></tr><tr><td>AI failures</td><td>${t.fallbacks}</td></tr>
@@ -221,7 +221,7 @@ $("#runEval").onclick = async () => {
   const only = $("#evalOnly").value.split(",").map(s => s.trim()).filter(Boolean);
   const list = CASES.filter(c => !only.length || only.includes(c.id));
   stop = false; $("#runEval").disabled = true;
-  $("#evalCols").outerHTML = models.map(m => `<th class="m-${m}">${label(m)}</th>`).join("");
+  $("#evalHead").innerHTML = `<tr><th>Scenario</th><th>Expected</th>${models.map(m => `<th class="m-${esc(m)}">${label(m)}</th>`).join("")}</tr>`;
   const rows = list.map(c => ({ c }));
   const draw = () => { $("#evalRows").innerHTML = rows.map(r => `<tr><td><b>${esc(r.c.title)}</b><div class="muted" style="font-size:12px">${esc(r.c.id)}</div></td><td>${esc(r.c.expect.area ?? "quiet")}</td>${models.map(m => `<td>${cell(r[m])}</td>`).join("")}</tr>`).join(""); renderScores(rows, models); };
   draw();
@@ -254,7 +254,7 @@ function renderTools() {
     <h2>Tools Shippy uses when it plans and reviews code</h2>
     <table><tbody>${t.builderTools.map(x => `<tr><td><code>${x.name}</code></td><td>${esc(x.what.replace(/^\w+ /, ""))}</td></tr>`).join("")}</tbody></table>
     <h2>Other jobs the same brain does</h2><ul>${t.otherJobs.map(j => `<li>${esc(j)}</li>`).join("")}</ul>
-    <h2>Models</h2><table><thead><tr><th>Model</th><th>Input $/M</th><th>Cached $/M</th><th>Output $/M</th></tr></thead><tbody>${t.models.map(m => `<tr><td class="m-${m.id}">${label(m.id)}</td><td>${(m.price.input / 1000).toFixed(2)}</td><td>${(m.price.cached / 1000).toFixed(2)}</td><td>${(m.price.output / 1000).toFixed(2)}</td></tr>`).join("")}</tbody></table>`;
+    <h2>Models</h2><table><thead><tr><th>Model</th><th>Input $/M</th><th>Cached $/M</th><th>Output $/M</th></tr></thead><tbody>${t.models.map(m => `<tr><td class="m-${esc(m.id)}">${label(m.id)}</td><td>${(m.price.input / 1000).toFixed(2)}</td><td>${(m.price.cached / 1000).toFixed(2)}</td><td>${(m.price.output / 1000).toFixed(2)}</td></tr>`).join("")}</tbody></table>`;
 }
 
 (async () => {
