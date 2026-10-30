@@ -13,7 +13,7 @@
 // Sign-in, first that is set:
 //      E2E_COOKIE_FILE   a cookie header saved by an earlier run (default runner/.work/e2e/cookie, 0600, gitignored)
 //      E2E_PASS          the JSON from `node scripts/e2e/owner-pass.mjs` on a machine with server/.dev.vars (60s to use)
-//      SESSION_SECRET + APP_PASSWORD (shiptorio.dev: `bun --env-file=$HOME/.config/shiptorio/staging.env …`)
+//      E2E_OWNER_KEY (staging's second owner key, server/src/auth.ts) or SESSION_SECRET, + APP_PASSWORD (shiptorio.dev: `bun --env-file=$HOME/.config/shiptorio/staging.env …`)
 // Evidence: video.webm, shots/NN-*.png, frames.jsonl (every socket message), timeline.jsonl (every driver step) and
 // report.md. Never prints or saves secrets; the cookie file is the only credential it writes.
 import { chromium, type Page, type WebSocket as PwSocket } from "@playwright/test";
@@ -62,12 +62,12 @@ async function signIn(): Promise<string> {
   let access: string, pass: { login: string; at: number; proof: string };
   type Pass = { access: string; login: string; at: number; proof: string };
   if (process.env.E2E_PASS) { const p = JSON.parse(process.env.E2E_PASS) as Pass; access = p.access; pass = { login: p.login, at: p.at, proof: p.proof }; }
-  else if (process.env.SESSION_SECRET && process.env.APP_PASSWORD) {
+  else if ((process.env.E2E_OWNER_KEY || process.env.SESSION_SECRET) && process.env.APP_PASSWORD) {
     const gate = await fetch(`${base}/access`, { method: "POST", headers: { origin: base }, body: new URLSearchParams({ password: process.env.APP_PASSWORD }), redirect: "manual" });
     if (gate.status !== 303) throw new Error(`Preview gate refused (${gate.status})`);
     access = gate.headers.get("set-cookie")!.split(";")[0];
     const at = Date.now();
-    pass = { login: "r3dbars", at, proof: await ownerProof(process.env.SESSION_SECRET, "r3dbars", at) };
+    pass = { login: "r3dbars", at, proof: await ownerProof((process.env.E2E_OWNER_KEY || process.env.SESSION_SECRET)!, "r3dbars", at) };
   } else throw new Error("No sign-in: set E2E_PASS (node scripts/e2e/owner-pass.mjs) or SESSION_SECRET + APP_PASSWORD");
   const r = await fetch(`${base}/auth/owner-session`, { method: "POST", headers: { cookie: access, origin: base, "content-type": "application/json" }, body: JSON.stringify(pass) });
   if (!r.ok) throw new Error(`Owner session refused (${r.status}): ${(await r.text()).slice(0, 200)}`);

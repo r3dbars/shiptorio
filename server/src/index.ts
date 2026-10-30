@@ -76,6 +76,7 @@ export interface Env extends FactoryEnv, SignupEnv {
   GITHUB_CLIENT_ID: string;
   GITHUB_CLIENT_SECRET: string;
   SESSION_SECRET: string;
+  E2E_OWNER_KEY?: string; // staging only: a second owner-script key for scripts/e2e/real-loop.ts (auth.ts ownerSession)
   APP_PASSWORD?: string;
   SELFHOST_SETUP?: string; // opt-in owner-password bootstrap; disabled once GITHUB_APP_ID is set
   BUILD_SHA?: string;

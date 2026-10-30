@@ -102,12 +102,15 @@ export async function logout(request: Request, env: Env): Promise<Response> {
 }
 
 // Owner scripts (runner pairing, the dogfood autopilot) prove they hold SESSION_SECRET and get a real,
-// revocable session row, like a GitHub sign-in. Only an existing, allowed account qualifies.
+// revocable session row, like a GitHub sign-in. Only an existing, allowed account qualifies. E2E_OWNER_KEY (staging
+// only, scripts/e2e/real-loop.ts) is a second key for the same proof, so the driver never needs SESSION_SECRET and
+// replacing it signs nobody out.
 export async function ownerSession(request: Request, env: Env, now = Date.now()): Promise<Response> {
   const body = (await request.json().catch(() => null)) as { login?: unknown; at?: unknown; proof?: unknown } | null;
   const { login, at, proof } = body ?? {};
   if (typeof login !== "string" || typeof at !== "number" || typeof proof !== "string" || Math.abs(now - at) > 60_000 ||
-    proof !== (await ownerProof(env.SESSION_SECRET, login, at))) return Response.json({ error: "bad proof" }, { status: 401 });
+    !(proof === await ownerProof(env.SESSION_SECRET, login, at) || (!!env.E2E_OWNER_KEY && proof === await ownerProof(env.E2E_OWNER_KEY, login, at))))
+    return Response.json({ error: "bad proof" }, { status: 401 });
   const user = await env.DB.prepare("SELECT id, login FROM users WHERE lower(login) = lower(?)").bind(login).first<{ id: number; login: string }>();
   if (!user || !isAllowed(env.ALLOWED_LOGINS, user.login)) return Response.json({ error: "unknown account" }, { status: 403 });
   return Response.json({ ok: true }, { headers: { "set-cookie": await createSession(env, user, "owner-script", now) } });

@@ -14,11 +14,12 @@ import { fileURLToPath } from "node:url";
 
 const file = process.env.SECRETS || join(dirname(fileURLToPath(import.meta.url)), "../../server/.dev.vars");
 const vars = Object.fromEntries(readFileSync(file, "utf8").split("\n").map(line => line.match(/^([A-Z_]+)=(.*)$/)).filter(Boolean).map(m => [m[1], m[2].replace(/^"|"$/g, "")]));
-if (!vars.SESSION_SECRET || !vars.APP_PASSWORD) throw new Error(`${file} needs SESSION_SECRET and APP_PASSWORD`);
+const owner = vars.E2E_OWNER_KEY || vars.SESSION_SECRET;
+if (!owner || !vars.SESSION_SECRET || !vars.APP_PASSWORD) throw new Error(`${file} needs SESSION_SECRET and APP_PASSWORD`);
 const sign = (secret, data) => createHmac("sha256", secret).update(data).digest("base64url");
 const login = (process.argv[2] || "r3dbars").toLowerCase();
 const at = Date.now();
 // Same shape as makeSessionCookie(`${SESSION_SECRET}:${APP_PASSWORD}`, "preview") in server/src/session.ts.
 const payload = Buffer.from(JSON.stringify({ login: "preview", exp: Math.floor(at / 1000) + 6 * 3600 })).toString("base64");
 const access = `shiptorio_access=${payload}.${sign(`${vars.SESSION_SECRET}:${vars.APP_PASSWORD}`, payload)}`;
-console.log(JSON.stringify({ access, login, at, proof: sign(vars.SESSION_SECRET, `owner-session.${login}.${at}`) }));
+console.log(JSON.stringify({ access, login, at, proof: sign(owner, `owner-session.${login}.${at}`) }));

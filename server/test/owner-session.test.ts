@@ -22,6 +22,17 @@ test("an owner script holding SESSION_SECRET gets a real, revocable session", as
   expect(await currentUser(env, cookie)).toEqual({ id: 7, login: "r3dbars" });
 });
 
+test("E2E_OWNER_KEY is a second owner key, only when it is set", async () => {
+  const DB = testD1(), env = { DB, SESSION_SECRET: secret, APP_PASSWORD: password, ALLOWED_LOGINS: "r3dbars", FACTORY, E2E_OWNER_KEY: "e2e-key" };
+  await upsertUser(env, { id: 7, login: "r3dbars" });
+  const at = Date.now();
+  expect((await ask(env, { login: "r3dbars", at, proof: await ownerProof("e2e-key", "r3dbars", at) })).status).toBe(200);
+  expect((await ask(env, { login: "r3dbars", at, proof: await ownerProof(secret, "r3dbars", at) })).status).toBe(200);
+  const { E2E_OWNER_KEY: _, ...without } = env;
+  expect((await ask(without, { login: "r3dbars", at, proof: await ownerProof("e2e-key", "r3dbars", at) })).status).toBe(401);
+  expect((await ask({ ...env, E2E_OWNER_KEY: "" }, { login: "r3dbars", at, proof: await ownerProof("e2e-key", "r3dbars", at) })).status).toBe(401);
+});
+
 test("a locally signed cookie without a session row is still refused", async () => {
   const env = { DB: testD1(), SESSION_SECRET: secret, ALLOWED_LOGINS: "r3dbars" };
   await upsertUser(env, { id: 7, login: "r3dbars" });
