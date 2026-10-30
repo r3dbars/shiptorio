@@ -53,8 +53,8 @@ jobs:
         if: steps.scope.outputs.code == 'true'
         run: |
           node --input-type=module -e 'import { chromium } from "@playwright/test"; const browser = await chromium.launch(); await browser.close();' || bun x playwright install-deps chromium
-      # Baseline only in the harness PR; the follow-up adds timing budgets.
-      - run: bun run build && node web/scripts/cold-load.mjs
+      # Sampled Chromium timings: one warm-up, five cold rounds; not production timing.
+      - run: bun run build && node web/scripts/cold-load.mjs --budget
         if: steps.scope.outputs.code == 'true'
         env:
           COLD_LOAD_OUT: ${{ runner.temp }}/cold-load

@@ -4,7 +4,7 @@
 import {chromium,devices} from '@playwright/test';
 import {createInterface} from 'node:readline/promises';
 import {writeFileSync} from 'node:fs';
-import {PROFILE,observePlayable,throttle} from './cold-load-profile.mjs';
+import {PROFILE,observePlayable,collectCurrentMarks,throttle} from './cold-load-profile.mjs';
 const terminal=createInterface({input:process.stdin,output:process.stdout});
 const browser=await chromium.launch({headless:false});
 try {
@@ -29,6 +29,7 @@ try {
     await throttle(cdp);
     await page.goto(live?url.href:'https://shiptorio.dev/deck?fresh=1',{waitUntil:'commit'});
     await page.waitForFunction(()=>performance.getEntriesByName('shiptorio:playable').length>0,null,{timeout:45000});
+    await collectCurrentMarks(page,marks);
     const zero=Math.min(...marks.filter(m=>m.name==='navigation').map(m=>m.timeOrigin));
     const times={};for(const mark of marks)if(!(mark.name in times))times[mark.name]=Math.round((mark.timeOrigin-zero+mark.start)*10)/10;
     results.paths[path]=times;await ctx.close();
