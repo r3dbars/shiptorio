@@ -22,7 +22,9 @@ if (live) {
   if (!process.env.META_API_KEY) { console.error("--live needs META_API_KEY"); process.exit(1); }
   const models = flag("--models")?.split(",").filter(Boolean) ?? [process.env.SPARK_MODEL || ""];
   for (const model of models) {
-    const env = { ...localBudget(), META_API_KEY: process.env.META_API_KEY, SPARK_MODEL: model || undefined, SPARK_BASE_URL: process.env.SPARK_BASE_URL };
+    const env = { ...localBudget(), META_API_KEY: process.env.META_API_KEY, SPARK_MODEL: model || undefined, SPARK_BASE_URL: process.env.SPARK_BASE_URL,
+      // Two models over every case is several hundred calls; the local ledger's 400/day default would cut the second off.
+      SPARK_DAILY_CALLS: process.env.SPARK_DAILY_CALLS ?? "5000", SPARK_DAILY_TOKENS: process.env.SPARK_DAILY_TOKENS ?? "50000000" };
     reports.push(await evaluate({ mode: "live", model: sparkModel(env), think: sparkThink(env), only, priceAs: sparkModel(env) }));
   }
 } else {
