@@ -76,7 +76,8 @@ export function feedbackSignals({ threads, now, repo, shipped = 0, complete = tr
   if (voices < MIN_INFLOW) {
     const days = Math.round(INFLOW_WINDOW_MS / DAY);
     // Quiet is normal on day one; it matters once things are shipping and nobody says a word.
-    const severity = Math.min(0.8, 0.2 + 0.08 * (MIN_INFLOW - voices) + 0.05 * Math.min(shipped, 6));
+    // A quiet week is worth a nudge, never a stop: it stays under anything that blocks a ship.
+    const severity = Math.min(0.5, 0.2 + 0.08 * (MIN_INFLOW - voices) + 0.05 * Math.min(shipped, 6));
     const who = voices === 0 ? "Nobody" : plural(voices, "person", "people");
     out.push({
       ...base, id: signalId("feedback", "feedback_thin"), kind: "feedback_thin",
