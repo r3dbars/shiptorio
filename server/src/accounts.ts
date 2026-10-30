@@ -1,3 +1,4 @@
+import { privateSocketTiming, measureSocket } from "./private-socket-timing";
 import { rememberInstallationOwner } from "./installation-owner";
 import { gh } from "./github";
 import { signupAllowed } from "./signup";
@@ -68,13 +69,13 @@ export async function currentUser(env: AccountsEnv, cookie: string | null, url: 
   if (typeof env.DB.batch === "function") {
     // D1 reads the live session and both policies in one query, without retaining authority.
     // Revocation follows the signed claim; admission follows the current database login.
-    const row = await env.DB.prepare(`SELECT u.id, u.login, r.revoked_at AS policy_revoked_at, a.enabled AS policy_enabled
+    const row = await measureSocket(privateSocketTiming(env), "session_d1", () => env.DB.prepare(`SELECT u.id, u.login, r.revoked_at AS policy_revoked_at, a.enabled AS policy_enabled
       FROM sessions s JOIN users u ON u.id = s.user_id
       LEFT JOIN github_authorization_revocations r ON r.login = ?
       LEFT JOIN signup_allowlist a ON a.login = lower(u.login)
       WHERE s.id_hash = ? AND s.user_id = ? AND s.expires_at > ?`)
-      .bind(session.login.toLowerCase(), sessionHash, session.ref.uid, now)
-      .first<{ id: number; login: string; policy_revoked_at: number | null; policy_enabled: number | null }>();
+      .bind(session.login.toLowerCase(), sessionHash, session.ref!.uid, now)
+      .first<{ id: number; login: string; policy_revoked_at: number | null; policy_enabled: number | null }>());
     if (!row || row.policy_revoked_at != null && session.issuedAt <= row.policy_revoked_at) return null;
     if (!allowPending && !(row.policy_enabled != null ? row.policy_enabled === 1 : env.ALLOWED_LOGINS !== "*" && isAllowed(env.ALLOWED_LOGINS || "", row.login))) return null;
     if (row.id < 0 && !testIdentityAllowed(env, row.id, row.login)) return null;
