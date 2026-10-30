@@ -17,13 +17,21 @@ AI writes the code now. The slow part is the person: deciding what gets built, w
 what's safe to merge. Shiptorio puts those decisions on one card at a time, makes a yes safe with checks you
 can see, and rewards you for adding more of them. The more you verify, the more the factory runs on its own.
 
+<p align="center">
+  <img src="docs/readme/why-card.png" alt="One card at the bottom of the deck: Approve fix for broken docs link? Later on the left, Approve on the right" width="720">
+</p>
+
 ## Meet Shippy
+
+<img src="docs/readme/shippy-idle.gif" alt="Shippy, the robot, standing by: he blinks, looks around, takes a step, hops and waves" width="186" align="left">
 
 Shippy is the robot who runs your line. **Meta Muse Wonder is Shippy's brain.** It reads your issues, plans the
 change, spots the bottleneck, reviews the result and tells you what to do next. It never writes code.
 
 The code is written by your own **Muse Code subscription**, or another coding subscription like Codex, through a
 small runner on your machine. Your sign-ins are the power plants. Nothing runs on our servers but the game.
+
+<br clear="left">
 
 ## How a fix ships
 
