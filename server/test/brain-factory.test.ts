@@ -94,6 +94,22 @@ describe("the bottleneck brain in the real factory", () => {
     expect(f.events.some(e => e.type === "log" && e.text.startsWith("Unblocked:"))).toBe(true);
   });
 
+  it("brain_look re-reads every source and looks again without waiting the half hour", async () => {
+    const f = fixture([waiting]);
+    await f.tick();
+    const first = f.data.get("brainMemory") as BrainMemory;
+    const readAt = (f.data.get("brainSignals") as { readAt: Record<string, number> }).readAt.factory;
+    await new Promise(r => setTimeout(r, 5));
+    await f.tick(); // a normal tick right after: the throttle keeps the card, the factory collector isn't due
+    expect((f.data.get("brainMemory") as BrainMemory).lastAt).toBe(first.lastAt);
+    await f.send({ type: "brain_look" });
+    for (let i = 0; i < 200 && f.factory.brainBusy; i++) await new Promise(r => setTimeout(r, 5));
+    const looked = f.data.get("brainMemory") as BrainMemory;
+    expect((f.data.get("brainSignals") as { readAt: Record<string, number> }).readAt.factory).toBeGreaterThan(readAt);
+    expect(looked.current?.bottleneck.id).toBe("factory:no_agent:repo");
+    expect(looked.runs.count).toBe(first.runs.count); // no model here, so the rule answered: no run spent
+  });
+
   it("Later parks the bottleneck instead of dealing it again", async () => {
     const f = fixture([waiting]);
     await f.tick();

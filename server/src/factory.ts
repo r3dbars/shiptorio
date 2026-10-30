@@ -481,6 +481,16 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
   private brainBusy = false;
   private brainKickedAt = 0;
+  /** "Look now" (scripts/e2e/real-loop.ts look): the next pass re-reads every source and skips the half-hour wait. */
+  private brainForce = false;
+  private brainLookAt = 0;
+
+  /** One forced look every 20s at most; the day's run cap and budget stop still apply inside runDiagnose. */
+  private async brainLook() {
+    if (Date.now() - this.brainLookAt < 20_000) return;
+    this.brainLookAt = Date.now(); this.brainForce = true; this.brainKickedAt = 0;
+    await this.refreshDecisions();
+  }
 
   /** The brain's current card, from its stored memory. The "brain" flag (default off) gates it. */
   private async brainCard(derived: { bottleneck: FactoryState["bottleneck"] }): Promise<Move | null> {
@@ -500,6 +510,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   private kickBrain(derived: { bottleneck: FactoryState["bottleneck"]; stages: StageMetrics[] }, now: number) {
     if (this.brainBusy || now - this.brainKickedAt < 30_000 || !this.meta) return;
     this.brainBusy = true; this.brainKickedAt = now;
+    const force = this.brainForce; this.brainForce = false;
     const run = async () => {
       if (!await flagEnabled(this.env, "brain")) {
         if (this.state?.holdingBack) { this.state.holdingBack = null; await this.save(); this.broadcast({ type: "patch", patch: { holdingBack: null } }); }
@@ -513,11 +524,13 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         githubToken: () => token ??= installationToken(this.env, meta.installationId),
         publicUrl: this.publicUrl(), yes: rollUpYes(this.deckBook?.yes),
         posthogCreds: async () => await this.ctx.storage.get<boolean>("posthogLinked") ? postHogCreds(this.env, this.credentialScope(), this.redactor) : {},
-      }, await this.ctx.storage.get<SignalCache>("brainSignals") ?? emptySignalCache(), now);
+      }, force ? emptySignalCache() : await this.ctx.storage.get<SignalCache>("brainSignals") ?? emptySignalCache(), now);
       for (const e of errors) this.log("warn", `Couldn't read ${e.source} signals: ${e.error.slice(0, 200)}`);
       await this.accountPut("brainSignals", cache);
       await this.decisionData();
-      const before = await this.ctx.storage.get<BrainMemory>("brainMemory") ?? emptyBrainMemory();
+      const stored = await this.ctx.storage.get<BrainMemory>("brainMemory") ?? emptyBrainMemory();
+      // A forced look forgets when it last looked and what it saw, so the throttle treats the picture as new.
+      const before = force ? { ...stored, lastAt: undefined, mainKey: undefined, quiet: false } : stored;
       const feedback = plannerFeedback(this.deckBook!, this.deckRules!);
       const budget = await this.brainBudget();
       const permits = await this.ctx.storage.get<PermitBook>("permits");
@@ -3466,6 +3479,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const s = this.state!;
     if (msg.type === "undo") { await this.undoDecision(msg.actionId); return; }
     if (msg.type === "unlearn") { await this.unlearn(msg.key); return; }
+    if (msg.type === "brain_look") { await this.brainLook(); return; }
     if (msg.type === "choose_move" || msg.type === "defer_move" || msg.type === "dismiss_move") {
       await this.decisionData();
       const card = (s.deck ?? (s.move ? [s.move] : [])).find(m => m.id === msg.moveId);
