@@ -93,6 +93,7 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
     detach(); waiting();
     const proto = location.protocol === "https:" ? "wss" : "ws";
     let socket: WebSocket;
+    loadMark("socket-start");
     try { socket = new WebSocket(`${proto}://${location.host}/api/repos/${repo}/factory`); }
     catch { lost(); return; }
     ws = socket;
@@ -103,6 +104,7 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
     deadline = setTimeout(lost, CONNECT_MS);
     socket.onopen = () => {
       if (!current() || synced) return;
+      loadMark("socket-open");
       clearTimeout(deadline);
       deadline = setTimeout(lost, DEAD_MS);
     };
@@ -130,6 +132,7 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
         // cursors are valid when no work happened during the interruption.
         if (typeof seq === "number" && seq < lastSeq) return;
         synced = true;
+        loadMark("snapshot");
       } else if (msg.type === "snapshot" || (typeof seq === "number" && seq <= lastSeq)) return;
       if (typeof seq === "number") lastSeq = seq;
       clearTimeout(deadline); clearTimeout(heartbeat);
@@ -204,3 +207,4 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
     },
   };
 }
+import { loadMark } from "./load-marks";

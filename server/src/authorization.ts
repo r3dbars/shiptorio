@@ -1,3 +1,4 @@
+import { privateSocketTiming, measureSocket } from "./private-socket-timing";
 import { signupAllowed } from "./signup";
 import { testIdentityAllowed } from "./test-users-policy";
 // Shared adapter over accounts.ts. HTTP, browser sockets and runner grants use one revocable session.
@@ -28,20 +29,21 @@ export async function repoAccess(env: AuthorizationEnv, user: AccessUser, name: 
   if (user.id < 0 && (!testIdentityAllowed(env, user.id, user.login) || repo !== `test-fixture/${user.login}`)) return null;
   if (!validRepo(repo) || user.expiresAt <= Date.now()) return null;
   if (!Number.isSafeInteger(user.id) || !/^[a-f0-9]{64}$/.test(user.sessionHash ?? '')) return null;
-  const sessionUser = await env.DB.prepare('SELECT u.id, u.login FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id_hash = ? AND s.user_id = ? AND s.expires_at > ?').bind(user.sessionHash, user.id, Date.now()).first<{ id: number; login: string }>();
-  if (!sessionUser || !await signupAllowed(env,sessionUser.login)) return null;
+  const timing = privateSocketTiming(env);
+  const sessionUser = await measureSocket(timing, "repo_session_d1", () => env.DB.prepare('SELECT u.id, u.login FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id_hash = ? AND s.user_id = ? AND s.expires_at > ?').bind(user.sessionHash, user.id, Date.now()).first<{ id: number; login: string }>());
+  if (!sessionUser || !await measureSocket(timing, "repo_policy_d1", () => signupAllowed(env,sessionUser.login))) return null;
   type Relationship = { id?: number; installation_id?: number };
   let row: Relationship | null | undefined, installed: Relationship | null | undefined, membership: Relationship | null | undefined, userInstallation: Relationship | null | undefined;
   const repository = env.DB.prepare('SELECT installation_id FROM repos WHERE full_name = ?').bind(repo);
   if (typeof env.DB.batch === 'function') {
     // Keep session/admission denial ahead of repository I/O. Resolve the current
     // installation mapping and all three relationships in one D1 transaction.
-    const results = await env.DB.batch<Relationship>([
+    const results = await measureSocket(timing, "repo_relationship_d1", () => env.DB.batch<Relationship>([
       repository,
       env.DB.prepare('SELECT id FROM installations WHERE id = (SELECT installation_id FROM repos WHERE full_name = ?)').bind(repo),
       env.DB.prepare('SELECT installation_id FROM user_repos WHERE user_id = ? AND repo = ?').bind(user.id, repo),
       env.DB.prepare('SELECT installation_id FROM user_installations WHERE user_id = ? AND installation_id = (SELECT installation_id FROM repos WHERE full_name = ?)').bind(user.id, repo),
-    ]);
+    ]));
     // A failed repository lookup used to throw from first(), even for a caller
     // that treats relationship lookup failures as a denial. Preserve that order.
     if (!results[0] || (results[0] as { success?: boolean }).success === false || !Array.isArray(results[0].results)) throw new Error('Repository lookup unavailable');
@@ -66,12 +68,12 @@ export async function repoAccess(env: AuthorizationEnv, user: AccessUser, name: 
   // Never promote a cached visibility grant into mutation authority. Separate
   // keys also make pre-upgrade read-only grants harmless for writers.
   const key = `access:v2:${authority === "write" ? "write:" : ""}${row.installation_id}:${repo}:${user.id}`;
-  const cached = await env.CACHE?.get<{ expiresAt: number }>(key, 'json').catch(() => null);
+  const cached = await measureSocket(timing, "repo_kv", async () => env.CACHE?.get<{ expiresAt: number }>(key, 'json').catch(() => null));
   if (cached && cached.expiresAt > Date.now() && cached.expiresAt <= Date.now() + ACCESS_TTL) return row.installation_id;
   try {
-    if (await repoInstallationId(env, repo) !== row.installation_id) return null;
-    const token = await installationToken(env, row.installation_id);
-    const result = await gh<{ permission: string; user: { id: number } }>(`/repos/${repo}/collaborators/${encodeURIComponent(sessionUser.login)}/permission`, token);
+    if (await measureSocket(timing, "repo_github", () => repoInstallationId(env, repo)) !== row.installation_id) return null;
+    const token = await measureSocket(timing, "repo_github", () => installationToken(env, row.installation_id!));
+    const result = await measureSocket(timing, "repo_github", () => gh<{ permission: string; user: { id: number } }>(`/repos/${repo}/collaborators/${encodeURIComponent(sessionUser.login)}/permission`, token));
     if (throwOnLookupError && (!Number.isSafeInteger(result.user?.id) || typeof result.permission !== "string")) throw new Error("Repository permission lookup unavailable");
     const permissions = authority === "write" ? ['write', 'maintain', 'admin'] : ['read', 'triage', 'write', 'maintain', 'admin'];
     if (result.user?.id !== user.id || !permissions.includes(result.permission)) return null;

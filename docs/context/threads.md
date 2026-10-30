@@ -863,3 +863,4 @@ Verified whole-App regressions: Hono response assignment replaced appended App t
 - 2026-10-30 Codex (`codex/submission-steering`): aligned current focus and schedule to deck-only cleanup, Justin's manual real ship, Oct 31 freeze, Nov 1 recording and Nov 4 noon CT submission; marked legacy map/growth context as historical or parked.
 
 - 2026-10-30 Codex (`codex/submission-public-docs`): reviewed all public docs for the current deck, Shippy and Codex/Muse Code runner; corrected trust, setup, security and fixture claims and verified docs links/build.
+- 2026-10-30 Codex cold-load: measurement-only harness uses the real local Worker/Factory, signed test persona and fixture runner with compressed assets, iPhone 13 throttling, cold contexts, HAR/Chrome traces and passive marks. Baseline, validation and hosted confirmation tracked in cold-load.md; no optimization or real-account action claimed.

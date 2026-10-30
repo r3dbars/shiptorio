@@ -1,4 +1,5 @@
 import { createAway } from "./data/away";
+import { loadMark } from "../source/load-marks";
 import { createConnections } from "./data/connections";
 import "./deck.css";
 import { SPRITES, createBus, type ArtLoader, type CardView, type CityView, type CityZoom, type DeckBus, type DeckView, type StopId, type AttachJuice, type CreateLayer, type CreateShippy, type DeckLayer, type DeckSource, type MountCard } from "./contract";
@@ -111,6 +112,7 @@ export const FIRST_FRAME_ART = ["sky-dim", "clouds-dim", ...SPRITES.rocket, "pla
 export async function deckSignedIn(request: typeof fetch = fetch): Promise<boolean> {
   try {
     const response = await request("/api/me", { cache: "no-store", signal: AbortSignal.timeout(2000) });
+    loadMark("me-response");
     if (!response.ok) return false;
     const account = await response.json();
     return account.guest !== true && typeof account.login === "string" && account.login.length > 0;
@@ -179,6 +181,7 @@ export function zoomHidden(view: Pick<DeckView, "card">, storyCity: CityView | u
 
 // The 2D deck page (web/deck.html). Wires the engine to a source, the card, Shippy and juice.
 if (typeof document !== "undefined" && document.getElementById("world")) void (async () => {
+  loadMark("entry");
   if (await freshStart()) return;
 // Each module lives in its own folder and is picked up here when it exists, so threads can land independently.
 type Mod = Record<string, unknown>;
@@ -205,6 +208,7 @@ const seed = Number(params.get("seed")) || 0;
     Promise.all([load("story", "createStory"), load("data", "createLiveSource"), load("shippy", "createShippy"), load("card", "mountCard"), load("juice", "attachJuice")]),
     Promise.all(["grow", "build", "launch", "juice", "props"].map(f => load(f, "createLayer"))),
     want === "live" ? deckSignedIn() : false]);
+  loadMark("modules-ready");
   const bus = createBus();
   const setupReachable = setupFromStations(location.search, signedIn);
 
@@ -369,6 +373,7 @@ const seed = Number(params.get("seed")) || 0;
   let caption: string | null = null;
 
   await art.ready();
+  loadMark("art-ready");
   if (pixel) for (const name of SPRITES.stations) if (name.endsWith("-idle")) art.get(name);
   let last = 0;
   let focusedMachine: string | null = null;
@@ -412,6 +417,13 @@ const seed = Number(params.get("seed")) || 0;
     if (view.caption !== caption) caption = view.caption;
     toast.classList.toggle("on", !!caption && !view.card); // the card owns the bottom of the screen
     if (!document.body.dataset.deckReady) document.body.dataset.deckReady = "1";
+    loadMark("deck-frame");
+    if (view.card) loadMark("first-card");
+    if (want === "live" && liveState?.()) {
+      loadMark("live-frame");
+      const state = liveState();
+      if (view.card && (state?.deck ?? (state?.move ? [state.move] : [])).some(move => move.id === view.card!.id)) loadMark("live-card");
+    }
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);

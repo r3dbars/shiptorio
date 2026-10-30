@@ -1,0 +1,108 @@
+// bun run build && node web/scripts/cold-load.mjs
+// Local fixture only. COLD_LOAD_OUT retains HAR + Chrome trace for every round.
+import { chromium, devices } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { join } from 'node:path';
+import { benchmarkServer } from './perf-server.mjs';
+
+const root=fileURLToPath(new URL('../../',import.meta.url));
+const out=process.env.COLD_LOAD_OUT ?? mkdtempSync(join(tmpdir(),'cold-load-'));
+mkdirSync(out,{recursive:true});
+const compiled=join(root,'node_modules/.cache/cold-load-host.mjs');
+mkdirSync(join(root,'node_modules/.cache'),{recursive:true});
+execFileSync('bun',['build','web/scripts/cold-load-host.ts','--target=node','--packages=external',`--outfile=${compiled}`],{cwd:root,stdio:'pipe'});
+const {coldLoadHost}=await import(pathToFileURL(compiled).href);
+const staticServer=benchmarkServer(join(root,'web/dist'));
+await new Promise(r=>staticServer.once('listening',r));
+let host,browser;
+const results=[];
+const profile={viewport:'iPhone 13',downloadMbps:9,uploadMbps:9,rttMs:150,cpuSlowdown:4,coldBrowserCache:true};
+const median=values=>[...values].sort((a,b)=>a-b)[Math.floor(values.length/2)];
+try {
+  host=await coldLoadHost(root,`http://127.0.0.1:${staticServer.address().port}`);
+  browser=await chromium.launch();
+  async function run(path,round) {
+    const name=`${path}-${round}`,live=path==='live';
+    const context=await browser.newContext({...devices['iPhone 13'],defaultBrowserType:'chromium',serviceWorkers:'block',recordHar:{path:join(out,`${name}.har`),content:'omit'}});
+    if(live) await context.addCookies([{name:'cold_load_persona',value:'1',url:host.origin}]);
+    const page=await context.newPage(),cdp=await context.newCDPSession(page);
+    const marks=[],documents=[],requests=[],sockets=[],errors=[];
+    page.on('response',response=>{if(response.status()>=400 && !(response.status()===401 && !live && /\/(api\/me|auth\/logout)$/.test(new URL(response.url()).pathname)))errors.push(`${response.status()} ${new URL(response.url()).pathname}`);});
+    await context.exposeBinding('coldLoadMark',(_,{name,start,timeOrigin,url})=>{if(url.startsWith(host.origin))marks.push({name,start,timeOrigin});});
+    await context.addInitScript(({live})=>{
+      const record=entry=>window.coldLoadMark({name:entry.name,start:entry.startTime,timeOrigin:performance.timeOrigin,url:location.href});
+      record({name:'navigation',startTime:0});
+      for(const type of ['mark','paint'])new PerformanceObserver(list=>list.getEntries().forEach(record)).observe({type,buffered:true});
+      // Card insertion precedes its entrance animation. The budget waits for a readable,
+      // on-screen card and, for live, a card matched by main.ts to the accepted state.
+      const visible=()=>{
+        const face=document.querySelector('.ic-card:not(.ic-ghost):not(.ic-empty)'), box=face?.getBoundingClientRect();
+        const ready=performance.getEntriesByName(live?'shiptorio:live-card':'shiptorio:first-card').length;
+        const line=face?.querySelector('.ic-line'), untyped=line?.querySelector('.ic-untyped');
+        if(ready && box?.height && box.top>=0 && box.bottom<=innerHeight && getComputedStyle(face).opacity==='1' && line?.textContent?.trim() && (!untyped || untyped.textContent!==line.textContent)) {
+          performance.mark('shiptorio:playable');
+          return;
+        }
+        requestAnimationFrame(visible);
+      };
+      requestAnimationFrame(visible);
+    },{live});
+    page.on('pageerror',error=>errors.push(error.message));
+    cdp.on('Network.requestWillBeSent',e=>{requests.push({id:e.requestId,url:e.request.url,at:e.timestamp,wallTime:e.wallTime,type:e.type});if(e.type==='Document')documents.push(e);});
+    cdp.on('Network.webSocketFrameReceived',e=>{try{const msg=JSON.parse(e.response.payloadData);if(msg.type==='snapshot')sockets.push({at:e.timestamp,repo:msg.state.repo,cardIds:(msg.state.deck??[]).map(m=>m.id),bytes:Buffer.byteLength(e.response.payloadData),pipeline:msg.state.pipeline});}catch{}});
+    await cdp.send('Network.enable');
+    await cdp.send('Network.setCacheDisabled',{cacheDisabled:true});
+    await cdp.send('Network.emulateNetworkConditions',{offline:false,latency:150,downloadThroughput:9e6/8,uploadThroughput:9e6/8});
+    await cdp.send('Emulation.setCPUThrottlingRate',{rate:4});
+    await cdp.send('Tracing.start',{categories:'devtools.timeline,blink.user_timing,loading,v8',transferMode:'ReturnAsStream'});
+    const before=host.samples.length;
+    try {
+      await page.goto(host.origin+(live?'/deck?source=live&repo=test-fixture/test-newbie':'/deck?fresh=1'),{waitUntil:'commit'});
+      await page.waitForFunction(name=>performance.getEntriesByName(name).length>0,'shiptorio:playable',{timeout:45000});
+      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+      await page.screenshot({path:join(out,`${name}.png`)});
+      if(errors.length)throw Error(errors.join('\n'));
+      if(live && (!sockets.length || sockets[0].repo!=='test-fixture/test-newbie' || !sockets[0].cardIds.length))throw Error('No real fixture snapshot/card');
+      const origin=Math.min(...marks.filter(m=>m.name==='navigation').map(m=>m.timeOrigin));
+      const times={navigation:0};
+      for(const m of marks)if(!(m.name in times))times[m.name]=Math.round((m.timeOrigin-origin+m.start)*10)/10;
+      const row={path,round,times,navigations:documents.length,requests:requests.map(r=>({url:new URL(r.url).pathname,type:r.type,ms:Math.round((r.wallTime*1000-origin)*10)/10})),snapshots:sockets,server:host.samples.slice(before)};
+      results.push(row);
+      console.log(name,JSON.stringify(times));
+    } catch (error) {
+      console.error(name, 'failed', {marks, requests, errors});
+      await page.screenshot({path:join(out,`${name}-failed.png`)});
+      throw error;
+    } finally {
+      const complete=new Promise(resolve=>cdp.once('Tracing.tracingComplete',resolve));
+      await cdp.send('Tracing.end');
+      const {stream}=await complete;
+      let trace='';
+      for(;;){const part=await cdp.send('IO.read',{handle:stream});trace+=part.base64Encoded?Buffer.from(part.data,'base64').toString():part.data;if(part.eof)break;}
+      await cdp.send('IO.close',{handle:stream});
+      writeFileSync(join(out,`${name}.trace.json`),trace);
+      await context.close();
+    }
+  }
+  // One uncounted round for each path; every timed round still has a fresh browser context/cache.
+  for(const path of ['stranger','live'])await run(path,'warmup');
+  const rounds=Number(process.env.COLD_LOAD_ROUNDS??5);
+  if(!Number.isInteger(rounds)||rounds<1)throw Error('Invalid round count');
+  for(let round=1;round<=rounds;round++)for(const path of ['stranger','live'])await run(path,round);
+  const summary={};
+  for(const path of ['stranger','live']){
+    const rows=results.filter(r=>r.path===path&&r.round!=='warmup');
+    summary[path]=Object.fromEntries(Object.keys(rows[0].times).map(key=>[key,median(rows.map(r=>r.times[key]))]));
+  }
+  const serverOnly=[await host.probe(true)];
+  for(let n=0;n<5;n++)serverOnly.push(await host.probe());
+  writeFileSync(join(out,'results.json'),JSON.stringify({commit:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),profile,rounds,summary,results,serverOnly},null,2));
+  console.table(summary);console.log('Evidence:',out);
+} finally {
+  await browser?.close();await host?.close();
+  staticServer.closeAllConnections();await new Promise(r=>staticServer.close(r));
+  rmSync(compiled,{force:true});
+}

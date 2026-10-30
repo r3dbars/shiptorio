@@ -1,4 +1,4 @@
-import { PrivateSocketTiming, measureSocket, timingResponse } from "./private-socket-timing";
+import { PRIVATE_SOCKET_TIMING, PrivateSocketTiming, measureSocket, timingResponse } from "./private-socket-timing";
 import { assertRefreshItem, ownsRefreshPr, refreshTarget, RefreshBaseMoved } from "./runner-refresh";
 import { adminPaused, auditAdmin } from "./admin-control";
 import { activeAdminView, readAdminView, viewCookieValue } from "./admin-view";
@@ -3360,7 +3360,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (request.headers.get("origin") !== new URL(request.url).origin) return new Response("invalid origin", { status: 403 });
     const env = this.env as FactoryEnv & { TEST_USERS?: string; FIXTURE_INSTANCE?: string };
     const timing = env.PUBLIC_URL === "https://shiptorio.dev" && env.TEST_USERS === "on" && env.FIXTURE_INSTANCE === "shiptorio-fixture" ? new PrivateSocketTiming() : undefined;
-    const auth = await measureSocket(timing, "do_auth", () => browserSocketAuth(request, this.env));
+    const auth = await measureSocket(timing, "do_auth", () => browserSocketAuth(request, timing ? { ...this.env, [PRIVATE_SOCKET_TIMING]: timing } as FactoryEnv : this.env));
     const response = await inTrace({ requestId: request.headers.get("X-Request-ID") ?? crypto.randomUUID(), userId: auth?.userId === undefined ? undefined : accountIdentity(auth.userId) }, this.env, task => this.ctx.waitUntil(task), () => this.#socketFetch(request, auth, timing));
     return timing && auth?.user && auth.user.id < 0 ? timingResponse(response, timing) : response;
   }
@@ -3375,7 +3375,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await measureSocket(timing, "do_load", () => this.load());
     const adminView = await measureSocket(timing, "do_admin_view", () => readAdminView(this.env,request));
     if (viewCookieValue(request.headers.get("cookie")) && !adminView) return new Response("Admin view expired",{status:403});
-    if (!validRepo(repo) || repo !== this.meta?.repo.toLowerCase() || !(adminView?.repo === repo) && !await measureSocket(timing, "do_repo_access", () => repoAccess(this.env, user, repo))) return new Response("repository access denied", { status: 403 });
+    if (!validRepo(repo) || repo !== this.meta?.repo.toLowerCase() || !(adminView?.repo === repo) && !await measureSocket(timing, "do_repo_access", () => repoAccess(timing ? { ...this.env, [PRIVATE_SOCKET_TIMING]: timing } as FactoryEnv : this.env, user, repo))) return new Response("repository access denied", { status: 403 });
     Object.assign(auth, { repo, user, ...(adminView ? {adminView:adminView.idHash} : {}) });
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(server, ["web"]);
@@ -3385,10 +3385,13 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { server.close(1008, "Sign in again"); }
     else if (state) {
       // Derived on reconnect from durable jobs, rather than a stored/optimistic step counter.
-      const [jobs, presence] = await Promise.all([this.runnerJobs(), this.ctx.storage.get<{ harnesses: string[]; seenAt: number }>("runnerPresence")]);
+      const [jobs, presence] = await measureSocket(timing, "do_projection", () => Promise.all([this.runnerJobs(), this.ctx.storage.get<{ harnesses: string[]; seenAt: number }>("runnerPresence")]));
       const pipeline = projectPipeline(state, jobs, !!presence?.harnesses.length && Date.now() - presence.seenAt < 20000);
-      const snapshot = this.redactor.value(structuredClone({ type: "snapshot", state: { ...state, pipeline, liveBottleneck: projectLiveBottleneck(state, jobs, Date.now()) } } satisfies ServerToWeb));
-      server.send(await measureSocket(timing, "do_frame", () => this.browserFrames.frame(snapshot, false)));
+      const redact = () => this.redactor.value(structuredClone({ type: "snapshot", state: { ...state, pipeline, liveBottleneck: projectLiveBottleneck(state, jobs, Date.now()) } } satisfies ServerToWeb));
+      const snapshot = timing ? timing.sync("do_redaction", redact) : redact();
+      const frame = await measureSocket(timing, "do_frame", () => this.browserFrames.frame(snapshot, false));
+      if (timing) timing.sync("do_send", () => server.send(frame));
+      else server.send(frame);
     }
     else server.send(JSON.stringify({ type: "log", level: "warn", text: "No factory yet. Is the GitHub App installed on this repo?", at: Date.now() }));
     // Restoring the map must not wait for a new planner turn (or provider latency).
