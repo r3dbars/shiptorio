@@ -1,5 +1,7 @@
 # Claude project threads (as of 2026-10-26 ~20:40 UTC)
 
+- 2026-10-30 Codex (`codex/cleanup-retired-web-flags`): removed the unused React intro, attention, simple-screen and buildout flags plus their uncalled HTTP loader; kept the deck pixel switch and tested preview policy.
+
 `codex/machine-animation-preview` collects Justin's Oct 29 deck iteration: yellow human attention versus red faults, pixel-contour selection with existing swipe cards, Shippy's fold/charge/start sequence, stable integer zoom, full machine-to-machine conveyor connections with labeled issue/PR cargo, and continuous longer rocket flights. Local previews stay simulated; the GitHub/Meta rollout plan is in `docs/context/github-deck-loop.md`. Targets `dev` after checks; staging rollout explicitly requested.
 
 PR #598 (`codex/dev-deck-default`) makes authorized bare visits to shiptorio.dev open the approved pixel deck with the automatic Shippy watch loop. Explicit repo/onboarding links and production behavior stay unchanged; the existing access gate still runs first. Justin requested this as the staging default.
