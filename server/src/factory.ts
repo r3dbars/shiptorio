@@ -3473,6 +3473,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       await this.logTap(card, option.recommended ? "continue" : "other", option.id);
       s.move = card;
       const action = option.actions[0];
+      if (action?.tool === "approve_runner_job") log("info", "factory.runner_approval_received", { itemId: card.itemId });
       if (action?.tool === "research" && !(await flagEnabled(this.env, "research", auth.login))) return;
       if (card.kind === "automate" && msg.optionId === "allow" && !(await flagEnabled(this.env, "permits", auth.login))) return;
       if (action?.tool === "run_missing_check") {
