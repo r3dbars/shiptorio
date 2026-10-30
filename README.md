@@ -101,9 +101,10 @@ factory state, ticks on an alarm and streams to the browser over a websocket. Gi
 GitHub App. The runner dials out from your machine, works in a git worktree, and pushes a branch; the server
 opens the PR. Secrets are encrypted per repo and never reach the browser or the logs.
 
-Every decision Shippy makes is one call to the Meta Model API with a JSON schema for the answer: triage, the
-plan, the bottleneck pick and the review all use the same shape, so each one is checkable and logged. The
-planner and reviewer work in a small tool loop that can read files but never write them.
+Every decision Shippy makes is a call to the Meta Model API that has to answer in a fixed JSON shape: triage,
+the plan, the bottleneck pick and the review all come back the same way, so each one is checked and logged.
+The planner and reviewer work in a small tool loop that can read the issue, the code and the CI result, but
+never write anything.
 
 <p align="center">
   <img src="docs/readme/under-the-hood.png" alt="Diagram: your machine runs the runner with Muse Code or Codex and pushes a branch; Cloudflare runs one Worker and one Durable Object per repo; GitHub sends issues and checks in and receives the PR; Meta Muse Wonder is Shippy's brain above; the deck in your browser below over a websocket" width="940">
