@@ -274,11 +274,12 @@ async function ship() {
     const it = item();
     const stage = state?.pipeline?.filter(p => p.itemIds.includes(itemId)).map(p => `${p.id}:${p.state}`).join(",") ?? "";
     if (it && (it.state !== lastState || stage !== lastStage)) {
+      const newlyRejected = it.state === "rejected" && lastState !== "rejected"; // replanning keeps it rejected; count arrivals only
       lastState = it.state; lastStage = stage;
       await note("item", { state: it.state, pr: it.prNumber, stage, scars: it.scars?.length ?? 0 });
       await shot(`${it.state}${it.prNumber ? `-pr${it.prNumber}` : ""}-${stage.split(",")[0] ?? ""}`);
       // Two failed builds in a row is a broken agent (out of usage, signed out), not something more taps fix.
-      if (it.state === "rejected" && ++failedBuilds >= 2) { result = `stopped: the build failed twice: ${it.failure ?? "no reason given"}`; return; }
+      if (newlyRejected && ++failedBuilds >= 2) { result = `stopped: the build failed twice: ${it.failure ?? "no reason given"}`; return; }
     }
     if (it?.state === "launched") {
       const pr = it.prNumber ? await gh<{ merged: boolean; merged_at: string; merge_commit_sha: string; html_url: string }>(`/pulls/${it.prNumber}`) : null;
