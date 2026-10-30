@@ -34,7 +34,7 @@ import { pollDevice, type DeviceRecord, type JoinRecord } from "./device-pairing
 import { BrowserFrames, browserHeartbeat, browserSocketActive, browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv, type BrowserSocketAuth } from "./browser-socket";
 
 import { consumeBudget, rateLimit, type Budget, type LimitResult } from "./rate-limit";
-import { unlockMove, signalWeight, type Diagnosis } from "@shiptorio/shared";
+import { unlockMove, signalWeight, freshSignals, type Diagnosis } from "@shiptorio/shared";
 import {
   SCIENCE_FOR,
   WebToServer,
@@ -568,6 +568,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         this.broadcast({ type: "patch", patch: { holdingBack, liveBottleneck: s.liveBottleneck } });
       }
       for (const c of result.cleared) this.log("success", `Unblocked: ${c.title.replace(/\.$/, "")}.`);
+      // A forced look says what it weighed, so a "why didn't he notice X" is answerable from the deck's log.
+      if (force) this.log("info", `Shippy looked: ${freshSignals(cache.signals, now).slice(0, 4).map(x => `${x.title.slice(0, 60)} (${signalWeight(x, now).toFixed(2)})`).join("; ") || "nothing to flag"}. ${result.why}`.slice(0, 600));
       if (result.decided) {
         const log = await this.ctx.storage.get<Diagnosis[]>("brainDiagnoses") ?? [];
         await this.accountPut("brainDiagnoses", [result.diagnosis, ...log].slice(0, 50));

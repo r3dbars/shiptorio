@@ -32,6 +32,8 @@ export function stageForItem(item: Item, jobs: readonly BottleneckJob[] = []): P
   const job = [...jobs].reverse().find(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status));
   if (job) return job.status === "planning" ? "triage" : "build";
   if (item.state === "ore") return "intake";
+  // Parked by the player: set aside and off the line (no plan card is offered), so it's nobody's pile.
+  if (item.state === "queued" && item.priority === "park") return null;
   if (item.state === "queued" || item.state === "working") return "build";
   if (item.state === "on_pad") return "merge";
   if (item.state === "rejected") {
