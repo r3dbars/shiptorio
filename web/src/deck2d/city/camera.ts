@@ -275,32 +275,38 @@ export interface CamPose { x: number; y: number; s: number }
 /** A hop longer than this (CSS px on screen) is a cut: half the usable height (374 on a 390 x 844 phone). */
 export const cutHop = (s: CityScreen) => ((s.h - bandOf(s) - topOf(s) - 2 * EDGE) * 0.5);
 /** One frame of a city camera move. */
-export interface CityStep { pose: CamPose; cut: boolean }
+export interface CityStep { pose: CamPose; cut: boolean; /** cine only: a glide in flight, drawn at the true (not whole) scale */ moving?: boolean }
 
 /** How the camera gets to cityCamera's target (motion-2). A new k cuts x, y and the scale in the same frame; so does a hop
  *  longer than cutHop. Any other new target glides on a fixed smoothstep over CITY_TIMING.move from where the camera was when
  *  the target changed (u = min(1, t / move), e = u * u * (3 - 2 * u)), x and y on whole device px. */
-/** Cinematic moves (CityView.cine): seconds per whole k a zoom steps through, CSS px a pan covers in a second, and the
- *  longest a pan takes. */
-export const CINE = { zoomStep: 0.38, panSpeed: 650, longest: 2.2 } as const;
+/** Cinematic moves (CityView.cine, the tour's Ken Burns): the shortest a move takes (s), seconds per e-fold of scale,
+ *  CSS px a pan covers in a second, and the longest a move takes. */
+export const CINE = { shortest: 3, zoomLog: 5, panSpeed: 300, longest: 6 } as const;
 
 export function createCityMove(move: number = CITY_TIMING.move) {
   let from: CamPose | null = null, to: CamPose | null = null, t = 0, dur = move;
   const cut = (target: CamPose): CityStep => { from = { ...target }; to = { ...target }; t = dur = move; return { pose: { ...target }, cut: true }; };
   const kOf = (s: number, screen: CityScreen) => Math.max(1, Math.round(s * CITY_PX * screen.dpr));
   return {
-    /** cine: the tour's city. A long hop pans instead of cutting, and a new k steps there one whole k at a time while the
-     *  camera glides, so a zoom out reads as a slow pull back, never a jump. */
+    /** cine: the tour's city. A long hop pans instead of cutting, and a new k is reached on a smooth log-scale glide
+     *  (drawn at the true scale while it moves, engine/pixel.ts fine), so a zoom out reads as a slow Ken Burns pull back. */
     step(cam: CamPose, target: CamPose, dt: number, screen: CityScreen, cine = false): CityStep {
       if (!to || to.x !== target.x || to.y !== target.y || to.s !== target.s) {
         if (!cine && (target.s !== cam.s || Math.hypot(target.x - cam.x, target.y - cam.y) * target.s > cutHop(screen))) return cut(target);
         from = { x: cam.x, y: cam.y, s: cam.s }; to = { ...target }; t = 0;
         const hop = Math.hypot(target.x - cam.x, target.y - cam.y) * Math.min(cam.s, target.s); // CSS px on screen
-        dur = !cine ? move : Math.min(CINE.longest, Math.max(move * 1.5, hop / CINE.panSpeed, Math.abs(kOf(target.s, screen) - kOf(cam.s, screen)) * CINE.zoomStep));
+        dur = !cine ? move : Math.min(CINE.longest, Math.max(CINE.shortest, hop / CINE.panSpeed, Math.abs(Math.log(target.s / cam.s)) * CINE.zoomLog));
       }
       t = Math.min(dur, t + dt);
       const u = dur > 0 ? t / dur : 1;
       if (u >= 1) return { pose: { ...to }, cut: false };
+      if (cine) {
+        // a Ken Burns move: ease in and out (sine), the scale on a log curve so the pull back feels even, nothing snapped
+        const e = (1 - Math.cos(Math.PI * u)) / 2;
+        const s = from!.s * Math.pow(to.s / from!.s, e);
+        return { pose: { x: from!.x + (to.x - from!.x) * e, y: from!.y + (to.y - from!.y) * e, s }, cut: false, moving: true };
+      }
       const e = u * u * (3 - 2 * u);
       // the scale: whole k only, stepping from the old k to the new one along the same ease
       const k0 = kOf(from!.s, screen), k1 = kOf(to.s, screen), s = k0 === k1 ? to.s : Math.round(k0 + (k1 - k0) * e) / (CITY_PX * screen.dpr);

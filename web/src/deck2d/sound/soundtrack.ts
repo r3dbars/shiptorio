@@ -10,8 +10,8 @@
 
 import type { MusicState } from "./music";
 
-export type TrackId = "lullaby" | "nightshift" | "waltz" | "pressure" | "liftoff" | "aether" | "deepshaft";
-export type Role = "idle" | "working" | "stuck" | "launch" | "orbit" | "mine" | "title";
+export type TrackId = "lullaby" | "nightshift" | "waltz" | "pressure" | "liftoff" | "aether" | "deepshaft" | "skyline";
+export type Role = "idle" | "working" | "stuck" | "launch" | "orbit" | "mine" | "title" | "city";
 export type LayerId = "pad" | "melody" | "steam" | "bass" | "rhythm" | "counter" | "pressure";
 export type Inst =
   | "harmonium" | "pad" | "bowed" | "spic" | "brass" | "pluck" | "harp" | "musicbox" | "celesta" | "bell" | "choir" | "glass"
@@ -28,6 +28,8 @@ export const PICKS: Record<Role, { track: TrackId; knobs: Knobs }> = {
   orbit: { track: "aether", knobs: { tempo: 100, intensity: 70, tension: 0, brightness: 30, space: 70, volume: 80 } },
   mine: { track: "deepshaft", knobs: { tempo: 100, intensity: 70, tension: 0, brightness: 20, space: 60, volume: 80 } },
   title: { track: "waltz", knobs: { tempo: 100, intensity: 75, tension: 0, brightness: 25, space: 35, volume: 80 } },
+  // the tour's city (Justin 2026-10-30: after the ship's high, "the factory's just the start" swells into a wow moment)
+  city: { track: "skyline", knobs: { tempo: 100, intensity: 100, tension: 0, brightness: 60, space: 60, volume: 85 } },
 };
 
 // A layer plays once intensity reaches its threshold. Pressure is separate: its level is the tension knob.
@@ -44,8 +46,9 @@ export const reverbSend = (k: Knobs) => (k.space / 100) * 0.7;
 
 // ---------- which track plays ----------
 
-export interface RoleInput { state: MusicState; focus: "orbit" | "mine" | null; firstRun: boolean; launching: boolean }
+export interface RoleInput { state: MusicState; focus: "orbit" | "mine" | null; firstRun: boolean; launching: boolean; city?: boolean }
 export function roleFor(i: RoleInput): Role {
+  if (i.city) return "city"; // the tour's islands take over from the lift-off lap
   if (i.launching) return "launch";
   if (i.focus) return i.focus;
   if (i.firstRun) return "title";
@@ -56,7 +59,7 @@ export function roleFor(i: RoleInput): Role {
 // Calm rule: a track plays at least this many bars before the floor's mood can change it. Your own moves
 // (zooming in on the orbit watch or the mines, zooming back out, a launch) switch on the next bar.
 export const MIN_HOLD_BARS = 8;
-const YOURS = new Set<Role>(["launch", "orbit", "mine"]);
+const YOURS = new Set<Role>(["launch", "orbit", "mine", "city"]);
 export function nextRole(current: Role | null, wanted: Role, barsHeld: number): Role {
   if (!current || current === wanted) return wanted;
   if (YOURS.has(wanted) || YOURS.has(current)) return wanted;
@@ -103,6 +106,12 @@ const AE = { CH: [{ r: 38, ch: [50,54,57,61] }, { r: 38, ch: [52,56,59,62] }, { 
 const DS = { CH: [{ r: 40, ch: [52,59] }, { r: 40, ch: [52,59] }, { r: 36, ch: [48,55] }, { r: 38, ch: [50,57] }],
   MEL: [[[0,64,4],[4,67,4],[8,69,6],[14,67,2]], [[0,64,8],[8,62,4],[12,59,4]], [[0,60,4],[4,64,4],[8,67,6],[14,69,2]], [[0,71,8],[8,69,4],[12,66,4]]],
   DROPS: [76,79,81,83,86,88] };
+
+// Skyline: D major, I V vi IV / IV I6 ii V. Two bars of swell (choir, harp, a timpani roll), then the brass theme.
+const SK = { CH: [{ r: 38, ch: [62,66,69] }, { r: 45, ch: [61,64,69] }, { r: 47, ch: [62,66,71] }, { r: 43, ch: [62,67,71] },
+    { r: 43, ch: [62,67,71] }, { r: 42, ch: [62,66,69] }, { r: 40, ch: [64,67,71] }, { r: 45, ch: [61,64,67] }],
+  MEL: [[[0,74,6],[6,76,2],[8,78,8]], [[0,76,4],[4,73,4],[8,69,8]], [[0,71,6],[6,73,2],[8,74,4],[12,76,4]], [[0,78,8],[8,79,4],[12,78,4]],
+        [[0,79,6],[6,81,2],[8,83,8]], [[0,81,4],[4,78,4],[8,74,8]], [[0,76,4],[4,79,4],[8,83,4],[12,81,4]], [[0,81,12],[12,73,4]]] };
 
 export const TRACKS: Track[] = [
   { id: "lullaby", name: "Iron Lullaby", mood: "Soft foundry hum. A slow music-box tune over a breathing harmonium, with steam and distant iron on top.",
@@ -185,6 +194,26 @@ export const TRACKS: Track[] = [
       [0, 6, 10].forEach(s => ch.ch.forEach(m => B.n("counter", "brass", m - 12, s, 1.5, 0.4)));
       if (bi === 0) B.n("steam", "steam", 0, 0, 16, 0.7);
       if (bi % 2 === 1) B.n("steam", "celesta", ch.ch[2] + 24, 14, 2, 0.5);
+    } },
+  { id: "skyline", name: "Skyline", mood: "The city of islands. A choir and harp swell open, then a wide brass theme over timpani: the wow after a ship.",
+    bpm: 88, meter: 4, sub: 4, key: "D major", root: 62, dark: [], echo: 4,
+    knobs: { intensity: 100, brightness: 60, space: 60 },
+    bar(B) {
+      const bi = B.i % 8, ch = SK.CH[bi], intro = B.i < 2;
+      ch.ch.forEach(m => B.n("pad", "choir", m, 0, 16, intro ? 0.35 + B.i * 0.15 : 0.5));
+      ch.ch.forEach(m => B.n("pad", "pad", m - 12, 0, 16, 0.35));
+      B.n("bass", "sub", ch.r, 0, 16, 0.6);
+      B.n("bass", "bowed", ch.r + 12, 0, 16, 0.3);
+      const arp = [0, 1, 2, 1, 0, 1, 2, 1];
+      arp.forEach((k, j) => B.n("counter", "harp", ch.ch[k] + 12, j * 2, 2, j % 4 ? 0.45 : 0.6));
+      if (B.i === 1) [8, 9, 10, 11, 12, 13, 14, 15].forEach((s, k) => B.n("rhythm", "timp", 38, s, 1, 0.3 + k * 0.08)); // the roll into the theme
+      if (intro) return;
+      evs(B, "melody", "brass", SK.MEL[bi], 0.85);
+      [0, 8].forEach(s => B.n("rhythm", "timp", ch.r < 43 ? ch.r + 12 : ch.r, s, 2, s ? 0.45 : 0.7));
+      [0, 8].forEach(s => B.n("rhythm", "kick", 0, s, 1, 0.5));
+      if (bi % 4 === 0) B.n("rhythm", "bell", ch.ch[2] + 12, 0, 8, 0.45);
+      if (bi % 2 === 1) [12, 14].forEach((s, k) => B.n("steam", "celesta", ch.ch[k + 1] + 24, s, 2, 0.4));
+      if (bi === 7) [12, 13, 14, 15].forEach((s, k) => B.n("rhythm", "timp", 45, s, 1, 0.4 + k * 0.12));
     } },
   { id: "aether", name: "Aether Drift", mood: "Orbit watch. Glassy arpeggios turning slowly, a sonar ping each bar, a quiet choir. Calm, a bit uncanny.",
     bpm: 76, meter: 4, sub: 4, key: "D lydian", root: 62, dark: [4, 8, 11], echo: 3,

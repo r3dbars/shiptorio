@@ -109,6 +109,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   // ---------- camera ----------
   const cam = { x: 1400, y: 300, s: 0.3, manual: 0, all: false, pin: null as StopId | null };
   const cityMove = createCityMove(); // city zoom: a new k or a long hop cuts, a short hop glides on a fixed smoothstep
+  let cityFine = false; // the tour's city glide is in flight: drawn at the true scale (engine/pixel.ts fine)
   const RING_VIEW = manualCity("city"); // the city framing the whole ring (no island in focus): the sky hangs from it
   const portrait = () => W / H <= 1.2;
   // Zoom levels: station (the usual camera, untouched), line (the whole line, whole-number scale), city (the ring of
@@ -748,11 +749,11 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
       // reveal's cut from the line to the city is a match cut: its first frame keeps the line's middle where the line zoom
       // had it, and the next frames glide to the ring (0.6 s, inside beat 2's hold).
       const tg = target(v);
-      // The tour's city (cine) enters at the line zoom's own scale, matched on the line, and then pulls back one whole k at
-      // a time: a slow zoom out instead of a cut.
+      // The tour's city (cine) enters at the line zoom's own scale, matched on the line, and then pulls back on one smooth
+      // Ken Burns glide: a slow zoom out instead of a cut.
       const cine = !!cityView?.cine && !reduced?.matches;
-      if (first || changed || shotCut || (zoom !== "station" && reduced?.matches)) { Object.assign(cam, spot ? matchCut(spot, cine && changed ? cam.s : tg.s) : tg); cityMove.reset(); shotTween = null; }
-      else if (zoom === "city") Object.assign(cam, cityMove.step(cam, tg, dt, screenInfo(), cine).pose);
+      if (first || changed || shotCut || (zoom !== "station" && reduced?.matches)) { Object.assign(cam, spot ? matchCut(spot, cine && changed ? cam.s : tg.s) : tg); cityMove.reset(); shotTween = null; cityFine = false; }
+      else if (zoom === "city") { const st = cityMove.step(cam, tg, dt, screenInfo(), cine); Object.assign(cam, st.pose); cityFine = !!st.moving; }
       else if (shotTween && zoom === "station") {
         // a story shot changed: one eased glide over a fixed time, so a long move (the engine to the launch island) reads
         // as a pan, not a lurch that starts at full speed
@@ -916,7 +917,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     plan.strips.forEach((y, i) => cloudStrip(W, y, plan.n, still ? 0 : 2 + 2 * i));
   }
   function drawCity(v: DeckView, dt: number, module: CityModule, buf: ReturnType<typeof createPixelCanvas>) {
-    cx = buf.begin({ x: cam.x, y: cam.y, s: cam.s });
+    cx = buf.begin({ x: cam.x, y: cam.y, s: cam.s }, cityFine);
     if (cv.dataset.pixelZoom !== String(buf.k)) cv.dataset.pixelZoom = String(buf.k);
     const dest = cx, bw = dest.canvas.width, bh = dest.canvas.height, world = dest.getTransform();
     dest.setTransform(1, 0, 0, 1, 0, 0);

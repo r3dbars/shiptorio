@@ -62,6 +62,7 @@ export function attachSound(bus: DeckBus, view: () => DeckView, host: HTMLElemen
     const now = performance.now();
     if (v.jam !== jam) { jam = v.jam; jamSince = v.jam ? now : null; }
     sound.setMusic(musicInputFor(v, jamSince, now));
+    sound.setCity(!!v.city?.cine); // the tour's factory and islands: the wow after the ship
   };
   feed();
   const timer = window.setInterval(feed, 1000);

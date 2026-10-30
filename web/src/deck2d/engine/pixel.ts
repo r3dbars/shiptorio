@@ -6,7 +6,7 @@ import { pixelZoom } from "./camera";
 
 export interface PixelCanvas {
   /** Start a frame. cam is in world units (x, y = what's centered, s = screen px per world unit). */
-  begin(cam: { x: number; y: number; s: number }): CanvasRenderingContext2D;
+  begin(cam: { x: number; y: number; s: number }, fine?: boolean): CanvasRenderingContext2D;
   /** Blit the buffer to the screen canvas. */
   end(): void;
   /** Device px per art px this frame (always a whole number). */
@@ -21,6 +21,10 @@ export function createPixelCanvas(screen: HTMLCanvasElement, artPx: number, pale
   const cx = buf.getContext("2d", { willReadFrequently: !!palette })!;
   screen.style.imageRendering = "pixelated";
   let k = 2, ox = 0, oy = 0, wu = 1, initialized = false; // wu = world units per buffer px after snapping
+  // fine: a camera move in flight (the tour's Ken Burns pull back over the city). The buffer is drawn at the whole k under
+  // the true scale, then laid on the screen at the true scale and offset, smoothed, so the move glides instead of
+  // stepping k and snapping a buffer px at a time. At rest the picture is the usual whole-k one.
+  let fine = 0, dx = 0, dy = 0;
   const rgb = palette?.map((h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)));
   // Each palette color as one opaque RGBA word in this machine's byte order, so a snapped pixel is a single write.
   const word = new Uint32Array(rgb?.length ?? 0);
@@ -51,17 +55,28 @@ export function createPixelCanvas(screen: HTMLCanvasElement, artPx: number, pale
 
   return {
     get k() { return k; },
-    begin(cam) {
-      // whole device px per art px; the camera zoom snaps to the nearest one
-      k = pixelZoom(cam.s * artPx * (screen.width / screen.clientWidth || 1), initialized ? k : undefined);
-      initialized = true;
-      const bw = Math.ceil(screen.width / k), bh = Math.ceil(screen.height / k);
-      if (buf.width !== bw || buf.height !== bh) { buf.width = bw; buf.height = bh; }
+    begin(cam, smooth = false) {
+      const dpr = screen.width / screen.clientWidth || 1, exact = cam.s * artPx * dpr;
       wu = artPx;
-      // snap the camera to whole art px so edges don't shimmer
-      ox = Math.round(cam.x / wu - bw / 2); oy = Math.round(cam.y / wu - bh / 2);
+      if (smooth && exact > 0) {
+        fine = exact; k = Math.max(1, Math.floor(exact)); initialized = true;
+        const bw = Math.ceil(screen.width / k) + 2, bh = Math.ceil(screen.height / k) + 2;
+        if (buf.width !== bw || buf.height !== bh) { buf.width = bw; buf.height = bh; }
+        const c = cam.x / wu, r = cam.y / wu; // the screen's middle, in buffer px
+        ox = Math.floor(c - screen.width / 2 / exact) - 1; oy = Math.floor(r - screen.height / 2 / exact) - 1;
+        dx = (ox - c) * exact + screen.width / 2; dy = (oy - r) * exact + screen.height / 2;
+      } else {
+        fine = 0;
+        // whole device px per art px; the camera zoom snaps to the nearest one
+        k = pixelZoom(exact, initialized ? k : undefined);
+        initialized = true;
+        const bw = Math.ceil(screen.width / k), bh = Math.ceil(screen.height / k);
+        if (buf.width !== bw || buf.height !== bh) { buf.width = bw; buf.height = bh; }
+        // snap the camera to whole art px so edges don't shimmer
+        ox = Math.round(cam.x / wu - bw / 2); oy = Math.round(cam.y / wu - bh / 2);
+      }
       cx.setTransform(1, 0, 0, 1, 0, 0);
-      cx.clearRect(0, 0, bw, bh);
+      cx.clearRect(0, 0, buf.width, buf.height);
       cx.imageSmoothingEnabled = false;
       cx.setTransform(1 / wu, 0, 0, 1 / wu, -ox, -oy);
       return cx;
@@ -69,11 +84,13 @@ export function createPixelCanvas(screen: HTMLCanvasElement, artPx: number, pale
     end() {
       quantize();
       out.setTransform(1, 0, 0, 1, 0, 0);
+      if (fine) { out.imageSmoothingEnabled = true; out.imageSmoothingQuality = "high"; out.drawImage(buf, dx, dy, buf.width * fine, buf.height * fine); return; }
       out.imageSmoothingEnabled = false;
       out.drawImage(buf, 0, 0, buf.width * k, buf.height * k);
     },
     toWorld(x, y) {
       const dpr = screen.width / screen.clientWidth || 1;
+      if (fine) return [((x * dpr - dx) / fine + ox) * wu, ((y * dpr - dy) / fine + oy) * wu];
       return [((x * dpr) / k + ox) * wu, ((y * dpr) / k + oy) * wu];
     },
   };

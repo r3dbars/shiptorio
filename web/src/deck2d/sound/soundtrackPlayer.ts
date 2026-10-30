@@ -371,6 +371,7 @@ export class SoundtrackPlayer {
   private launchUntil = 0;
   private focus: "orbit" | "mine" | null = null;
   private firstRun = false;
+  private city = false;
   private barsHeld = 0;
   private silent = true;
   private timer: number | undefined;
@@ -398,6 +399,8 @@ export class SoundtrackPlayer {
   // What the camera is in on. The orbit watch and the mines have their own tracks.
   setFocus(f: Focus | null) { this.focus = musicFocus(f); }
   setFirstRun(on: boolean) { this.firstRun = on; }
+  // The tour's city of islands has its own track (Skyline).
+  setCity(on: boolean) { this.city = on; }
   // A PR launched: duck under the roar, then the victory lap.
   resolve(delay = 0) {
     if (!this.on || !this.duck) return;
@@ -435,7 +438,7 @@ export class SoundtrackPlayer {
     this.tension = ease(this.tension, tt, tt > this.tension ? 0.75 : 0.4);
     const launching = performance.now() < this.launchUntil;
     this.state = stateFor(this.intensity, this.tension, false, this.state);
-    return roleFor({ state: this.state, focus: this.focus, firstRun: this.firstRun, launching });
+    return roleFor({ state: this.state, focus: this.focus, firstRun: this.firstRun, launching, city: this.city });
   }
 
   private start(role: Role, at: number) {
