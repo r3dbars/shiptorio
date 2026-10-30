@@ -48,6 +48,12 @@ Every `Diagnosis` (signals in, bottleneck, unlock, reason) is stored so the eval
   ranking, so it can never starve planning and review. Past that stop, a new main signal still gets a
   free rule pick, so a red PR doesn't wait until tomorrow behind an old card. Budget code belongs to Codex prompt #12 (spark,
   budget, spend, planning-retry); don't edit those files, call their helpers.
+- **A red PR gets fixed, not just linked.** Continue on "Have the Builder fix the failing check" (`ci_blocking`)
+  files one issue naming the check and the PR and puts it on the line; its plan still waits for the player's yes.
+  When that fix merges, Shippy updates the red PR from the default branch (same-repo branches only) so its checks
+  run on the fix. Once the signal clears he deals one "That's fixed" card (`win:<bottleneckId>`, Nice / Hide).
+- **Look now.** `brain_look` (owner socket, once per 20s) re-reads every source and skips the half-hour wait;
+  `bun scripts/e2e/real-loop.ts look` drives it on the real site in about 30 seconds.
 - **One card, Continue / Later.** Never a list, never a dashboard by default (principle 11). Details sit
   behind "Why?".
 - **No "Spark" in player copy.** Titles and `because` lines are plain words with real numbers.

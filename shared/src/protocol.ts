@@ -117,6 +117,8 @@ export const WebToServer = z.discriminatedUnion("type", [
   z.object({ type: z.literal("undo"), actionId: z.string() }),
   // docs/LEARN.md: stop doing this kind of card on its own; it asks the player again.
   z.object({ type: z.literal("unlearn"), key: z.string().max(200) }),
+  // Have Shippy look at the repo now instead of on his half-hour timer (scripts/e2e/real-loop.ts look).
+  z.object({ type: z.literal("brain_look") }),
   // Turn autonomy up to an unlocked level or back down. With district, permit sets that district's launch permit.
   z.object({ type: z.literal("set_autonomy"), level: AutonomyLevel.optional(), district: z.string().optional(), permit: z.boolean().optional() }),
   z.object({ type: z.literal("set_goal"), text: z.string().max(200) }),
