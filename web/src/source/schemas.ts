@@ -1,6 +1,4 @@
 // Message schemas, loaded on demand (they bring zod, which the sim and the first paint don't need).
-export { Empire } from "@shiptorio/shared";
-
 import { FactoryState, ServerToWeb } from "@shiptorio/shared";
 // Additive socket transport metadata; gameplay payloads keep their shared schema.
 const Sequence = FactoryState.shape.tick.nonnegative().max(Number.MAX_SAFE_INTEGER).optional();
