@@ -851,3 +851,5 @@ Verified whole-App regressions: Hono response assignment replaced appended App t
 - Claude #54 bug bash (2026-10-29, thread "Bug bash the whole loop"): reload no longer re-fires an old rocket or a fake "Shipped" beat (loading view is a baseline), two tabs count one ship once, a call dealt again after Later shows (story no longer stalls). Tests: web/test/deck2d-bugbash.test.ts. Branch claude/project-thread-8dlyuy.
 
 - 2026-10-29: Codex simplification follow-up removes compiler-confirmed unused server imports and obsolete admin/support helper arguments; keeps active factory and legacy-web workstreams separate.
+
+- 2026-10-30 Codex: fix Start build approval when GitHub repository capitalization changes between planning and approval; preserve job/revision binding and add casing, cross-repo rejection, and reconnect regression coverage.

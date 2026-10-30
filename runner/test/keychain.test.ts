@@ -100,7 +100,7 @@ printf 'dedicated-provider-called'
     }
     const invoke = async (...args: string[]) => {
       const child = Bun.spawn([process.execPath, join(import.meta.dir, "../src/cli.ts"), ...args], {
-        env: { PATH: `${bin}:/usr/bin:/bin`, SHIPTORIO_RUNNER_ROOT: root }, stdin: "ignore", stdout: "pipe", stderr: "pipe",
+        env: { PATH: `${bin}:/usr/bin:/bin`, SHIPTORIO_RUNNER_ROOT: root, SHIPTORIO_ENABLE_CLAUDE: "1" }, stdin: "ignore", stdout: "pipe", stderr: "pipe",
       });
       const [out, err, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
       return { out, err, code };
