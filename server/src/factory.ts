@@ -1595,7 +1595,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const item = this.state.items.find(i => i.id === job.itemId)!;
     if (job.refreshBase) assertRefreshItem(job, item);
     if (!receipt.ok) {
-      job.status = "failed"; job.error = "Local build failed; player must approve another attempt.";
+      // The runner's own plain reasons ("Codex is out of usage until ...") are worth showing; anything else stays generic.
+      job.status = "failed"; job.error = /^(?:Codex|Muse Code|Claude) (?:is out of usage|timed out|stopped)[\w ,.:'()/-]{0,200}$/.test(receipt.summary) ? receipt.summary : "Local build failed; player must approve another attempt.";
       await this.accountPut(`runnerJob:${job.id}`, job);
       await this.patch({ items: [{ ...item, state: "rejected", failure: job.error, updatedAt: Date.now() }], machines: this.state.machines.filter(m => m.id === item.machineId).map(m => ({ ...m, state: "blocked" as const })) });
       return { status: "failed" };
