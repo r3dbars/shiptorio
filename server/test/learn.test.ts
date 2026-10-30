@@ -110,8 +110,8 @@ it("README and docs-only approvals share a reviewed scope; code and mixed change
   expect(scopeFor(["docs/setup.md", "docs/guide.rst"])).toBe("district:docs");
   expect(scopeFor(["README.md", "package.json"])).toBe("district:/");
   expect(scopeFor(["docs/worker.ts"])).toBe("district:/");
-  expect(scopeFor(["docs/../server/secrets.md"])).toBe("district:/");
-  expect(scopeFor([])).toBe("district:/");
+  expect(scopeFor(["docs/../server/secrets.md"])).toBeNull();
+  expect(scopeFor([])).toBeNull();
   expect(learnScope(card("plan_runner_job"), "district:/", [{ approvalMoveId: c.id, allowedPaths: ["README.md"] }])).toBe("district:/");
 });
 
@@ -123,4 +123,33 @@ it("resetting a learned class revokes automation as well as its streak", () => {
   expect(isLearned(book, key)).toBe(false);
   expect(book.autoRuns).toEqual([]);
   expect(learnMeter(book, c, scope, true)).toBeUndefined();
+});
+
+
+it("docs code approvals teach a separate class and never fill the prose streak", async () => {
+  const { learnScope } = await import("../src/learn");
+  const c = card("approve_runner_job"), book = emptyDeckBook();
+  const codeScope = learnScope(c, "district:docs", [{ approvalMoveId: c.id, allowedPaths: ["docs/example.ts"] }]);
+  expect(codeScope).toBe("code:docs");
+  for (let n = 0; n < LEARN_NEED; n++) learnFromYes(book, c, codeScope, n, true, "justin");
+  expect(isLearned(book, learnKey(c, "code:docs"))).toBe(true);
+  expect(isLearned(book, learnKey(c, "district:docs"))).toBe(false);
+  expect(learnMeter(book, c, "district:docs", true)).toBeUndefined();
+  expect(learnLabel(learnKey(c, "code:docs"))).toBe("Approving code plans in /docs");
+  resetLearn(book, "build", codeScope);
+  expect(isLearned(book, learnKey(c, "code:docs"))).toBe(false);
+});
+
+it("missing, ambiguous, noncanonical or forbidden approval files never teach a class", async () => {
+  const { learnScope } = await import("../src/learn");
+  const c = card("approve_runner_job"), book = emptyDeckBook();
+  for (const allowedPaths of [undefined, [], ["docs//guide.md"], ["docs/./guide.md"], ["docs/../guide.md"], ["/docs/guide.md"], ["docs/AGENTS.md"], ["docs/.env.md"], Array.from({length: 11}, (_, i) => `docs/${i}.md`)]) {
+    const value = learnScope(c, "district:docs", [{ approvalMoveId: c.id, allowedPaths }]);
+    expect(value).toBeNull();
+    for (let n = 0; n < LEARN_NEED; n++) expect(learnFromYes(book, c, value, n, true, "justin")).toBe(false);
+    expect(learnMeter(book, c, value, true)).toBeUndefined();
+  }
+  c.options[0].actions.push({ tool: "plan_runner_job", args: {}, reason: "" });
+  expect(learnScope(c, "district:docs", [{ approvalMoveId: c.id, allowedPaths: ["README.md"] }])).toBeNull();
+  expect(book.auto).toBeUndefined();
 });
