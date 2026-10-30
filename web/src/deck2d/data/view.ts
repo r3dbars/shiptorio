@@ -117,9 +117,11 @@ export function metaGuided(s: FactoryState, move: Move): boolean {
 
 const RANK = { steer: 0, approve: 1, suggest: 2 } as const;
 
-/** The one card: setup first (nothing moves without an agent), then stuck, then parked, then ideas, in deck order. */
+/** The one card: setup first (nothing moves without an agent), then stuck, then parked, then ideas, in deck order.
+ * Within a rank a ready Ship it comes first: finish what's on the pad before starting more (found by the real-loop
+ * driver, scripts/e2e/real-loop.ts, when Ship it sat behind seven older Plan cards). */
 export function pickCard(deck: readonly Move[]): Move | null {
-  const rank = (m: Move) => (isSetupCard(m) ? -1 : RANK[attentionOf(m)]);
+  const rank = (m: Move) => (isSetupCard(m) ? -2 : RANK[attentionOf(m)] * 2 + (isLaunchCard(m) ? 0 : 1));
   let best: Move | null = null;
   for (const m of deck) if (!best || rank(m) < rank(best)) best = m;
   return best;
@@ -186,7 +188,7 @@ export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckV
   const active = flow ? candidates.find(it => it.id === opts.activeItemId) ?? candidates.find(it => it.id === focus?.itemId) ?? ongoing.sort((a, b) => b.updatedAt - a.updatedAt)[0] : undefined;
   const activeStop = active && workStop(s, active);
   // Prefer the card for the focused (or followed) crate, but never hide a call that waits on the player.
-  const forItem = (id?: string) => id ? deck.filter(m => m.itemId === id || isSetupCard(m)) : [];
+  const forItem = (id?: string) => id ? deck.filter(m => m.itemId === id || isSetupCard(m) || isLaunchCard(m)) : [];
   const scoped = forItem(focus?.itemId ?? active?.id);
   const relevant = scoped.length ? scoped : deck;
   const move = (opts.selectedStop && pickCard(relevant.filter(m => cardStop(s, m) === opts.selectedStop))) || pickCard(relevant);
