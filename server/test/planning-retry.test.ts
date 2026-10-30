@@ -120,3 +120,10 @@ test("a provider's Retry-After window can cross UTC midnight without retrying ea
   expect(planningHold(retry, Date.parse('2026-10-28T00:00:00Z'))).toEqual(retry);
   expect(planningHold(retry, retryAt)).toBeNull();
 });
+
+test("the $5/day account cap rests Shippy until UTC midnight with a plain card, not an outage", () => {
+  const retry = planningFailure(undefined, new BudgetError("Account daily dollar budget reached. Shippy is done thinking for today"), now);
+  expect(retry).toMatchObject({ kind: "cap", retryAt: Date.parse("2026-10-28T00:00:00Z") });
+  const [card] = plannerRestDeck([], retry, now);
+  expect(card).toMatchObject({ title: "Shippy is done thinking for today", why: expect.stringContaining("$5 of AI. He's back at 00:00 UTC") });
+});

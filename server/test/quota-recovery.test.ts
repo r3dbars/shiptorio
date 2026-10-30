@@ -173,7 +173,7 @@ test("limits endpoint denies other repos, requires authentication, and returns n
   expect((await request('/api/repos/stranger/repo/limits')).status).toBe(403);
   const response = await request('/api/repos/owner/repo/limits');
   expect(response.status).toBe(200); expect(response.headers.get('cache-control')).toContain('no-store');
-  expect((await response.json() as { quotas: unknown[] }).quotas).toHaveLength(7);
+  expect((await response.json() as { quotas: unknown[] }).quotas).toHaveLength(8);
 });
 
 

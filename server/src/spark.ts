@@ -1,6 +1,6 @@
 import { ShiptorioError } from "./errors";
 import { adminPaused } from "./admin-control";
-import { reserveFactorySpend, settleFactorySpend, type TokenUsage } from "./spend";
+import { reserveFactorySpend, settleFactorySpend, siteDailyBudget, type TokenUsage } from "./spend";
 import { observedFetch } from "./telemetry";
 import { retry, OutboundError } from "./reliability";
 
@@ -20,6 +20,8 @@ export interface SparkEnv extends BudgetEnv {
   META_API_KEY?: string;
   SPARK_BASE_URL?: string;
   SPARK_MODEL?: string;
+  /** Total AI dollars per UTC day across every account. Defaults to $50. */
+  SPARK_SITE_DAILY_USD?: string;
   /** "1" sends each reply's schema as a native `response_format` (docs/context/meta-api.md). Repair parsing stays as the fallback. */
   SPARK_NATIVE_JSON?: string;
 }
@@ -76,11 +78,12 @@ export async function sparkChat(env: SparkEnv, messages: ChatMessage[], effort: 
   const request = retry("Spark completion", async () => {
     env.planningSignal?.throwIfAborted();
     // A provider retry is another billable call: reserve every attempt independently.
-    const spendId = env.budgetRepo ? await reserveFactorySpend(env.DB!, env.budgetRepo, reservedTokens - output, output, sparkModel(env)) : null;
+    // Every paid call is priced and charged to its paying account, with or without a factory.
+    const spendId = await reserveFactorySpend(env.DB!, env.budgetRepo ?? `(${account})`, reservedTokens - output, output, sparkModel(env), Date.now(), account, siteDailyBudget(env));
     let reservation;
     try { reservation = await reserveSpark(env, account, reservedTokens); }
     catch (error) {
-      if (spendId) await env.DB!.prepare("DELETE FROM spark_factory_calls WHERE id = ?").bind(spendId).run();
+      await env.DB!.prepare("DELETE FROM spark_factory_calls WHERE id = ?").bind(spendId).run();
       throw error;
     }
     const res = await observedFetch("spark", `${base}/chat/completions`, {
@@ -97,7 +100,7 @@ export async function sparkChat(env: SparkEnv, messages: ChatMessage[], effort: 
     if (!res.ok) throw new OutboundError(res.status);
     const data = (await res.json()) as { usage?: TokenUsage; choices?: { message?: { content?: string } }[] };
     try {
-      if (spendId) await settleFactorySpend(env.DB!, spendId, data.usage, sparkModel(env));
+      await settleFactorySpend(env.DB!, spendId, data.usage, sparkModel(env));
       await settleSpark(env, reservation, data.usage?.total_tokens);
     } catch { throw new BudgetError("Planner accounting unavailable; paid calls paused with reservation retained"); }
     const text = data.choices?.[0]?.message?.content;
