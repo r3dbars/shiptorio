@@ -253,11 +253,13 @@ export async function fetchCheckRuns(repo: string, token: string, defaultBranch:
     updated_at: c.completed_at ?? c.started_at ?? new Date(0).toISOString(), html_url: c.html_url, pull_requests: prs,
   });
   const pulls = await gh<{ number: number; head: { sha: string; ref: string } }[]>(`/repos/${repo}/pulls?state=open&per_page=10&sort=updated&direction=desc`, token);
-  // One PR's checks failing to load mustn't hide the others' red ones.
-  const ok = <T,>(r: PromiseSettledResult<T[]>) => r.status === "fulfilled" ? r.value : [];
-  const onPrs = await Promise.allSettled(pulls.map(async p => (await checks(p.head.sha)).map(c => asRun(c, p.head.ref, "pull_request", [{ number: p.number }]))));
-  const onMain = await Promise.allSettled([checks(defaultBranch).then(list => list.map(c => asRun(c, defaultBranch, "push", [])))]);
-  return [...onMain.flatMap(ok), ...onPrs.flatMap(ok)];
+  // One at a time: GitHub calls share a one-a-second slot per install and a burst past it throws RateLimitError,
+  // which used to drop every PR's checks. One ref failing to load mustn't hide the others' red ones.
+  const out: WorkflowRun[] = [];
+  for (const [ref, branch, event, prs] of [[defaultBranch, defaultBranch, "push", []] as const, ...pulls.map(p => [p.head.sha, p.head.ref, "pull_request", [{ number: p.number }]] as const)]) {
+    try { out.push(...(await checks(ref)).map(c => asRun(c, branch, event, [...prs]))); } catch { /* skip this ref */ }
+  }
+  return out;
 }
 
 function cantRead(repo: string, now: number): BrainSignal {
@@ -280,14 +282,19 @@ export async function readCiSignals(ctx: CiContext, now: number): Promise<BrainS
   let snapshot = await cache.get<CiSnapshot>(cacheKey(repo));
   const age = snapshot ? now - snapshot.triedAt : Infinity;
   if (!snapshot || age >= POLL_MS || (ctx.force && age >= 15_000) || (snapshot.dirty && age >= MIN_REFETCH_MS)) {
+    const checks = () => (ctx.fetchChecks ?? fetchCheckRuns)(repo, token, ctx.defaultBranch);
     try {
-      snapshot = { at: now, triedAt: now, runs: await (ctx.fetchRuns ?? fetchRuns)(repo, token, new Date(now - WINDOW_MS).toISOString()) };
+      // Once Actions said no, go straight to check runs: asking again costs a call and can fail other ways.
+      snapshot = snapshot?.fromChecks
+        ? { at: now, triedAt: now, runs: await checks(), fromChecks: true }
+        : { at: now, triedAt: now, runs: await (ctx.fetchRuns ?? fetchRuns)(repo, token, new Date(now - WINDOW_MS).toISOString()) };
     } catch (error) {
-      const denied = error instanceof OutboundError && (error.status === 403 || error.status === 404);
+      const denied = !snapshot?.fromChecks && error instanceof OutboundError && (error.status === 403 || error.status === 404);
       // No Actions access: fall back to check runs. Otherwise keep the old runs (they age out on freshUntil) and
       // don't retry until the next poll.
-      const checks = denied ? await (ctx.fetchChecks ?? fetchCheckRuns)(repo, token, ctx.defaultBranch).catch(() => null) : null;
-      snapshot = checks ? { at: now, triedAt: now, runs: checks, fromChecks: true } : denied ? { at: now, triedAt: now, runs: null, denied } : { at: snapshot?.at ?? now, triedAt: now, runs: snapshot?.runs ?? null };
+      const fresh = denied ? await checks().catch(() => null) : null;
+      snapshot = fresh ? { at: now, triedAt: now, runs: fresh, fromChecks: true } : denied ? { at: now, triedAt: now, runs: null, denied }
+        : { at: snapshot?.at ?? now, triedAt: now, runs: snapshot?.runs ?? null, fromChecks: snapshot?.fromChecks };
     }
     await cache.put(cacheKey(repo), snapshot);
   }

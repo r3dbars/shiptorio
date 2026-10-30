@@ -157,6 +157,18 @@ describe("CI collector: reading cheaply", () => {
     expect(calls).toBe(2);
   });
 
+  it("after Actions says no, reads check runs directly, and a hiccup keeps them trusted as open PRs", async () => {
+    let actions = 0, checks = 0;
+    const c = ctx({ fetchRuns: async () => { actions++; throw new GitHubError(403, "/actions/runs", "GET"); }, fetchChecks: async () => { checks++; return cloggedRuns; } });
+    await ciCollector.read(c, now);
+    const again = await ciCollector.read({ ...c, force: true }, now + 20_000);
+    expect([actions, checks]).toEqual([1, 2]);
+    expect(again[0].observedAt).toBe(now + 20_000);
+    c.fetchChecks = async () => { throw new Error("rate limited"); };
+    const kept = await ciCollector.read({ ...c, force: true }, now + 40_000);
+    expect(kept.map(s => s.confidence)).toEqual(again.map(s => s.confidence));
+  });
+
   it("keeps the last runs when GitHub hiccups, and backs off a full poll", async () => {
     const c = ctx({ fetchRuns: async () => cloggedRuns });
     await ciCollector.read(c, now);
