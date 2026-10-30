@@ -121,7 +121,7 @@ function fill(f: Face, card: View) {
   f.no.textContent = card.no || "Later";
   f.yes.textContent = card.yes || "Approve";
   f.root.classList.toggle("hold", !!card.hold);
-  if (card.hold) f.approve.setAttribute("aria-label", `Hold to ${f.yes.textContent}`);
+  if (card.hold) f.approve.setAttribute("aria-label", /^hold\b/i.test(f.yes.textContent!) ? f.yes.textContent! : `Hold to ${f.yes.textContent}`);
   else f.approve.removeAttribute("aria-label");
   f.root.setAttribute("aria-label", card.title);
   f.title.textContent = card.title;

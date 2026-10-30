@@ -26,12 +26,12 @@ test("the story camera frames each station as it is named, the engine for the bo
     if (v.card) t.approve(v.card.id); else t.step(0.1);
   }
   for (const s of ["shippy", "repo", "planner", "builder", "checks", "review", "gate", "line", "boiler", "launch"]) expect(shots.has(s)).toBe(true);
-  expect(t.view().shot).toBe("line");
+  expect(t.view().city).toMatchObject({ zoom: "city", beat: "card" }); // the islands story ends on the whole city
 });
 
 test("Ship it is a held press; the rocket goes on camera, then a Shipped! card says what happened", () => {
   const t = createTour();
-  for (let i = 0; i < 3000 && t.view().card?.yes !== "Ship it"; i++) { const c = t.view().card; if (c) t.approve(c.id); else t.step(0.1); }
+  for (let i = 0; i < 3000 && t.view().card?.yes !== "Hold to ship"; i++) { const c = t.view().card; if (c) t.approve(c.id); else t.step(0.1); }
   const ship = t.view().card!;
   expect(ship.hold).toBe(true);
   t.approve(ship.id);
@@ -63,21 +63,50 @@ test("each answer builds one station, card hidden while it builds; then a fix sh
   expect(t.view().deck?.boiler).toBe(1);
 });
 
-test("Skip goes straight to sign-in with the whole line up; Replay starts over", () => {
+test("no Skip: the first card only goes forward, and Replay at the end starts over", () => {
   const t = createTour();
+  expect(t.view().card?.no).toBeUndefined();
   t.later(t.view().card!.id);
-  expect(t.phase()).toBe("end");
-  expect(t.view().stops.every((s) => s.built)).toBe(true);
+  expect(t.view().card?.title).toBe(TOUR[0].title);
+  for (let i = 0; i < 3000 && t.phase() !== "end"; i++) { const c = t.view().card; if (c) t.approve(c.id); else t.step(0.1); }
   t.later(STORY_CARD.connect);
   expect(t.view().card?.title).toBe(TOUR[0].title);
   until(t, () => true);
 });
 
-test("Back re-reads the last beat with a fresh card id", () => {
+test("every card after the first has Back, and Back goes one card back with a fresh id", () => {
   const t = createTour();
-  t.approve(t.view().card!.id); // past hi
-  const second = t.view().card!;
-  t.later(second.id);
-  expect(t.view().card!.title).toBe(second.title);
-  expect(t.view().card!.id).not.toBe(second.id);
+  const titles: string[] = [];
+  for (let i = 0; i < 3000 && t.phase() !== "end"; i++) {
+    const c = t.view().card;
+    if (!c) { t.step(0.1); continue; }
+    if (titles.at(-1) !== c.title) {
+      titles.push(c.title);
+      if (titles.length > 1) {
+        expect(c.no).toBe("Back");
+        t.later(c.id);
+        const back = t.view().card!;
+        expect(back.title).toBe(titles.at(-2)!);
+        expect(back.id).not.toBe(c.id);
+        t.approve(back.id); // forward again (replays that card's step)
+        continue;
+      }
+    }
+    t.approve(c.id);
+  }
+  expect(titles).toEqual(TOUR.map((b) => b.title));
+});
+
+test("the fix rides the whole line from Repo to the Gate, and the camera goes with it", () => {
+  const t = createTour();
+  for (let i = 0; i < 3000 && !(t.view().card?.title === "Launch"); i++) { const c = t.view().card; if (c) t.approve(c.id); else t.step(0.1); }
+  t.approve(t.view().card!.id);
+  const seen: string[] = [];
+  for (let i = 0; i < 400 && !t.view().card; i++) {
+    const v = t.view(), at = v.stops.find((s) => s.items.length)?.id;
+    if (at && seen.at(-1) !== at) { seen.push(at); expect(v.shot).toBe(at); t.arrive("tour-crate", at); }
+    t.step(0.1);
+  }
+  expect(seen).toEqual(["repo", "planner", "builder", "checks", "review", "gate"]);
+  expect(t.view().card?.hold).toBe(true);
 });

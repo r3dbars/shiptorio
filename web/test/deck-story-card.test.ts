@@ -51,7 +51,9 @@ test("the first tap finishes a typing line, the second goes on; ← does nothing
   const t = await mount();
   t.h.show(story("hi"));
   const line = t.live().querySelector(".ic-line")!;
-  expect(line.textContent!.length).toBeLessThan(LINE.length);
+  // the whole line is laid out from the start (no re-wrap jitter); the part still to type is hidden
+  expect(line.textContent).toBe(LINE);
+  expect(line.querySelector(".ic-untyped")!.textContent!.length).toBeGreaterThan(0);
   t.live().click();
   expect(line.textContent).toBe(LINE);
   expect(t.got).toEqual([]);

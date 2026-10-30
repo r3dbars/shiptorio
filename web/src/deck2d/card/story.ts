@@ -15,7 +15,7 @@ export const STORY_W = 30;
 export const STORY_H = 24;
 const FEET_X = 12, FEET_Y = STORY_H - 3; // where his feet sit: on the bay's floor plate
 const TICK_MS = 140;
-const CHARS_PER_SEC = 38;
+const CHARS_PER_SEC = 55; // 2026-10-30: faster, so the tour stays under two minutes
 
 const still = () => {
   try {
@@ -25,20 +25,34 @@ const still = () => {
   }
 };
 
+// Quiet Shippy is never a statue (Justin 2026-10-30: "constantly moving or blinking in small subtle ways... if somebody
+// stays on the screen, move around in creative little ways"). Once his line is typed he breathes and blinks, and every
+// IDLE_LOOP ticks (~17s) runs a little routine: looks around, wanders a step and back, hops, waves.
+const IDLE_LOOP = 120;
+const WANDER = [0, 1, 1, 2, 2, 3, 3, 3, 2, 2, 1, 1, 0, 0, 0, 0]; // art px to the right, one per tick
+
 /** The frame for a pose at tick t. talking = his line is still typing out. Pure, so tests can walk it. */
-export function storyFrame(pose: StoryPose, t: number, talking: boolean): { frame: PxFrame; dy: number } {
-  const blink = t % 24 === 23; // a blink about every 3.4s once he is quiet
-  if (pose === "wave") {
-    if (talking || t % 36 < 8) return { frame: Math.floor(t / 2) % 2 ? "wave1" : "wave0", dy: 0 };
-    return { frame: blink ? "idle1" : "wave0", dy: 0 };
+export function storyFrame(pose: StoryPose, t: number, talking: boolean): { frame: PxFrame; dy: number; dx: number } {
+  if (talking) {
+    if (pose === "wave") return { frame: Math.floor(t / 2) % 2 ? "wave1" : "wave0", dy: 0, dx: 0 };
+    if (pose === "point") return { frame: Math.floor(t / 2) % 2 ? "point1" : "point0", dy: 0, dx: 0 };
+    if (pose === "happy") return { frame: "happy", dy: t % 4 < 2 ? -1 : 0, dx: 0 };
+    return { frame: Math.floor(t / 2) % 2 ? "talk1" : "talk0", dy: 0, dx: 0 };
   }
-  if (pose === "point") {
-    if (talking || t % 20 < 4) return { frame: Math.floor(t / 2) % 2 ? "point1" : "point0", dy: 0 };
-    return { frame: "point0", dy: 0 };
-  }
-  if (pose === "happy") return { frame: "happy", dy: (talking ? t % 4 < 2 : t % 30 < 2) ? -1 : 0 };
-  if (talking) return { frame: Math.floor(t / 2) % 2 ? "talk1" : "talk0", dy: 0 };
-  return { frame: blink ? "idle1" : "idle0", dy: 0 };
+  const k = t % IDLE_LOOP;
+  // the routines
+  if (k >= 30 && k < 42) return { frame: Math.floor(k / 3) % 2 ? "inspect1" : "inspect0", dy: 0, dx: 0 }; // looks around
+  if (k >= 60 && k < 76) { const i = k - 60; return { frame: WANDER[i] === WANDER[i - 1] && i > 11 ? "idle0" : `walk${(i % 6) as 0 | 1 | 2 | 3 | 4 | 5}`, dy: 0, dx: WANDER[i] }; } // a step out and back
+  if (k >= 90 && k < 96) return { frame: "happy", dy: [0, -1, -2, -2, -1, 0][k - 90], dx: 0 }; // a little hop
+  if (k >= 98 && k < 106) return { frame: Math.floor(k / 2) % 2 ? "wave1" : "wave0", dy: 0, dx: 0 }; // a wave
+  // resting in his pose: breathing (a 1 px bob, slow) and blinking, now and then twice
+  const blink = t % 26 === 25 || t % 61 === 7 || t % 61 === 9;
+  const dy = t % 22 < 11 ? 0 : -1;
+  if (blink) return { frame: "idle1", dy, dx: 0 };
+  if (pose === "wave") return { frame: "wave0", dy, dx: 0 };
+  if (pose === "point") return { frame: t % 40 < 4 ? "point1" : "point0", dy, dx: 0 };
+  if (pose === "happy") return { frame: "happy", dy, dx: 0 };
+  return { frame: "idle0", dy, dx: 0 };
 }
 
 /**
@@ -93,15 +107,25 @@ export function mountStoryShippy(host: HTMLElement, pose: StoryPose): StoryShipp
   const paint = () => {
     if (!ctx) return;
     const talking = !!line && !line.done;
-    const { frame, dy } = storyFrame(pose, still() ? 0 : t, talking && !still());
+    const { frame, dy, dx } = storyFrame(pose, still() ? 0 : t, talking && !still());
     bay(ctx);
-    drawPx(ctx, frame, FEET_X, FEET_Y + dy, 1);
+    drawPx(ctx, frame, FEET_X + dx, FEET_Y + dy, 1);
   };
+  // The whole line is laid out from the first letter: the part still to come is there but invisible, so the words never
+  // re-wrap or jump while they type in (Justin 2026-10-30: "it jitters around").
   const typeStep = () => {
     if (!line || line.done) return;
     const n = still() ? line.text.length : typedChars(line.text, performance.now() - line.start);
-    line.el.textContent = line.text.slice(0, n);
+    show(line, n);
     if (n >= line.text.length) line.done = true;
+  };
+  const show = (l: NonNullable<typeof line>, n: number) => {
+    if (n >= l.text.length) { l.el.textContent = l.text; return; }
+    const typed = document.createElement("span"), rest = document.createElement("span");
+    typed.textContent = l.text.slice(0, n);
+    rest.textContent = l.text.slice(n);
+    rest.className = "ic-untyped";
+    l.el.replaceChildren(typed, rest);
   };
   // while the line types out the timer runs fast for the letters; t (his frames) still only steps every TICK_MS
   let last = performance.now();
@@ -128,7 +152,7 @@ export function mountStoryShippy(host: HTMLElement, pose: StoryPose): StoryShipp
     say(el, text) {
       if (line && line.el === el && line.text === text) return;
       line = { el, text, start: performance.now(), done: false };
-      el.textContent = "";
+      show(line, 0);
       typeStep();
       start();
     },

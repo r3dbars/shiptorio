@@ -16,7 +16,7 @@ function atGate() {
 
 test("the wrapper finds the tour's held Ship it card", () => {
   const { s } = atGate();
-  expect(s.view().card).toMatchObject({ id: `tour-0-${SHIP}`, yes: "Ship it", hold: true });
+  expect(s.view().card).toMatchObject({ id: `tour-0-${SHIP}`, yes: "Hold to ship", hold: true });
 });
 
 test("Ship it: lever, the crate rides onto the pad, only then one ship, and the next card waits for the climb", () => {
@@ -32,6 +32,10 @@ test("Ship it: lever, the crate rides onto the pad, only then one ship, and the 
   expect(v.shipped).toBe(before); // no rocket while the crate is still on the bridge
   bus.emit({ type: "crate-arrive", stop: "launch", id: SHIP_CRATE });
   run(s, SHIP_TIMING.settle + 0.1);
+  expect(s.shipPhase()).toBe("press"); // Shippy presses the launch button first
+  expect(s.view().shippy).toEqual({ pose: "poke", at: "launch" });
+  expect(s.view().shipped).toBe(before);
+  run(s, SHIP_TIMING.press + 0.1);
   v = s.view();
   expect(s.shipPhase()).toBe("launch");
   expect(v.shipped).toBe(before + 1);
@@ -48,7 +52,7 @@ test("Ship it: lever, the crate rides onto the pad, only then one ship, and the 
 test("no rocket layer: the beat still finishes on its own", () => {
   const { s } = atGate();
   s.approve(s.view().card!.id);
-  run(s, SHIP_TIMING.lever + SHIP_TIMING.ride + SHIP_TIMING.liftoff + SHIP_TIMING.afterLaunch + 0.5);
+  run(s, SHIP_TIMING.lever + SHIP_TIMING.ride + SHIP_TIMING.press + SHIP_TIMING.liftoff + SHIP_TIMING.afterLaunch + 0.5);
   expect(s.shipPhase()).toBe("done");
 });
 

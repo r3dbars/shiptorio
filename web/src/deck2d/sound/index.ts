@@ -37,13 +37,19 @@ export function attachSound(bus: DeckBus, view: () => DeckView, host: HTMLElemen
   button.dataset.sfx = "mute";
   button.innerHTML = SPEAKER;
   const paint = () => {
-    const off = sound.settings.muted;
+    // Off until the browser actually lets audio play: before the first tap the button says so, and that tap turns it on.
+    const off = sound.settings.muted || !sound.awake;
     button.classList.toggle("off", off);
     button.setAttribute("aria-pressed", String(off));
     button.setAttribute("aria-label", off ? "Turn sound on (M)" : "Mute sound (M)");
     button.title = off ? "Sound off (M)" : "Sound on (M)";
   };
-  button.addEventListener("click", () => sound.set({ muted: !sound.settings.muted }));
+  button.addEventListener("click", () => {
+    // The press that just woke the audio up was a "turn it on", not a mute.
+    if (!sound.settings.muted && performance.now() - sound.wokeAt < 1500) { paint(); return; }
+    if (sound.settings.muted) { sound.set({ muted: false }); return; }
+    sound.set({ muted: true });
+  });
   host.append(button);
   document.body.classList.add("has-dsound");
   paint();

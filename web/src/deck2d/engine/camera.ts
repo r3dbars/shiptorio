@@ -31,10 +31,16 @@ export function wholeScale(s: number, v: Screen, down = false): number {
   return Math.max(1, down ? Math.floor(k + 1e-6) : Math.round(k)) / (v.artPx * v.dpr);
 }
 
+/** How many art px tall a landscape (desktop) screen shows at least. Justin 2026-10-30: desktop was "way too zoomed in"
+ * (6 screen px per art px on a 900 px tall window, the art looked blown up), so a desktop shot never goes past ~3.5. */
+export const LANDSCAPE_ROWS = 260;
+
 /** Frame a subject `width` world units wide at a whole-number zoom, with it sitting in the upper part of the screen
- * (the card lives at the bottom). Wide screens show at least `width * 1.25` of height, so a desktop isn't blown up
- * far closer than a phone. */
-export function frameShot(subject: { x: number; y: number; width: number }, v: Screen) {
-  const s = wholeScale(Math.min(v.w / subject.width, v.h / (subject.width * 1.25)), v);
+ * (the card lives at the bottom). Wide screens show at least `width * 1.25` of height, and a landscape screen at least
+ * `rows` art px of height (LANDSCAPE_ROWS by default), so a desktop isn't blown up far closer than a phone. */
+export function frameShot(subject: { x: number; y: number; width: number; rows?: number }, v: Screen) {
+  let want = Math.min(v.w / subject.width, v.h / (subject.width * 1.25));
+  if (v.w > v.h) want = Math.min(want, v.h / ((subject.rows ?? LANDSCAPE_ROWS) * v.artPx));
+  const s = wholeScale(want, v, v.w > v.h);
   return { x: subject.x, y: subject.y + (v.h / s) * 0.1, s };
 }
