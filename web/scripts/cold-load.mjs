@@ -65,6 +65,8 @@ try {
       await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
       await page.screenshot({path:join(out,`${name}.png`)});
       if(errors.length)throw Error(errors.join('\n'));
+      const cardId=await page.locator('.ic-card:not(.ic-ghost):not(.ic-empty)').getAttribute('data-card');
+      if(live && !sockets.some(s=>s.cardIds.includes(cardId)))throw Error('Rendered card does not belong to a received snapshot');
       if(live && (!sockets.length || sockets[0].repo!=='test-fixture/test-newbie' || !sockets[0].cardIds.length))throw Error('No real fixture snapshot/card');
       const origin=Math.min(...marks.filter(m=>m.name==='navigation').map(m=>m.timeOrigin));
       const times={navigation:0};

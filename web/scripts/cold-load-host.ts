@@ -102,6 +102,12 @@ export default {async fetch(r,e,c){
       if(n===99) throw Error('Fixture repository never became ready');
       await new Promise(r=>setTimeout(r,100));
     }
+    for(let n=0;n<100;n++){
+      const r=await call('/api/repos/test-fixture/test-newbie/runner/status',true), status=await r.json();
+      if(status.online && status.harnesses?.includes('codex'))break;
+      if(n===99)throw Error('Fixture runner never became online');
+      await new Promise(r=>setTimeout(r,100));
+    }
     await new Promise<void>(resolve=>host.listen(0,'127.0.0.1',resolve));
     const address=host.address();
     if (!address || typeof address==='string') throw Error('Missing listener');
