@@ -14,6 +14,8 @@ PR #598 (`codex/dev-deck-default`) makes authorized bare visits to shiptorio.dev
 
 - 2026-10-30 Codex (`codex/cleanup-orphaned-exports`): removed the unused Empire re-export, React/WebGL crash callback and orphaned station drawing helper; recorded ambiguous sound, telemetry, route and stored-state candidates in papercuts.md.
 
+- 2026-10-30 Codex (submission hygiene): reviewed remote branches and open PRs/issues, deleted 89 ancestry-verified merged branches, closed 1 superseded PR(s), retained unshipped issue #170, and updated repository metadata. Full actual changes: [decisions.md](decisions.md).
+
 ## Deck visual iteration (Codex, 2026-10-28)
 
 2026-10-29 · Codex #57 (`codex/shippy-calm`): stable floor anchors, one-shot reactions and still waiting poses; preserve purposeful work and charging, with no new moves.
