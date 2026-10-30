@@ -101,7 +101,7 @@ Your software factory is the first island. It sits in a city of them, and each o
 and feed it real work.
 
 <p align="center">
-  <img src="docs/readme/city.png" alt="The city: your repo's island lit in the middle, with the dark islands Errors, Traffic, Inbox, Customers and Marketing around it, joined by sky bridges" width="940">
+  <img src="docs/readme/city-tour.gif" alt="The tour zooms out to the city, then visits each dark island with Shippy's card: Errors, Traffic, Inbox, Customers, Marketing, and ends on Want to build yours?" width="940">
 </p>
 
 - **Errors.** Sentry sends in crashes from your real product, so every bug turns into a fix on your line.
