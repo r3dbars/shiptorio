@@ -652,6 +652,16 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     }
   }
 
+  /** A fix build for a red PR failed: forget the Continue, so Shippy can deal the red-PR card again now, not in 6h. */
+  private async reopenRedPrCard(itemId: string) {
+    const issue = Number(/^gh-(\d+)$/.exec(itemId)?.[1]);
+    if (!issue || !await this.ctx.storage.get(`fixesPr:${issue}`)) return;
+    const memory = await this.ctx.storage.get<BrainMemory>("brainMemory");
+    if (!memory) return;
+    const acted = Object.fromEntries(Object.entries(memory.acted).filter(([id]) => !id.startsWith("ci:ci_blocking:")));
+    if (Object.keys(acted).length !== Object.keys(memory.acted).length) await this.accountPut("brainMemory", { ...memory, acted });
+  }
+
   /** The fix for a red PR merged: update that PR from the default branch so its checks run on the fix. */
   private async bringFixInto(issue: number, fixPr: number) {
     const target = await this.ctx.storage.get<FixRecord>(`fixesPr:${issue}`);
@@ -1599,6 +1609,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       job.status = "failed"; job.error = /^(?:Codex|Muse Code|Claude) (?:is out of usage|timed out|stopped)[\w ,.:'()/-]{0,200}$/.test(receipt.summary) ? receipt.summary : "Local build failed; player must approve another attempt.";
       await this.accountPut(`runnerJob:${job.id}`, job);
       await this.patch({ items: [{ ...item, state: "rejected", failure: job.error, updatedAt: Date.now() }], machines: this.state.machines.filter(m => m.id === item.machineId).map(m => ({ ...m, state: "blocked" as const })) });
+      await this.reopenRedPrCard(item.id);
       return { status: "failed" };
     }
     if (!receipt.sha || !["typecheck", "test", "build"].every(c => receipt.checks.includes(c as RunnerReceipt["checks"][number]))) throw new Error("Missing local check receipts");
