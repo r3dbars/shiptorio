@@ -27,4 +27,5 @@ server/.selfhost/
 *.png
 !web/public/**/*.png
 !docs/site/img/*.png
+!docs/readme/*.png
 
