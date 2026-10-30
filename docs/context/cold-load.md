@@ -159,7 +159,7 @@ exact comparison was used rather than claiming an absent screenshot test ran.
 | PR | Before | After | Measured saving |
 | --- | --- | --- | --- |
 | [#739 measurement harness](https://github.com/r3dbars/shiptorio/pull/739), merged | No comparable end-to-end fixture timing | Baseline above | None; instrumentation only |
-| CI budget follow-up | Same measured runtime | Enforce 4,000 / 5,000 ms and five samples | None; guard only |
+| [#745 CI budget](https://github.com/r3dbars/shiptorio/pull/745) | Same measured runtime | Enforce 4,000 / 5,000 ms and five samples | None; guard only |
 
 The `Cold load` CI workflow now runs `--budget`: it fails above **4,000 ms stranger**
 or **5,000 ms live**, using unrounded median playable times. One warm-up and exactly
