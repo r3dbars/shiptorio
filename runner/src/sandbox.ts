@@ -7,7 +7,7 @@ import { museDirs } from "./policy";
 export interface AgentSandboxOptions { home: string; executable: string; readOnlyFiles?: string[] }
 export interface SandboxResult { code: number; out: string; err: string; timedOut?: boolean }
 export interface CheckSandbox {
-  run(args: string[], cwd?: string, options?: { install?: boolean; timeout?: number }): Promise<SandboxResult>;
+  run(args: string[], cwd?: string, options?: { install?: boolean; timeout?: number; input?: string }): Promise<SandboxResult>;
   close(): Promise<void>;
 }
 const quote = (value: string) => JSON.stringify(value);
@@ -36,11 +36,12 @@ export async function assertVerificationPlatform(): Promise<void> {
   await verificationGit();
 }
 
-export async function checkSandbox(work: string, agent?: AgentSandboxOptions): Promise<CheckSandbox> {
-  if (process.platform === "linux") return linuxSandbox(work, agent);
+export async function checkSandbox(work: string, agent?: AgentSandboxOptions, options: { exactRoot?: boolean } = {}): Promise<CheckSandbox> {
+  if (process.platform === "linux") return linuxSandbox(work, agent, options);
 
   await assertVerificationPlatform();
   const directory = await realpath(work);
+  if (options.exactRoot && directory !== work) throw new Error("Verification root must be the assigned checkout");
   const privateRoot = await realpath(await mkdtemp(join(tmpdir(), "shiptorio-check-")));
   const home = agent ? await realpath(agent.home) : join(privateRoot, "home"), temp = join(privateRoot, "tmp");
   if (!agent) await mkdir(home); await mkdir(temp);
@@ -98,7 +99,7 @@ ${install || agent ? `(allow network-outbound (literal "/private/var/run/mDNSRes
       if (location !== directory && !location.startsWith(directory + "/")) throw new Error("Verification cwd escapes the assigned checkout");
       // Only the dependency installer may use the network-enabled profile, never scripts.
       if (options.install && !(await realpath(args[0]) === runtime && args.length === 4 && args[1] === "install" && args[2] === "--frozen-lockfile" && args[3] === "--ignore-scripts")) throw new Error("Only frozen dependency installation without lifecycle scripts can use network access");
-      const child = Bun.spawn(["/usr/bin/sandbox-exec", "-p", profile(!!options.install), ...(options.install ? [args[0], "--no-env-file", "--config=/dev/null", ...args.slice(1)] : args)], { cwd: location, env, stdin: "ignore", stdout: "pipe", stderr: "pipe", detached: true });
+      const child = Bun.spawn(["/usr/bin/sandbox-exec", "-p", profile(!!options.install), ...(options.install ? [args[0], "--no-env-file", "--config=/dev/null", ...args.slice(1)] : args)], { cwd: location, env, stdin: options.input === undefined ? "ignore" : new Blob([options.input]), stdout: "pipe", stderr: "pipe", detached: true });
       const stop = () => { try { process.kill(-child.pid, "SIGKILL"); } catch {} };
       let timedOut = false;
       const timer = setTimeout(() => { timedOut = true; stop(); }, options.timeout ?? 180000);

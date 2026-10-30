@@ -1,4 +1,5 @@
 import { isProsePath } from "../../shared/src/prose";
+import { localBoundary } from "./local-files";
 import { fetchApprovedSource } from "./approved-source";
 import { runnerOrigin } from "./origin";
 import { freeSubscriptions, prepareAgentHome, subscriptionArgs, subscriptionSignedIn, subscriptionCredentialVersion } from "./subscriptions";
@@ -216,6 +217,7 @@ async function execute(job: Job, pair: Pairing) {
   let summary = "";
   let sandbox: CheckSandbox | undefined;
   let agentSandbox: CheckSandbox | undefined;
+  let localSandbox: CheckSandbox | undefined;
   const checked = async (args: string[], install = false): Promise<string> => {
     if (!sandbox) throw new Error("Verification sandbox not prepared");
     if (job.deadline <= Date.now()) throw new Error("Build lease expired; approve a fresh attempt in the game");
@@ -236,6 +238,7 @@ async function execute(job: Job, pair: Pairing) {
       await workspace.checkpoint("initialized");
     }
     sandbox = resumeOnTimeout(await checkSandbox(jobRoot), work);
+    if (job.harness === "local") localSandbox = resumeOnTimeout(await localBoundary(work), work);
     await resetVerifyBase(sandbox, work);
     await checked(["git", "checkout", "--detach", job.baseSha]);
     let output = "";
@@ -243,7 +246,7 @@ async function execute(job: Job, pair: Pairing) {
       if (job.harness === "local") {
         // Geothermal: the model only returns text; the runner writes approved files, then the same supervisor runs.
         console.log("Your local model is working on the approved change.");
-        output = JSON.stringify(await runLocalAssembler(job, work, local!));
+        output = JSON.stringify(await runLocalAssembler(job, work, local!, localSandbox!));
       } else {
         const context = await assemblerContext(sandbox, job.allowedPaths);
         console.log(`${agentName(job.harness)} is working on the approved change.`);
@@ -326,7 +329,7 @@ async function execute(job: Job, pair: Pairing) {
       try { await api(pair, "finish", receipt); completed = true; } catch { preserve = true; }
     }
     throw error;
-  } finally { await agentSandbox?.close(); await sandbox?.close(); if (completed) await workspace.close(); job.token = ""; gitEnv.GIT_CONFIG_VALUE_0 = ""; }
+  } finally { await localSandbox?.close(); await agentSandbox?.close(); await sandbox?.close(); if (completed) await workspace.close(); job.token = ""; gitEnv.GIT_CONFIG_VALUE_0 = ""; }
 
 }
 /** Stop offering a provider until its credentials change or a login succeeds. */
