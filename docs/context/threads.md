@@ -853,3 +853,5 @@ Verified whole-App regressions: Hono response assignment replaced appended App t
 - 2026-10-29: Codex simplification follow-up removes compiler-confirmed unused server imports and obsolete admin/support helper arguments; keeps active factory and legacy-web workstreams separate.
 
 - 2026-10-30 Codex: fix Start build approval when GitHub repository capitalization changes between planning and approval; preserve job/revision binding and add casing, cross-repo rejection, and reconnect regression coverage.
+
+- 2026-10-30 Codex (`codex/submission-readme`): rewrote the README around the pixel deck, Shippy, the five-step real PR loop, Codex/Muse Code and local setup; kept event provenance and added a current scripted-preview screenshot.
