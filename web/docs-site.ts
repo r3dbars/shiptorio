@@ -147,7 +147,7 @@ ${icons}
       ${prev ? `<a class="prev" href="${href(prev.slug)}"><small>Previous</small>${esc(prev.title)}</a>` : "<span></span>"}
       ${next ? `<a class="next" href="${href(next.slug)}"><small>Next</small>${esc(next.title)}</a>` : "<span></span>"}
     </nav>
-    <footer>Shiptorio · built for the Meta AI Developer Hackathon · powered by Meta Muse Spark · <a href="https://github.com/r3dbars/shiptorio/edit/main/docs/site/${page.slug}.md" rel="noreferrer">Edit this page</a></footer>
+    <footer>Shiptorio · built for the Meta AI Developer Hackathon · powered by Meta Muse Spark · <a href="https://github.com/r3dbars/shiptorio/edit/dev/docs/site/${page.slug}.md" rel="noreferrer">Edit this page</a></footer>
   </main>
   ${toc}
 </div>
