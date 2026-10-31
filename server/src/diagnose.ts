@@ -14,7 +14,8 @@ import { findPlay, playsFor, unlockFor, type PlayContext } from "./unlocks";
 
 // ---------- memory ----------
 
-export interface Parked { until: number; weight: number }
+/** what: the evidence the card named when parked, so a break that names something new (another red PR) comes back. */
+export interface Parked { until: number; weight: number; what?: string[] }
 export interface Cleared { bottleneckId: string; play: string; title: string; clearedAt: number; heldMs: number }
 
 export interface BrainMemory {
@@ -61,6 +62,10 @@ export const BRAIN = {
 } as const;
 
 const utcDay = (now: number) => new Date(now).toISOString().slice(0, 10);
+/** A break: something that just stopped a PR from shipping. New ones get a look right away, even under a heavier card. */
+const BREAKS: ReadonlySet<string> = new Set(["ci_blocking", "ci_red_main"]);
+/** What a signal names (one evidence row per failing PR for a break), order-free. */
+export const named = (s: BrainSignal) => [...new Set(s.evidence.map(e => e.label))].sort();
 const NEAR_TIE = 0.05;
 const bucket = (w: number) => Math.round(Math.min(1, Math.max(0, w)) * 4);
 
@@ -70,13 +75,17 @@ export function eligible(signals: readonly BrainSignal[], memory: BrainMemory, n
     const w = signalWeight(s, now);
     if (w < BRAIN.floor) return false;
     const parked = memory.later[s.id];
-    if (parked && now < parked.until && w < parked.weight + BRAIN.worse) return false;
+    const news = BREAKS.has(s.kind) && parked?.what && named(s).some(x => !parked.what!.includes(x));
+    if (parked && now < parked.until && w < parked.weight + BRAIN.worse && !news) return false;
     const acted = memory.acted[s.id];
     return acted === undefined || now - acted >= BRAIN.actedMs;
   }).slice(0, BRAIN.maxSignals);
 }
 
-const mainKey = (open: readonly BrainSignal[], now: number) => open[0] ? `${open[0].id}:${bucket(signalWeight(open[0], now))}` : "";
+/** The picture the throttle watches: the main signal and its rough weight, plus every open break and what it names. */
+const mainKey = (open: readonly BrainSignal[], now: number) => open[0]
+  ? [`${open[0].id}:${bucket(signalWeight(open[0], now))}`, ...open.filter(s => BREAKS.has(s.kind)).map(s => `${s.id}=${named(s).join(",")}`)].join("|")
+  : "";
 
 /**
  * Drops expired parks, and closes every unlock that worked: the current card, or one the player said Continue
@@ -310,9 +319,9 @@ export async function runDiagnose(input: RunInput): Promise<RunResult> {
 // ---------- the player's taps ----------
 
 /** Later parks the bottleneck for a day at its current weight; Continue gives the unlock time to work and watches it. Either frees the slot. */
-export function tapBrain(memory: BrainMemory, bottleneckId: string, choice: "continue" | "later", weight: number, now: number): BrainMemory {
+export function tapBrain(memory: BrainMemory, bottleneckId: string, choice: "continue" | "later", weight: number, now: number, what?: string[]): BrainMemory {
   const cur = memory.current?.bottleneck.id === bottleneckId ? memory.current : undefined;
   const next: BrainMemory = { ...memory, current: cur ? undefined : memory.current };
-  if (choice === "later") return { ...next, later: { ...memory.later, [bottleneckId]: { until: now + BRAIN.laterMs, weight } } };
+  if (choice === "later") return { ...next, later: { ...memory.later, [bottleneckId]: { until: now + BRAIN.laterMs, weight, ...(what ? { what } : {}) } } };
   return { ...next, acted: { ...memory.acted, [bottleneckId]: now }, pending: cur ? { ...memory.pending, [bottleneckId]: { unlock: cur.unlock, title: cur.bottleneck.title, since: now } } : memory.pending };
 }

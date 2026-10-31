@@ -3,7 +3,7 @@ import { authorizedDB, membershipCache, authorizedSocket, browserEnv, browserCoo
 import { describe, expect, it, mock } from "bun:test";
 import { FactoryState, type Move, type ServerToWeb } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
-import { emptyDeckBook, moveKey } from "../src/deck-decisions";
+import { CHECKIN_GAP_MS, emptyDeckBook, moveKey } from "../src/deck-decisions";
 import { testD1 } from "./d1-fixture";
 import { flagKey } from "../src/flags";
 
@@ -50,7 +50,9 @@ function fixture(cards: Move[], stateOverrides: Partial<FactoryState> = {}) {
   const reload = () => new Factory(ctx as never, credentialEnv({ ...browserEnv, CACHE: membershipCache, DB: authorizedDB(DB) }) as never);
   const factory = reload();
   const send = (value: unknown, instance = factory) => instance.webSocketMessage(authorizedSocket(), JSON.stringify(value));
-  const checkin = async (instance = factory) => {
+  /** A visit. away: the player was gone long enough that this is the next check-in (Later'd cards come back). */
+  const checkin = async (instance = factory, { away = true } = {}) => {
+    if (away && data.has("deckSeenAt")) data.set("deckSeenAt", Date.now() - CHECKIN_GAP_MS);
     const prior = (globalThis as unknown as { WebSocketPair?: unknown }).WebSocketPair;
     (globalThis as unknown as { WebSocketPair: unknown }).WebSocketPair = class { 0 = {}; 1 = socket; };
     try {
@@ -291,6 +293,21 @@ describe("durable live check-in decisions", () => {
     await f.send({ type: "choose_move", moveId: "defer:deferred", optionId: "decide-class" }, current);
     expect(f.saved().deck).toEqual([]);
     expect(f.data.get("approvalEvents")).toEqual([expect.objectContaining({ kind: "verify" })]);
+  });
+
+  it("Later holds through a reload or a second tab; only coming back after a while brings it back", async () => {
+    const f = fixture([card("later")]);
+    await f.checkin();
+    await f.send({ type: "defer_move", moveId: "later" });
+    expect(f.saved().deck).toEqual([]);
+    for (let i = 0; i < 3; i++) { // reload, second tab, the phone: one visit
+      const current = f.reload();
+      await f.checkin(current, { away: false });
+      expect(f.saved().deck).toEqual([]);
+    }
+    await f.checkin(f.reload());
+    expect(f.saved().deck?.map(m => m.id)).toEqual(["later"]);
+    expect((f.data.get("deckBook") as ReturnType<typeof emptyDeckBook>).decisions[moveKey(card("later"))].count).toBe(1); // no "Never?" escalation from reloads
   });
 
   it("concurrent Later deliveries count once and survive reconnect with the same next-check-in card", async () => {

@@ -17,7 +17,7 @@ import { createWhatIsState, mountWhatIs } from "./stations/whatis";
 import { createFirstVisitDemo } from "./stations/first-visit";
 import { createConveyorDemo } from "./engine/conveyor-demo";
 import { createPayoff } from "./payoff";
-import { createFirstRun } from "./data/firstrun";
+import { TOURED_KEY, createFirstRun } from "./data/firstrun";
 import { createTour } from "./story/tour";
 import { shipFeel } from "./story/ship";
 import { askPassword } from "./password";
@@ -148,11 +148,11 @@ export function oneAsk<V extends DeckView>(view: V): V {
  *  card. Closing sign-in brings that card back.
  *  ending(): the story's own last card (the city reveal's "Start with your repo.") while the connection card is up in its
  *  place: dressSignIn lends the words to the sign-in card, so Yes still runs today's sign-in and Replay still replays. */
-export function storyBeforeSignIn(story: DeckSource, connections: { open(target: "repo"): void; card(): CardView | null; answer?(id: string, yes: boolean): unknown }, opts: { ask?: boolean } = {}): DeckSource & { ending(): CardView | null } {
+export function storyBeforeSignIn(story: DeckSource, connections: { open(target: "repo"): void; card(): CardView | null; answer?(id: string, yes: boolean): unknown }, opts: { ask?: boolean; onAsk?(): void } = {}): DeckSource & { ending(): CardView | null } {
   let finished = false, replay = 0, asks = 0, asked = false, pressed: string | null = null, ending: CardView | null = null;
   const askId = () => `story-connect:ask-${asks}`; // fresh each time it shows, so the card renders it again
   const originalId = (id: string) => !replay ? id : id.endsWith(`:replay-${replay}`) ? id.slice(0, -`:replay-${replay}`.length) : null;
-  return { ...story, approve(id) { if (opts.ask && id === askId()) { asked = true; return; } const original = originalId(id); if (original) story.approve(original); },
+  return { ...story, approve(id) { if (opts.ask && id === askId()) { asked = true; opts.onAsk?.(); return; } const original = originalId(id); if (original) story.approve(original); },
     later(id) { if (opts.ask && id === askId()) { asks++; story.later("story-connect"); return; } const original = originalId(id); if (original) story.later(original); }, ending: () => (finished ? ending : null), view() {
     const view = story.view();
     if (view.card?.id !== "story-connect") return replay && view.card ? { ...view, card: { ...view.card, id: `${view.card.id}:replay-${replay}` } } : view;
@@ -261,7 +261,8 @@ const seed = Number(params.get("seed")) || 0;
     // A guest at the live front door meets Shippy: a small deck, the story told in the card at their pace, each
     // station built and named, then one fix shipped. /deck.html keeps the jam-and-swipe story for the video, which ends
     // on the city reveal (?reveal=1 starts there, for shots and recording takes), then the same sign-in card.
-    if (want === "live") source = storyBeforeSignIn(shipFeel(createTour(tourMemo()), bus), connections, { ask: true });
+    if (want === "live") source = storyBeforeSignIn(shipFeel(createTour(tourMemo()), bus), connections, { ask: true,
+      onAsk: () => { try { localStorage.setItem(TOURED_KEY, "1"); } catch { /* private mode: the full first run plays */ } } });
     else {
       const run = (story.createStory as (o: { seed: number; speed: number; reducedMotion?: boolean; startAt?: "reveal" }) => DeckSource & { phase(): string })({
         seed, speed, reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches, startAt: params.get("reveal") === "1" ? "reveal" : undefined });
@@ -307,6 +308,7 @@ const seed = Number(params.get("seed")) || 0;
     key: repo, store: (() => { try { return localStorage; } catch { return undefined; } })(),
     stage: () => !signedIn ? null : !repo ? "hello" : connections.engineReady() ? "engine" : "repo",
     established: () => !!(source.view() as import('./data/view').LiveDeckView).work,
+    toured: (() => { try { return localStorage.getItem(TOURED_KEY) === "1"; } catch { return false; } })(),
   }) : null;
   // Tap a station: brass corners + a small "what is this" note in Shippy's words (stations/whatis.ts). Ignored while
   // Shippy's tour talks, so a tap never fights the story card. The machine rehearsal keeps its inspector card.

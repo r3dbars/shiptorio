@@ -157,6 +157,7 @@ page.on("console", m => { if (m.type() === "error") void note("console_error", {
 
 let state = null as FactoryState | null;
 const logs: string[] = [];
+const autoTaps: string[] = []; // "gh-46:approve_runner_job": a card the factory tapped on its own (a kind you taught it)
 function fold(msg: ServerToWeb) {
   if (msg.type === "snapshot") state = msg.state;
   else if (!state) return;
@@ -175,7 +176,7 @@ page.on("websocket", (ws: PwSocket) => {
     try { msg = JSON.parse(text); } catch { return; }
     void appendFile(`${out}/frames.jsonl`, JSON.stringify({ t: since(), dir: "in", msg }) + "\n");
     fold(msg);
-    if (msg.type === "log") { logs.push(msg.text); void note("log", { itemId: msg.itemId, level: msg.level, text: msg.text, tool: msg.tool, actor: msg.actor }); }
+    if (msg.type === "log") { logs.push(msg.text); if (msg.approvedBy === "autonomy" && msg.itemId) autoTaps.push(`${msg.itemId}:${msg.tool}`); void note("log", { itemId: msg.itemId, level: msg.level, text: msg.text, tool: msg.tool, actor: msg.actor, approvedBy: msg.approvedBy }); }
     if (msg.type === "autonomy_unlocked") void note("unlocked", { level: msg.level, text: msg.text });
   });
   ws.on("framesent", f => {
@@ -287,6 +288,10 @@ async function ship() {
       await page.waitForTimeout(6000); // let the rocket fly on camera
       await shot("launched");
       result = pr?.merged ? `shipped: PR #${it.prNumber} merged on GitHub (${pr.merge_commit_sha?.slice(0, 7)})` : `launched in the deck but GitHub says PR #${it.prNumber} is not merged`;
+      // The climax check: which of this item's cards the factory did on its own, and what it has learned so far.
+      const own = autoTaps.filter(t => t.startsWith(`${itemId}:`)).map(t => t.slice(itemId.length + 1));
+      await note("learned", { onItsOwn: own, learned: state?.learned ?? [] });
+      result += own.length ? `; the factory did ${own.join(" + ")} on its own` : "; every card was the player's tap";
       return;
     }
     for (const move of openCards()) {
@@ -312,7 +317,7 @@ async function ship() {
       tapped.add(move.id);
       await shot(`card-${tools[0]}`);
       await press("approve", hold);
-      await note("tapped", { card: move.title, tools, option: option.label, hold });
+      await note("tapped", { card: move.title, tools, option: option.label, hold, learn: move.learn });
     }
   }
   result = `timed out after ${minutes} min with ${itemId} at ${item()?.state ?? "not on the line"}`;

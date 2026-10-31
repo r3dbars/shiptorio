@@ -197,8 +197,10 @@ describe("the bottleneck brain in the real factory", () => {
     await f.tick();
     await f.send({ type: "choose_move", moveId: "unlock:factory:no_agent:repo", optionId: "later" });
     const memory = f.data.get("brainMemory") as BrainMemory;
-    expect(memory.later["factory:no_agent:repo"]).toBeDefined();
-    await f.tick();
-    expect(f.saved().deck?.some(m => m.id === "unlock:factory:no_agent:repo")).toBe(false);
+    expect(memory.later["factory:no_agent:repo"]?.what).toHaveLength(1); // what the card named, so a new break can come back
+    for (let i = 0; i < 3; i++) {
+      await f.tick();
+      expect(f.saved().deck?.some(m => m.id === "unlock:factory:no_agent:repo")).toBe(false);
+    }
   });
 });

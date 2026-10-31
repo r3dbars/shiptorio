@@ -62,6 +62,12 @@ describe("gauntlet rules", () => {
     expect(verifyFromDiff(["docs/LOOP.md", "README.md"], false).passed).toBe(true);
     expect(verifyFromDiff([], true).passed).toBe(false);
   });
+  it("a docs fix sent back once still passes as docs, though the rework build attached a proof", () => {
+    const proof = { failsOnBase: false, passesOnHead: true, baseSha: "a".repeat(40), headSha: "b".repeat(40), command: "bun test", logTail: "" };
+    expect(verifyFromDiff(["docs/GLOSSARY.md"], true, proof)).toMatchObject({ passed: true, reason: "Docs-only change, nothing to reproduce." });
+    expect(verifyFromDiff(["src/cart.ts"], true, proof).passed).toBe(false);
+    expect(verifyFromDiff(["docs/guide.md", "docs/run.ts"], true, proof).passed).toBe(false);
+  });
   it("requires proof for executable docs and MDX, while preserving plain prose", () => {
     for (const files of [["docs/install.sh"], ["docs/App.mdx"], ["web/docs/a.ts", "server/docs/b.ts"], ["docs/config.json"], ["docs/guide.md", "docs/run.ts"]]) {
       expect(verifyFromDiff(files, true).passed).toBe(false);
