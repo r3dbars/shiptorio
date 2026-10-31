@@ -172,8 +172,10 @@ const TEST_FILE = /(^|\/)(test|tests|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]s
  */
 export function verifyFromDiff(files: string[], runnerReceipts: boolean, proof?: RegressionProof, touchedPaths = files): { passed: boolean; reason: string } {
   if (!files.length) return { passed: false, reason: "The PR has no changed files to verify." };
-  if (touchedPaths.length && touchedPaths.every(isProsePath) && !proof) return { passed: true, reason: "Docs-only change, nothing to reproduce." };
   const tests = files.filter((f) => TEST_FILE.test(f));
+  // A rework build always attaches a regression proof (runner/src/cli.ts), even for prose, so a test-less proof on
+  // a prose-only diff is still a docs change. Without this, every docs fix sent back once died on its second build.
+  if (touchedPaths.length && touchedPaths.every(isProsePath) && (!proof || !tests.length)) return { passed: true, reason: "Docs-only change, nothing to reproduce." };
   if (!tests.length) return { passed: false, reason: "No proof: the PR changes code but adds no test that shows the fix works." };
   if (proof) {
     if (!proof.passesOnHead) return { passed: false, reason: "The regression test did not pass on the fix commit." };
