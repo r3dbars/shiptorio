@@ -76,6 +76,16 @@ body.first-run .toast, body.guest-tour .toast { width: calc(100% - 24px); white-
 .deck-password .later { color: var(--ink); background: var(--iron-hi); box-shadow: inset 0 0 0 2px #5a4a3a; }
 .deck-password form[aria-busy="true"] .approve { opacity: .6; cursor: progress; }
 .deck-password input:focus-visible, .deck-password button:focus-visible { outline: 3px solid var(--brass-hi); outline-offset: 2px; }
+/* Desktop: the popup sits over the iron card, which grows with the screen; match its size and its font so the ask
+   doesn't shrink to tiny caps at 1920. Phones keep the compact popup above. */
+@media (min-width: 900px) and (min-height: 600px) {
+  .deck-password form { width: min(540px, 100%); padding: 24px; font-family: "Pixelify Sans", "Silkscreen", ui-monospace, monospace; }
+  .deck-password h2 { font-size: 26px; margin-bottom: 10px; }
+  .deck-password p { font-size: 18px; line-height: 1.35; margin-bottom: 16px; }
+  .deck-password input { height: 56px; font-size: 20px; }
+  .deck-password .row { gap: 12px; margin-top: 18px; }
+  .deck-password button { min-height: 56px; font-size: 19px; }
+}
 
 /* Tap a station: its "what is this" note (stations/whatis.ts). Same steel-and-brass as the first-run line; still, no fade. */
 .whatis { position: fixed; left: 0; top: 0; z-index: 15; width: max-content; max-width: min(260px, calc(100vw - 32px)); padding: 8px 10px;
