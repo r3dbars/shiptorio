@@ -212,14 +212,15 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     }
     // framed low, so the engine sits above the card; a looser shot than a station (Justin 2026-10-30: "zooms in a little too much")
     if (shot === "boiler") return { x: BOILER.x + 120, y: BOILER.base, width: 1300, rows: 320 };
-    if (shot === "launch") return { x: STOP_X.launch - 70, y: LAUNCH_Y - 150, width: 1100 };
-    return { x: STOP_X[shot], y: FLOOR_Y - 90, width: 900 };
+    if (shot === "launch") return { x: STOP_X.launch - 70, y: LAUNCH_Y - 150, width: 1100, tall: 300 };
+    return { x: STOP_X[shot], y: FLOOR_Y - 90, width: 900, tall: 220 };
   }
   function shotTarget(shot: Shot, all: { x: number; y: number; s: number }) {
     const scr = { w: W, h: H, dpr: DPR, artPx: ART_PX, pixel: !!px };
     // the whole line rounds the zoom down, so nothing built falls off the edge
     if (shot === "line") return { x: all.x, y: all.y, s: wholeScale(all.s, scr, true) };
-    return frameShot(subject(shot), scr);
+    // the station being introduced stays above the story card, even on a phone held sideways
+    return frameShot(subject(shot), scr, cardTop());
   }
   function target(v: DeckView) {
     const all = fitAll();
