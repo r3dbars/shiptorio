@@ -195,7 +195,8 @@ export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckV
   const move = (opts.selectedStop && pickCard(relevant.filter(m => cardStop(s, m) === opts.selectedStop))) || pickCard(relevant);
   // green means you handed it over (beat 4), so CI and AI review, which never asked you, stay plain working / idle
   const handed = handedStops(s);
-  const attention = new Set<StopId>(relevant.map(m => flow && continueOption(m).actions.some(a => a.tool === "plan_runner_job") ? "repo" : cardStop(s, m)));
+  // yellow means a call waits on you: a card with nothing to decide (Shippy resting for the day, "That's fixed") lights no station
+  const attention = new Set<StopId>(relevant.filter(m => m.options.some(o => o.actions.length)).map(m => flow && continueOption(m).actions.some(a => a.tool === "plan_runner_job") ? "repo" : cardStop(s, m)));
   if (s.sources?.some(source => source.state === "needs_action")) attention.add("repo");
   if (s.items.some(it => it.state === "inspecting" && itemStop(it) === "gate" && !it.inspection?.humanApproved)) attention.add("gate");
   const jam = jamStop(s, attention);

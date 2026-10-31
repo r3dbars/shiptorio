@@ -133,7 +133,7 @@ test("the $50/day site cap reads as everyone's limit, not this player's, using t
   const retry = planningFailure(undefined, new BudgetError(`Site daily dollar budget reached. ${SITE_CAP_LINE}`), now);
   expect(retry).toMatchObject({ kind: "cap", retryAt: Date.parse("2026-10-28T00:00:00Z") });
   const [card] = plannerRestDeck([], retry, now);
-  expect(card).toMatchObject({ title: "Shippy is done thinking for today", why: "Shiptorio used today's AI for everyone. He's back at 00:00 UTC. You can keep reviewing and shipping." });
+  expect(card).toMatchObject({ title: "Shippy is done thinking for today", why: "Shiptorio used today's AI for everyone. He's back at 00:00 UTC. You can keep shipping what's ready." });
   const [own] = plannerRestDeck([], planningFailure(undefined, new BudgetError(`Account daily dollar budget reached. ${ACCOUNT_CAP_LINE}`), now), now);
-  expect(own.why).toBe("This account used today's $5 of AI. He's back at 00:00 UTC. You can keep reviewing and shipping.");
+  expect(own.why).toBe("This account used today's $5 of AI. He's back at 00:00 UTC. You can keep shipping what's ready.");
 });

@@ -20,8 +20,8 @@ export const siteDailyBudget = (env: { SPARK_SITE_DAILY_USD?: string }) => {
   const usd = Number(env.SPARK_SITE_DAILY_USD);
   return env.SPARK_SITE_DAILY_USD !== undefined && Number.isFinite(usd) && usd >= 0 ? Math.round(usd * NANO_USD) : SITE_DAILY_BUDGET;
 };
-export const SITE_CAP_LINE = "Shippy is done thinking for today: Shiptorio hit its daily AI limit for everyone. He's back at 00:00 UTC. The deck, reviews and merges keep working.";
-export const ACCOUNT_CAP_LINE = "Shippy is done thinking for today: this account used its $5 of AI for the day. He's back at 00:00 UTC. The deck, reviews and merges keep working.";
+export const SITE_CAP_LINE = "Shippy is done thinking for today: Shiptorio hit its daily AI limit for everyone. He's back at 00:00 UTC. The deck, checks and shipping keep working; Review waits for him.";
+export const ACCOUNT_CAP_LINE = "Shippy is done thinking for today: this account used its $5 of AI for the day. He's back at 00:00 UTC. The deck, checks and shipping keep working; Review waits for him.";
 const accountUserId = (account?: string) => account && /^user:-?\d+$/.test(account) ? Number(account.slice(5)) : null;
 export async function accountDailyBudget(db: D1Database, account?: string) {
   const id = accountUserId(account);
