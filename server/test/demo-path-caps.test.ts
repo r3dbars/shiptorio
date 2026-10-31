@@ -69,6 +69,7 @@ async function capsFactory(env: Record<string, unknown> = {}) {
     if (path === `/repos/${REPO}/git/ref/heads/main`) return Response.json({ object: { sha: BASE } });
     if (path === `/repos/${REPO}/issues/1`) return Response.json({ number: 1, state: "open", title: "README: add a quick start", body: "Docs only.", labels: [], updated_at: "2026-10-30T00:00:00Z", html_url: `https://github.com/${REPO}/issues/1`, user: { login: "test-player" }, author_association: "OWNER" });
     if (path === `/repos/${REPO}/issues/1/comments`) return Response.json([]);
+    if (path === `/repos/${REPO}/pulls/99/files`) return Response.json([{ filename: "docs/faq.md", status: "added", additions: 3, deletions: 0, changes: 3, patch: "@@ -0,0 +1,3 @@\n+# FAQ\n+\n+Ask away." }]);
     if (path === `/repos/${REPO}/pulls/99/merge`) { merges++; return Response.json({ merged: true, sha: "d".repeat(40) }); }
     if (path === `/repos/${REPO}/pulls/99`) return Response.json({ number: 99, base: { ref: "main", sha: BASE }, head: { sha: HEAD }, state: merges ? "closed" : "open", merged: merges > 0, draft: false, mergeable: true, mergeable_state: "clean" });
     if (path.endsWith("/check-runs")) return Response.json({ total_count: 1, check_runs: [{ name: "CI", app: { id: 15368 }, head_sha: HEAD, status: "completed", conclusion: "success" }] });
@@ -180,13 +181,13 @@ describe("the $5/day account cap, hit mid-loop", () => {
     // The deck: one calm card, last, that says $5, 00:00 UTC, and that reviewing and shipping still work.
     const card = f.deck().find(m => m.id === "planner-rest")!;
     expect(card.title).toBe("Shippy is done thinking for today");
-    expect(card.why).toBe("This account used today's five dollars of AI. He's back at 00:00 UTC. You can keep reviewing and shipping.");
+    expect(card.why).toBe("This account used today's five dollars of AI. He's back at 00:00 UTC. You can keep shipping what's ready.");
     expect(card.plan).toEqual([new Date(nextMidnight()).toISOString()]);
     expect(f.deck().at(-1)?.id).toBe("planner-rest");
     expect(f.deck().filter(m => m.id === "planner-rest")).toHaveLength(1);
     // The planner's own note (the brain panel) carries the exact account line: $5, 00:00 UTC, reviews and merges.
     expect(f.saved().brain?.thoughts.some(t => t.by === "fallback" && t.itemId === "gh-1" && t.reason.includes(ACCOUNT_CAP_LINE))).toBe(true);
-    expect(ACCOUNT_CAP_LINE).toBe("Shippy is done thinking for today: this account used its five dollars of AI for the day. He's back at 00:00 UTC. The deck, reviews and merges keep working.");
+    expect(ACCOUNT_CAP_LINE).toBe("Shippy is done thinking for today: this account used its five dollars of AI for the day. He's back at 00:00 UTC. The deck, checks and shipping keep working; Review waits for him.");
     for (const text of [card.title, card.why, ...f.logs().map(l => l.text)]) plain(text);
 
     // Ticks, deck refreshes, a resumed plan pass and another Plan tap: still no model call.
@@ -222,6 +223,23 @@ describe("the $5/day account cap, hit mid-loop", () => {
       const days = await f.sqlite.prepare("SELECT day, COUNT(*) AS n FROM spark_factory_calls WHERE account = 'user:1' GROUP BY day ORDER BY day").all<{ day: string; n: number }>();
       expect(days.results).toEqual([{ day: utcDay(Date.parse(new Date(tomorrow - 86400000).toISOString())), n: 1 }, { day: utcDay(tomorrow), n: 1 }]);
     } finally { resumed.mockRestore(); clock.mockRestore(); }
+  });
+
+  it("while Shippy rests, Review says it's paused and when it runs, and the PR waits at Review instead of failing", async () => {
+    const f = await capsFactory();
+    await f.spent("user:1", REPO, 4.999);
+    const internal = f.internal as unknown as { state: FactoryState; runGauntlet(target?: Item): Promise<Item | undefined> };
+    let waiting: Item = { ...internal.state.items.find(i => i.id === "gh-3")!, state: "inspecting", inspection: freshInspection(HEAD) };
+    for (const gate of ["ci", "verify"] as const) waiting = setStage(waiting, gate, "passed", "passed");
+    internal.state.items = internal.state.items.map(i => i.id === "gh-3" ? waiting : i);
+    await internal.runGauntlet(waiting);
+    await f.internal.broadcastQueue;
+    expect(f.model).toEqual([]);
+    const line = f.logs().find(l => l.itemId === "gh-3" && l.text.startsWith("Review is paused"))?.text;
+    expect(line).toBe("Review is paused: Shippy is done thinking for today. PR #99 gets reviewed at 00:00 UTC, on its own.");
+    plain(line!);
+    expect(f.logs().some(l => /keep working|Station is waiting/.test(l.text))).toBe(false);
+    expect(internal.state.items.find(i => i.id === "gh-3")?.inspection?.stages.find(st => st.gate === "ai")?.state).toBe("pending");
   });
 
   it("while Shippy rests no Plan card is dealt, a forced start says the cap in plain words, and Plan comes back at 00:00 UTC", async () => {
@@ -294,11 +312,11 @@ describe("the $50/day site cap", () => {
     expect(rest.reason).toBe(`Site daily dollar budget reached. ${SITE_CAP_LINE}`);
     const card = f.deck().find(m => m.id === "planner-rest")!;
     expect(card.title).toBe("Shippy is done thinking for today");
-    expect(card.why).toBe("Shiptorio used today's AI for everyone. He's back at 00:00 UTC. You can keep reviewing and shipping.");
+    expect(card.why).toBe("Shiptorio used today's AI for everyone. He's back at 00:00 UTC. You can keep shipping what's ready.");
     // Never the account's $5: this player didn't spend it.
     for (const text of [card.title, card.why, rest.reason, SITE_CAP_LINE, ...f.logs().map(l => l.text)]) { expect(text).not.toContain("$5"); expect(text).not.toMatch(/this account/i); plain(text); }
     expect(SITE_CAP_LINE).toContain("00:00 UTC");
-    expect(SITE_CAP_LINE).toContain("reviews and merges keep working");
+    expect(SITE_CAP_LINE).toContain("checks and shipping keep working");
     expect(f.saved().brain?.thoughts.some(t => t.by === "fallback" && t.reason.includes(SITE_CAP_LINE))).toBe(true);
 
     for (let n = 0; n < 3; n++) { await f.internal.refreshDecisions(); await f.internal.planRunnerJobs(); }

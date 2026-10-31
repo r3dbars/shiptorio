@@ -2906,7 +2906,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (e instanceof BudgetError || e instanceof RateLimitError || e instanceof RepositoryReadUnavailable) {
         const limit = e instanceof RepositoryReadUnavailable ? e.cause : e;
         if (limit instanceof RateLimitError) this.githubRest(limit.retryAt);
-        this.log("warn", `Station is waiting (${e.message}). It picks up again on its own.`, item.id);
+        // Say what is actually waiting, in player words: the AI cap pauses Review (not "reviews keep working"), GitHub's limit pauses the read.
+        const station = gate === "ai" ? "Review" : "Checks";
+        this.log("warn", e instanceof BudgetError ? `${station} is paused: Shippy is done thinking for today. PR #${pr} gets ${gate === "ai" ? "reviewed" : "checked"} at 00:00 UTC, on its own.`
+          : `${station} is waiting on GitHub for a moment. PR #${pr} picks up again on its own.`, item.id);
         return; // Keep pending proof; resource waiting is not a failed code review.
       }
       if (gate === "ai" && plannerBusy(await this.plannerRest()) && plannerBusy({ kind: planningFailureKind(e) })) {

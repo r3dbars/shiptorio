@@ -535,11 +535,14 @@ describe("the live loop from a scripted socket feed", () => {
     const live = await liveDeck();
     live.deck(deck);
     const view = live.settle();
-    const why = who === "account" ? "This account used today's five dollars of AI. He's back at 00:00 UTC. You can keep reviewing and shipping."
-      : "Shiptorio used today's AI for everyone. He's back at 00:00 UTC. You can keep reviewing and shipping.";
+    const why = who === "account" ? "This account used today's five dollars of AI. He's back at 00:00 UTC. You can keep shipping what's ready."
+      : "Shiptorio used today's AI for everyone. He's back at 00:00 UTC. You can keep shipping what's ready.";
     expect(view.card).toMatchObject({ id: "planner-rest", title: "Shippy is done thinking for today", line: `Shippy: ${why}`, dots: null, hold: false, setup: false, guide: undefined });
     expect(view.jam).toBeNull();
     expect(Object.values(lamps(view))).not.toContain("red");
+    // yellow means waiting on you: a resting Shippy asks nothing, so no station glows for his card
+    expect((view as { attention?: string[] }).attention).toEqual([]);
+    expect(Object.values(lamps(view))).not.toContain("yellow");
     const { mountCard } = await import("../src/deck2d/card/card");
     const host = document.createElement("div");
     document.body.append(host);
