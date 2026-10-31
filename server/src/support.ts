@@ -5,12 +5,12 @@
 
 import type { Item, Move, SupportDraft, SupportKind, SupportTicket } from "@shiptorio/shared";
 import type { SupportCreds, SupportEnv, SupportMessage } from "./sources/support";
+import { sha256Hex } from "./encode";
 
 const KEEP = 60;
 
 export async function draftHash(ticketId: string, text: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${ticketId}\n${text}`));
-  return [...new Uint8Array(digest)].slice(0, 12).map((b) => b.toString(16).padStart(2, "0")).join("");
+  return (await sha256Hex(`${ticketId}\n${text}`)).slice(0, 24);
 }
 
 export async function makeDraft(ticketId: string, text: string, purpose: SupportDraft["purpose"], by: SupportDraft["by"], at = Date.now()): Promise<SupportDraft> {
@@ -19,8 +19,7 @@ export async function makeDraft(ticketId: string, text: string, purpose: Support
 }
 
 export async function ticketId(m: Pick<SupportMessage, "channel" | "threadId">): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${m.channel}\n${m.threadId}`));
-  return `sup-${[...new Uint8Array(digest)].slice(0, 6).map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+  return `sup-${(await sha256Hex(`${m.channel}\n${m.threadId}`)).slice(0, 12)}`;
 }
 
 /** A new message opens a ticket or wakes its thread back up (a fresh triage and draft). Same message twice is a no-op. */

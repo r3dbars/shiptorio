@@ -4,6 +4,7 @@ import { makeSessionCookie, readSession } from "./session";
 import { gatePage } from "./gate-page";
 import { boundedBody } from "./webhook-body";
 import { hmacSigningKey } from "./hmac-key";
+import { escapeHtml, toHex } from "./encode";
 
 export interface AccessEnv {
   APP_PASSWORD?: string;
@@ -14,7 +15,6 @@ export interface AccessEnv {
 
 const COOKIE = "shiptorio_access";
 const headers = { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "frame-ancestors 'none'; base-uri 'none'; form-action 'self'", "x-content-type-options": "nosniff" };
-const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 /** The docs site (/docs/*): static pages about how the game works, no factory data. */
 export const isPublicDocs = (path: string) => path === "/docs" || path.startsWith("/docs/");
@@ -40,8 +40,7 @@ const FORM_TTL = 600_000;
 async function formSignature(secret: string, origin: string, payload: string): Promise<string> {
   const enc = new TextEncoder();
   const key = await hmacSigningKey(secret);
-  const bytes = new Uint8Array(await crypto.subtle.sign("HMAC", key, enc.encode(`preview-form:${origin}:${payload}`)));
-  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return toHex(await crypto.subtle.sign("HMAC", key, enc.encode(`preview-form:${origin}:${payload}`)));
 }
 async function gate(request: Request, secret: string, error = "", next = "/", status = 401): Promise<Response> {
   const payload = `${Date.now() + FORM_TTL}.${crypto.randomUUID()}`;

@@ -6,6 +6,7 @@
 // that contract landing; once it's on main, swap TapSignal for the shared type.
 
 import { loadTaps, type TapRow } from "../taps";
+import { plural } from "../encode";
 
 export interface TapSignal {
   id: string;
@@ -23,7 +24,6 @@ export interface TapSignal {
 
 const WEEK = 7 * 86400000, FRESH = 30 * 60000, STALE_OPEN = 86400000;
 const id = (kind: string, scope?: string) => `taps:${kind}:${scope ?? "repo"}`;
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /** One factory's taps from the last week (any order) → at most a few signals, heaviest first. */
 export function tapSignals(rows: readonly TapRow[], now: number): TapSignal[] {

@@ -2,7 +2,8 @@ import { LAUNCH, type ArtLoader, type CreateLayer, type DeckBus, type DeckLayer,
 import { pixelOn } from "../../flags";
 import type { Preview } from "./preview";
 import { createPixelLaunch } from "./px";
-import { LAUNCH_BUILD_SECONDS, clamp01, crossed, easeBack, easeInOut, easeOut, phaseAt, span, through } from "./timeline";
+import { LAUNCH_BUILD_SECONDS, crossed, easeBack, easeInOut, phaseAt, through } from "./timeline";
+import { clamp01, easeOut, span } from "../engine/math";
 
 // launch/: you earn the rocket. The island rises out of the clouds, a bridge is laid out to it from the deck, a
 // launch tower goes up on its ring, and the first rocket is lowered in on the tower's hook. Driven by

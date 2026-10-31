@@ -15,6 +15,7 @@
 import { ART_PX, PALETTE, snap, type ArtLoader, type CreateLayer, type DeckBus, type DeckLayer, type DeckView, type LayerSlot, HULL } from "../contract";
 import { pixelOn } from "../../flags";
 import { hullCols } from "../props/width";
+import { clamp01, easeOut } from "../engine/math";
 
 export type DeckSize = "small" | "medium" | "large";
 export type GrowPhase = "beams" | "plates" | "rocks" | "rails" | "glow" | "done";
@@ -49,8 +50,6 @@ const FINISH: readonly [number, number] = [2.0, 2.4]; // stage art settles into 
 const STAGE_ART = [0, 1, 2, 3].flatMap((i) => [`grow-section-${i}`, `grow-rock-${i}`, `grow-seam-${i}`]);
 const PHASES = Object.keys(T) as Exclude<GrowPhase, "done">[];
 
-const clamp01 = (t: number) => Math.max(0, Math.min(1, t));
-const easeOut = (t: number) => 1 - (1 - t) ** 3;
 const easeBack = (t: number) => 1 + 2.7 * (t - 1) ** 3 + 1.7 * (t - 1) ** 2;
 const span = (t: number, [a, b]: readonly [number, number]) => clamp01((t - a) / (b - a));
 /** Item i of n inside window w, each item taking `len` of the window, left to right. */

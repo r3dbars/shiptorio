@@ -1,6 +1,6 @@
 import { ironPage } from "./ironPage";
 import type { User, RepoRow } from "./accounts";
-export const esc = (s: string) => s.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
+import { escapeHtml as esc } from "./encode";
 export function accountPage(title: string, body: string): string {
   // Black Iron document plate (ironPage.ts); each <section> is an inset sub-plate.
   return ironPage({ title, doc: true, nav: `<a href="/settings">Settings</a>`, head: `<meta name="referrer" content="same-origin">`,

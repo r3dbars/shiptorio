@@ -10,6 +10,7 @@ import { clearGuestCookie, mergeGuest } from "./guests";
 import { sameOriginPath } from "./redirect";
 import type { Env } from "./index";
 import { ironPage } from "./ironPage";
+import { escapeHtml } from "./encode";
 
 // ---- login (GitHub App user-to-server OAuth) ----
 
@@ -136,7 +137,6 @@ export function appManifest(publicUrl: string) {
   };
 }
 
-const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 // A failed GitHub round trip lands on an iron plate with one way back in, not a bare text line.
 function signInJam(title: string, detail: string, status: number): Response {

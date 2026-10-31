@@ -9,6 +9,7 @@ import { githubLease } from "./github-concurrency";
 // GitHub App auth + webhook verification, using only WebCrypto so it runs on Workers.
 import { isOwnPlanComment, normalizeGitHub, TRUST_LABEL, trustedAuthor, type GitHubIssue, type GitHubPayload } from "./sources/github";
 import type { Signal } from "./sources/types";
+import { sha256Hex } from "./encode";
 
 const API = "https://api.github.com";
 const UA = "shiptorio";
@@ -92,8 +93,7 @@ interface TokenEntry { token: string; expiresAt: number; installationId: number;
 const tokenCache = new Map<string, TokenEntry>();
 const tokenOwners = new Map<string, Omit<TokenEntry, "token">>();
 async function tokenFingerprint(token: string) {
-  const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(token)));
-  return [...hash].map(byte => byte.toString(16).padStart(2, "0")).join("");
+  return sha256Hex(token);
 }
 const pendingTokens = new Map<string, Promise<string>>();
 const distrusted = new Set<number>();
@@ -129,8 +129,7 @@ function withDeadline<T>(work: Promise<T>): Promise<T> {
   return Promise.race([work, late]).finally(() => clearTimeout(timer));
 }
 async function credentialKey(token: string) {
-  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
-  return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, "0")).join("");
+  return sha256Hex(token);
 }
 function boundedSet<K, V>(map: Map<K, V>, key: K, value: V) {
   if (map.size >= 500 && !map.has(key)) map.delete(map.keys().next().value!);

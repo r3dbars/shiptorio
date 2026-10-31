@@ -1,6 +1,7 @@
 import { ART_PX, DECK_DX, LAUNCH, PALETTE, type ArtLoader, type DeckBus, type DeckLayer, type DeckView, type LayerSlot } from "../contract";
 import type { Preview } from "./preview";
-import { LAUNCH_BUILD_SECONDS, clamp01, crossed, easeInOut, easeOut, phaseAt, span, through } from "./timeline";
+import { LAUNCH_BUILD_SECONDS, crossed, easeInOut, phaseAt, through } from "./timeline";
+import { clamp01, easeOut, span } from "../engine/math";
 import { FLIGHT, flightPose, FLIGHT_SECONDS } from "./flight";
 
 // launch/ on the pixel deck (?px=1, contract "the pixel canvas"). Same timeline and events as index.ts, drawn at

@@ -8,6 +8,7 @@
 
 import { ART_PX, BELT_Y, LOOK, PALETTE as P, STOP_X, type StopId, type StopState } from "../contract";
 import { STAGE_AT } from "./timeline";
+import { clamp01, easeOut, span } from "../engine/math";
 
 export type DrawStation = (ctx: CanvasRenderingContext2D, id: StopId, state: StopState, t?: number) => void;
 type StationsModule = { drawStation?: DrawStation; stationSize?: (id: StopId) => { w: number; h: number } };
@@ -23,9 +24,6 @@ const heightOf = (stop: StopId) => Object.values(stations)[0]?.stationSize?.(sto
 export const SLOT_PX = 22;
 const H = 38; // a station's height, art px
 
-const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
-const span = (t: number, a: number, b: number) => clamp01((t - a) / (b - a));
-const easeOut = (t: number) => 1 - (1 - t) ** 3;
 const easeIn = (t: number) => t * t * t;
 
 // ---------- the pen: art px, anchored at a stop's feet (x right, y up is negative) ----------
