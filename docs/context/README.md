@@ -18,6 +18,7 @@ When you learn or decide something that will matter tomorrow, add it to the righ
 | File | What it is |
 | --- | --- |
 | [demo-script.md](demo-script.md) | The 2-minute demo video: shots and voiceover |
+| [tutorial-script.md](tutorial-script.md) | Shippy's guided opening, card by card |
 | [codex-deck-handoff.md](codex-deck-handoff.md) | How Codex works on the deck |
 | [threads.md](threads.md) | Log of what each Claude thread and Codex task did |
 | [decisions.md](decisions.md) | Dated cleanup decisions, branch deletions and PR/issue closures |
@@ -43,6 +44,7 @@ When you learn or decide something that will matter tomorrow, add it to the righ
 | [encrypted-credentials.md](encrypted-credentials.md) | How mine credentials are stored |
 | [ops.md](ops.md) | Diagnostics, Sentry, backup and recovery |
 | [docs-site.md](docs-site.md) | The public docs site at /docs |
+| [cold-load.md](cold-load.md) | First-load timing on a throttled phone, and how it's measured |
 | [landing.md](landing.md) | Deck entry, preview access and the retained production landing page |
 
 ## Parked (code still exists, not in the demo)
