@@ -121,7 +121,7 @@ describe("the 2D deck's view of a factory", () => {
 
   test("human approvals request attention without marking the machine as broken", () => {
     const v = deckView(base({ items: [item("a", "queued")], deck: [card("idea", "research"), card("plan", "plan_runner_job", { learn: { have: 1, need: 3 } })] }), { now: 1e12 });
-    expect(v.card).toMatchObject({ id: "plan", stop: "planner", dots: { have: 1, need: 3 }, line: "Approve 2 more like this and then it's automatic.", hold: false, waitingCards: 2, attention: "approve" });
+    expect(v.card).toMatchObject({ id: "plan", stop: "planner", dots: { have: 1, need: 3 }, line: "Approve 2 more like this and it's automatic.", hold: false, waitingCards: 2, attention: "approve" });
     expect(v.jam).toBeNull();
     expect(v.attention).toContain("planner");
     expect(stop(v, "planner")).toMatchObject({ state: "idle", items: [{ id: "a", look: "wait" }] }); // yellow: waiting on your call
@@ -292,7 +292,7 @@ test("on the simulator: it waits on your call, swipe and it moves, three yeses a
     expect(after.card?.id).not.toBe(v.card.id);
     if (!after.stops.find((x) => x.id === "builder")!.automated) expect(after.shippy).toEqual({ pose: "lever", at: v.card.stop });
   }
-  expect(builds.slice(0, 3)).toEqual(["Build the fix: await the payment intent before enabling the button.", "Approve 2 more like this and then it's automatic.", "Approve 1 more like this and then it's automatic."]);
+  expect(builds.slice(0, 3)).toEqual(["Build the fix: await the payment intent before enabling the button.", "Approve 2 more like this and it's automatic.", "Approve 1 more like this and it's automatic."]);
   // beat 4: the builder runs on its own now, and Shippy is happy about it
   advance(1300);
   const v = src.view();

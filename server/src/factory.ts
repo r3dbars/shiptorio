@@ -1748,7 +1748,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           await this.accountPut(`failed:${key}`, { ...delivery, attempts });
           await this.ctx.storage.delete(key);
           this.log("error", "Webhook retries exhausted; payload retained for operator replay.");
-          if (this.state) await this.publishDecision({ id: `failed:${key}`, title: "A source delivery needs attention", why: "Five processing attempts failed. The payload is retained for operator replay.", stage: "intake", kind: "unblock", createdAt: Date.now(), options: [{ id: "later", label: "Look later", recommended: true, actions: [] }] });
+          if (this.state) await this.publishDecision({ id: `failed:${key}`, title: "An incoming update didn't go through", why: "It failed five times in a row. It's saved so it can be replayed.", stage: "intake", kind: "unblock", createdAt: Date.now(), options: [{ id: "later", label: "Look later", recommended: true, actions: [] }] });
           continue;
         }
         await this.accountPut(key, { ...delivery, attempts, nextAt: Date.now() + Math.min(600000, 5000 * 2 ** Math.min(attempts, 7)) * (0.5 + Math.random()) });
@@ -3827,7 +3827,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   private async reliabilityFailure(operation: string, error: unknown, itemId?: string): Promise<void> {
     this.log("error", `${operation}: ${String(error)}`, itemId);
     await this.accountPut(`reliabilityFailure:${operation}`, { at: Date.now(), error: String(error).slice(0, 500), itemId });
-    if (this.state && this.meta) await this.publishDecision({ id: `reliability:${operation}`, itemId, title: "Factory work needs attention", why: `${RELIABILITY_WORDS[operation.split(":")[0] as keyof typeof RELIABILITY_WORDS] ?? "Background work"} failed. Check the connection or worker before trying again.`, stage: "inspect", kind: "unblock", createdAt: Date.now(), options: [{ id: "later", label: "Look later", recommended: true, actions: [] }] });
+    if (this.state && this.meta) await this.publishDecision({ id: `reliability:${operation}`, itemId, title: "Factory work needs attention", why: `${RELIABILITY_WORDS[operation.split(":")[0] as keyof typeof RELIABILITY_WORDS] ?? "Background work"} failed. Check your connections and engine, then try again.`, stage: "inspect", kind: "unblock", createdAt: Date.now(), options: [{ id: "later", label: "Look later", recommended: true, actions: [] }] });
   }
 
   private async watchdog(): Promise<void> {

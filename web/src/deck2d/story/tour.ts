@@ -111,7 +111,7 @@ export function createTour(): Tour {
   }
 
   function card(): CardView | null {
-    if (S.end) return { id: STORY_CARD.connect, title: "Want to build yours?", line: "The other islands are coming soon. For now, sign in with GitHub and I'll start your factory floor on your real repo.", stop: "repo", dots: null, yes: "Build mine", no: "Replay", setup: true, guide: "shippy" }; // a plain card: its press leaves the page
+    if (S.end) return { id: STORY_CARD.connect, title: "Want to build yours?", line: "The other islands are coming soon. Sign in with GitHub and I'll build your factory on your real repo.", stop: "repo", dots: null, yes: "Build mine", no: "Replay", setup: true, guide: "shippy" }; // a plain card: its press leaves the page
     if (S.playing) return null;
     const b = TOUR[S.beat];
     // Ship it is a real yes on real-looking work, so it shows like one (held); the rest are Shippy talking in the card.

@@ -23,7 +23,7 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
   let noticeTimer: ReturnType<typeof setTimeout> | undefined;
   let notice: HTMLElement | undefined;
   let decisionTimer: ReturnType<typeof setTimeout> | undefined;
-  const warnDecision = (reason: "changed" | "unconfirmed") => onMessage({type:"log", level:"warn", text:reason === "unconfirmed" ? "Your decision could not be confirmed. Check the current factory state and try again." : "The available decision changed. Review the current card before trying again.", at:Date.now()});
+  const warnDecision = (reason: "changed" | "unconfirmed") => onMessage({type:"log", level:"warn", text:reason === "unconfirmed" ? "That didn't go through. Check the card and try again." : "This card just changed. Take another look, then try again.", at:Date.now()});
   const outbox = new DecisionOutbox(warnDecision);
   const watchDecisions = () => {
     if (closed || !outbox.hasPending) { clearTimeout(decisionTimer); decisionTimer = undefined; return; }

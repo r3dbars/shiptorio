@@ -184,7 +184,7 @@ Classified from `web/src/ui`, `web/src/App.tsx`, `web/src/sound` and the server 
 | Stuck: work exceeded its waiting limit | `reliability.ts` | **Steer**, after the 2 min hold |
 | Plug in Claude or ChatGPT | `factory.ts` resources card | **Steer** when work is waiting; else Suggested |
 | Bottleneck: review the jam | `deck.ts impliedBottleneckMove` | **Steer** only if the jam is on the player (merge gate, no builder); else ambient on the map |
-| A source delivery needs attention | `factory.ts` failed webhook | **Cut** from the deck, goes to ops |
+| An incoming update didn't go through | `factory.ts` failed webhook | **Cut** from the deck, goes to ops |
 | Factory work needs attention | `factory.ts` reliability op | **Cut** to ops, unless the player can fix it (then Steer) |
 | Research X? | `gauntlet.ts researchMove` | **Suggested** |
 | File a customer's bug as an issue? | `support.ts` | **Suggested** |
