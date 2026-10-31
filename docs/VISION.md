@@ -145,8 +145,8 @@ New high-level goals from Justin go here, dated, then get folded into the sectio
 - 2026-10-27 20:06: **Build as you go.** The dimmed tour look becomes how the game starts: camera parked, nothing
   exists until you build it, and eight builds (repo tunnel, AI boiler, builder, first issue, planner, build, checks,
   launch pad) rise in 5 to 8 animated seconds each, burst online with electricity and stamp themselves done while a
-  real first issue rides through. Behind `?buildout=1` until Justin has played it. Contract:
-  `web/src/buildout/CONTRACT.md`; plan https://claude.ai/artifact/T6puBBYVnZiFaBiqephirN.
+  real first issue rides through. Behind `?buildout=1` until Justin has played it. Contract (retired with
+  the React app in #722); plan https://claude.ai/artifact/T6puBBYVnZiFaBiqephirN.
 - 2026-10-28: The story is locked (belief before setup, four beats). The 2D pixel deck wins the art bake-off; the
   3D deck and the shaft are parked. Web app only. Shippy is the only character.
 - 2026-10-29: The 2D deck is permanent and is the whole product, including sign-in, repo pick and agent connection.

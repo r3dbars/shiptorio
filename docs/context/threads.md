@@ -1,4 +1,8 @@
-# Claude project threads (as of 2026-10-26 ~20:40 UTC)
+# Claude and Codex thread log
+
+Newest entries near the top. Dated cleanup decisions live in [decisions.md](decisions.md).
+
+- 2026-10-31 Claude ("Clean up the GitHub repo"): removed the stray root `design-qa.md` (Foundry-era QA note) and the unused `prototypes/landing` workshop (the landing page is gone, `/` opens the deck); fixed a dead `web/src/buildout` reference in VISION.md.
 
 - 2026-10-30 Codex security: local-model source reads and whole-file edits use the existing credential-free verification sandbox, with bounded regular-file snapshots and unchanged-source checks before writing.
 
