@@ -132,6 +132,9 @@ const LOST_CLAIM_MS = 45_000;
 // Local runner planning/publication currently requires a real GitHub issue.
 const runnerIssue = (item: Item) => item.source === "github_issue" && /^gh-\d+$/.test(item.id);
 const proposesPlan = (move: Move) => move.options.some(o => o.actions.some(a => a.tool === "plan_runner_job"));
+/** The one plan slot belongs to new work. A send-back's "Try again" re-plans an item already at Gate; leaving it
+ * undecided (a dead "#57 failed twice") must not stop every other issue from getting its Plan card. */
+const holdsPlanSlot = (move: Move) => proposesPlan(move) && !move.options.some(o => o.id.startsWith("rework-"));
 const MINE_KIND: Record<Signal["source"], SourceKind | undefined> = { github_issue: "github", sentry: "sentry", posthog: "posthog", inbox: undefined, lint: undefined };
 // Where each mine's ore deposit sits on the live map, left of the splitter.
 const DEPOSIT_Y: Record<MineKind, number> = { sentry: -3, posthog: 3 };
@@ -437,7 +440,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     });
     // One plan card at a time, the oldest first (older factories dealt one per queued issue).
     let planCard = false;
-    this.openMoves = this.openMoves.filter(m => !proposesPlan(m) || suppressed(this.deckBook!, m) || (planCard ? false : (planCard = true)));
+    this.openMoves = this.openMoves.filter(m => !holdsPlanSlot(m) || suppressed(this.deckBook!, m) || (planCard ? false : (planCard = true)));
     this.openMoves = this.openMoves.filter(m => !m.id.startsWith("bottleneck:") || m.id === `bottleneck:${s.bottleneck?.stationId ?? s.bottleneck?.stage}`);
     const impliedMove = this.openMoves.find(m => m.id.startsWith("bottleneck:"));
     // docs/ATTENTION.md: behind the flag, the player's Continues in a row lift that class of card a little.
@@ -1014,7 +1017,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const presence = await this.ctx.storage.get<{ harnesses: RunnerJob["harness"][]; seenAt: number }>("runnerPresence");
     if (!presence || Date.now() - presence.seenAt > 20000) return;
     // One plan card at a time: the next issue is dealt once this one is planned, built or set aside.
-    if (s.deck?.some(proposesPlan)) return;
+    if (s.deck?.some(holdsPlanSlot)) return;
     await this.decisionData();
     const parked = new Set(this.openMoves!.filter(m => proposesPlan(m) && suppressed(this.deckBook!, m)).map(m => m.itemId));
     // A base update is a separate explicit plan, never an automatic rework or a Launch shortcut.
