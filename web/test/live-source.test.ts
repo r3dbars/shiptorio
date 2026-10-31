@@ -240,6 +240,46 @@ describe("quiet resync", () => {
   }));
 });
 
+describe("a session that ends while the deck is open", () => {
+  // Real timers must not leak: the harness swaps globals, so only microtasks (the session check) run between steps.
+  const settle = () => new Promise<void>(resolve => queueMicrotask(() => queueMicrotask(resolve)));
+  it("stops the endless Reconnecting… and offers a sign-in link once two upgrades are refused while signed out", async () => {
+    const h = harness();
+    try {
+      let checks = 0;
+      const source = connectLive("r3dbars/shiptorio", msg => h.messages.push(msg), status => h.statuses.push(status), async () => { checks++; return true; });
+      h.sockets[0].open(); sync(h.sockets[0]);
+      h.sockets[0].close(); // the cookie is gone: the next upgrades are refused before they open
+      h.advance(250); (h.sockets[1] as any).onerror();
+      expect(checks).toBe(0); // one refusal is a blip, not a sign-out
+      h.advance(500); (h.sockets[2] as any).onerror();
+      await settle();
+      expect(checks).toBe(1);
+      const notice = [...h.notices][0] as { textContent: string; href: string };
+      expect(notice.textContent).toContain("Sign in again");
+      expect(notice.href).toStartWith("/auth/login?next=");
+      expect(h.statuses.at(-1)).toBe("offline");
+      const sockets = h.sockets.length;
+      h.advance(60_000);
+      expect(h.sockets).toHaveLength(sockets); // no more retries against a refused session
+      source.close();
+      expect(h.notices.size).toBe(0);
+    } finally { h.restore(); }
+  });
+  it("keeps reconnecting when the refusals are a network problem, not a sign-out", async () => {
+    const h = harness();
+    try {
+      const source = connectLive("r3dbars/shiptorio", msg => h.messages.push(msg), status => h.statuses.push(status), async () => false);
+      (h.sockets[0] as any).onerror(); h.advance(250); (h.sockets[1] as any).onerror();
+      await settle();
+      h.advance(1000);
+      expect(h.sockets.length).toBeGreaterThan(2);
+      expect(h.statuses).not.toContain("offline");
+      source.close();
+    } finally { h.restore(); }
+  });
+});
+
 
 it("coalesces simultaneous return signals but replaces a handshake that crossed an outage", () => transportTest(h => {
   const source = h.connect(); h.sockets[0].open(); sync(h.sockets[0]);
