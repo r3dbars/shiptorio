@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { calmSounds, freshCalm, ROUTINE_GAP_MS, SAME_GAP_MS } from "../src/sound/calm";
+import { calmSounds, freshCalm, ROUTINE_GAP_MS, SAME_GAP_MS } from "../src/deck2d/sound/calm";
 
 test("big moments always play, routine sounds thin to one per beat", () => {
   const mem = freshCalm();

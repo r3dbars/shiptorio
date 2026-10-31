@@ -1,4 +1,5 @@
 import { ShiptorioError } from "./errors";
+import { sha256Hex } from "./encode";
 /** Retry-After accepts delta seconds or an HTTP date. Never retry before the server's deadline. */
 export function retryAfterMs(value: string | null, now = Date.now(), fallback = 60000): number {
   if (!value) return fallback;
@@ -49,9 +50,7 @@ export async function consumeBudget(storage: Storage, budget: Budget, now = Date
 
 interface LimiterEnv { FACTORY: { idFromName(name: string): DurableObjectId; get(id: DurableObjectId): { securityLimit(budget: Budget): Promise<LimitResult> } } }
 export async function securityObjectName(subject: string): Promise<string> {
-  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(subject));
-  const hash = [...new Uint8Array(bytes)].map(b => b.toString(16).padStart(2, "0")).join("");
-  return `security:${hash}`;
+  return `security:${await sha256Hex(subject)}`;
 }
 
 export async function rateLimit(env: LimiterEnv, subject: string, budget: Budget): Promise<LimitResult> {

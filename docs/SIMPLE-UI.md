@@ -82,7 +82,7 @@ Same picks page, db doc `picks/journey3`.
 - **After your last card:** zoom out over the whole factory, "All caught up. N things moving." Following your own
   PRs through the factory is its own thread ("Follow your work through the factory").
 - **Mac setup card:** "Your Mac writes the code" (why first). **Lamp:** just the lamp, no words (#474).
-- **Dots meter:** "Approve 2 more like this and then it's automatic" (`LearnDots`, #480).
+- **Dots meter:** "Approve 2 more like this and it's automatic" (`LearnDots`, #480).
 
 ## Follow your work (round 3 pick 8, thread "Follow your work through the factory")
 

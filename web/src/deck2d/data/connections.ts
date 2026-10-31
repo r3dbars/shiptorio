@@ -42,7 +42,7 @@ export function createConnections(o: Options) {
         } catch { /* Keep the original authentication error when readiness is unavailable. */ }
         if (!configured) { login = false; throw new Error('GitHub setup is not finished on this server. The factory owner must connect its GitHub App before anyone can sign in.'); }
       }
-      throw new Error(response.status === 401 ? 'Sign in with GitHub to connect your repository.' : response.status === 403 ? 'Access is unavailable. Check that the GitHub App is installed on this repo and that you have permission.' : 'Could not reach the factory. Try again.');
+      throw new Error(response.status === 401 ? 'Sign in with GitHub to connect your repository.' : response.status === 403 ? "Shippy can't open this repo. Check that the GitHub App is installed on it and you have access." : 'Could not reach the factory. Try again.');
     }
     return response.json() as Promise<T>;
   }
@@ -82,7 +82,7 @@ export function createConnections(o: Options) {
         const data = await json<RunnerStatus>(`${api}/runner/status`);
         if (current === revision) status = data;
       }
-    } catch (e) { if (current === revision) error = e instanceof Error ? e.message : 'Could not load connection.'; }
+    } catch (e) { if (current === revision) error = e instanceof Error ? e.message : "Couldn't load this. Try Refresh."; }
     finally { if (current === revision) { busy = false; refreshing = false; nextPoll = now() + (target === 'setup' ? 2000 : 5000); } }
     if (current !== revision || error || !status?.online || (target !== 'power' && target !== 'setup')) return;
     // The runner just came online: no Check, no See issues. Show the first issue, or the one fix the engine still needs.
@@ -157,8 +157,8 @@ export function createConnections(o: Options) {
           if (generation !== revision) return true;
           const url = me.installUrl ? new URL(me.installUrl) : null;
           if (url?.origin === 'https://github.com' && url.pathname.startsWith('/apps/')) o.navigate(url.href);
-          else error = 'GitHub App setup is unavailable. Ask the factory owner to finish setup.';
-        } catch (e) { if (generation === revision) error = e instanceof Error ? e.message : 'Could not open GitHub setup'; }
+          else error = "GitHub isn't set up on this server yet. Ask the factory owner to finish setup.";
+        } catch (e) { if (generation === revision) error = e instanceof Error ? e.message : "Couldn't open GitHub. Try again."; }
         finally { if (generation === revision) busy = false; }
       }
     } else if (pane === 'issues') {
@@ -168,7 +168,7 @@ export function createConnections(o: Options) {
       try {
         await json(`${api}/issues/${issue.number}/start`, { method: 'POST' });
         if (generation === revision) { o.onStart?.(`gh-${issue.number}`); pane = null; revision++; }
-      } catch (e) { if (generation === revision) error = e instanceof Error ? e.message : 'Could not start this issue.'; }
+      } catch (e) { if (generation === revision) error = e instanceof Error ? e.message : "Couldn't start this issue. Try again."; }
       finally { busy = false; }
     } else if (pane === 'power' && !status?.paired) {
       // One tap: ask for the join code and copy the line in the same click (the clipboard needs this tap).
@@ -180,7 +180,7 @@ export function createConnections(o: Options) {
         if (generation !== revision) return true;
         command = runnerInstallCommand(o.origin, ticket.join); expires = ticket.expires; copied = ok; copyFailed = !ok;
         pane = 'setup'; onboarding = true; nextPoll = now() + 2000; busy = false; revision++;
-      } catch (e) { if (generation === revision) error = e instanceof Error ? e.message : 'Setup failed'; }
+      } catch (e) { if (generation === revision) error = e instanceof Error ? e.message : "Couldn't make the setup line. Try again."; }
       finally { if (generation === revision) busy = false; }
     } else if (pane === 'setup') {
       if (expires <= now()) { pane = 'power'; revision++; await refresh(); }
@@ -188,7 +188,7 @@ export function createConnections(o: Options) {
     } else if (pane === 'disconnect') {
       busy = true;
       try { await json(`${api}/runner/disconnect`, { method: 'POST' }); if (generation !== revision) return true; pane = 'power'; busy = false; revision++; }
-      catch (e) { if (generation === revision) error = e instanceof Error ? e.message : 'Disconnect failed'; }
+      catch (e) { if (generation === revision) error = e instanceof Error ? e.message : "Couldn't unplug the engine. Try again."; }
       finally { if (generation === revision) busy = false; }
       if (generation + 1 === revision && !error) await refresh();
     } else if (pane === 'power' && readyEngine(status) && !status?.working) {

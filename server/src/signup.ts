@@ -6,6 +6,7 @@ import { isAllowed } from './session';
 import { isLocal } from './auth';
 import { isPublicDocs } from './access';
 import { ironShell } from './iron-page';
+import { escapeHtml as escape } from "./encode";
 
 export interface SignupEnv {
   SIGNUP_GATE_MODE?: string; // waitlist opts in after Turnstile setup; default/password = rollback
@@ -14,7 +15,6 @@ export interface SignupEnv {
   TURNSTILE_SECRET_KEY?: string;
 }
 export const signupMode = (env: SignupEnv) => env.SIGNUP_GATE_MODE === 'waitlist' ? 'waitlist' : 'password';
-export const escape = (s: string) => s.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 export const githubLogin = (s: string) => /^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i.test(s);
 export const isAdmin = configuredAdmin;
 // Only explicitly configured owner/admin identities get quota exemptions, never a wildcard.

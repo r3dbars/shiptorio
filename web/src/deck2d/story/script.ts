@@ -46,7 +46,7 @@ export const TUTORIAL: readonly TutorialCard[] = [
   { id: "engine", focus: "engine", zoom: "mid", pose: "carry", build: "engine",
     lines: ["This steam engine powers the whole line.", "You'll power it with your own Codex or Muse Code."], next: "Next" },
   { id: "builder", focus: "builder", zoom: "mid", pose: "weld", build: "builder", deck: "medium",
-    lines: [`${S.builder}.`, "Codex writes the code, on your computer."], next: "Next" },
+    lines: [`${S.builder}.`, "Codex or Muse Code writes the code on your computer."], next: "Next" },
   { id: "checks", focus: "checks", zoom: "mid", pose: "weld", build: "checks",
     lines: [`${S.checks}.`, "Your tests run here. Broken code stops."], next: "Next" },
   { id: "review", focus: "review", zoom: "mid", pose: "weld", build: "review", deck: "large",

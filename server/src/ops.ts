@@ -6,9 +6,9 @@ import type { Env } from "./index";
 import { FLAG_DEFAULTS, flagKey, flagName, readFlags } from "./flags";
 import { currentUser } from "./accounts";
 import { ironPage } from "./ironPage";
+import { escapeHtml as escape } from "./encode";
 
 export const ops = new Hono<{ Bindings: Env; Variables: { admin: string } }>();
-const escape = (s: string) => s.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 
 // No preview cookie needed: public response contains only coarse dependency status.
 ops.get("/api/health", async c => {

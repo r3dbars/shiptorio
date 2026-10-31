@@ -52,13 +52,15 @@ export function depth(x: number, w: number) {
 const BIG = 17, FACET = 8;
 interface Seed { x: number; y: number; r: number; t: number }
 function seeds(cell: number, salt: number) {
-  const m = new Map<number, Seed>(); // numeric keys: this runs ~18 times per rock pixel on the first frame
+  // A grid of rows, not one Map: this runs ~18 times per rock pixel, and a deck grows a column at a time (one
+  // rebuild per column), so the lookup is most of the hull's build. Same seeds, made the same way, on first use.
+  const rows: (Seed | undefined)[][] = [], OFF = 64;
   return (i: number, j: number) => {
-    const k = (i + 32768) * 65536 + (j + 32768);
-    let s = m.get(k);
+    const row = rows[i + OFF] ??= [];
+    let s = row[j + OFF];
     if (!s) {
       s = { x: (i + 0.15 + hash(i, j, salt + 1) * 0.7) * cell, y: (j + 0.15 + hash(i, j, salt + 2) * 0.7) * cell * 0.75, r: cell * (0.6 + hash(i, j, salt + 4) * 0.3), t: hash(i, j, salt + 3) };
-      m.set(k, s);
+      row[j + OFF] = s;
     }
     return s;
   };

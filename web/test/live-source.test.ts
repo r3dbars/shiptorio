@@ -240,6 +240,46 @@ describe("quiet resync", () => {
   }));
 });
 
+describe("a session that ends while the deck is open", () => {
+  // Real timers must not leak: the harness swaps globals, so only microtasks (the session check) run between steps.
+  const settle = () => new Promise<void>(resolve => queueMicrotask(() => queueMicrotask(resolve)));
+  it("stops the endless Reconnecting… and offers a sign-in link once two upgrades are refused while signed out", async () => {
+    const h = harness();
+    try {
+      let checks = 0;
+      const source = connectLive("r3dbars/shiptorio", msg => h.messages.push(msg), status => h.statuses.push(status), async () => { checks++; return true; });
+      h.sockets[0].open(); sync(h.sockets[0]);
+      h.sockets[0].close(); // the cookie is gone: the next upgrades are refused before they open
+      h.advance(250); (h.sockets[1] as any).onerror();
+      expect(checks).toBe(0); // one refusal is a blip, not a sign-out
+      h.advance(500); (h.sockets[2] as any).onerror();
+      await settle();
+      expect(checks).toBe(1);
+      const notice = [...h.notices][0] as { textContent: string; href: string };
+      expect(notice.textContent).toContain("Sign in again");
+      expect(notice.href).toStartWith("/auth/login?next=");
+      expect(h.statuses.at(-1)).toBe("offline");
+      const sockets = h.sockets.length;
+      h.advance(60_000);
+      expect(h.sockets).toHaveLength(sockets); // no more retries against a refused session
+      source.close();
+      expect(h.notices.size).toBe(0);
+    } finally { h.restore(); }
+  });
+  it("keeps reconnecting when the refusals are a network problem, not a sign-out", async () => {
+    const h = harness();
+    try {
+      const source = connectLive("r3dbars/shiptorio", msg => h.messages.push(msg), status => h.statuses.push(status), async () => false);
+      (h.sockets[0] as any).onerror(); h.advance(250); (h.sockets[1] as any).onerror();
+      await settle();
+      h.advance(1000);
+      expect(h.sockets.length).toBeGreaterThan(2);
+      expect(h.statuses).not.toContain("offline");
+      source.close();
+    } finally { h.restore(); }
+  });
+});
+
 
 it("coalesces simultaneous return signals but replaces a handshake that crossed an outage", () => transportTest(h => {
   const source = h.connect(); h.sockets[0].open(); sync(h.sockets[0]);
@@ -332,7 +372,7 @@ it("changed tool scope under the same card and option ID requires a fresh player
   changed.state.deck[0].options[0].actions[0].args.headSha = "new-head";
   h.advance(300); const fresh = h.sockets[1]; fresh.open(); fresh.message(JSON.stringify(changed));
   expect(fresh.sent).toEqual([]);
-  expect(h.messages.at(-2)).toMatchObject({type:"log",level:"warn",text:expect.stringContaining("decision changed")});
+  expect(h.messages.at(-2)).toMatchObject({type:"log",level:"warn",text:expect.stringContaining("card just changed")});
   source.close();
 }));
 it("Later survives reconnect but unrelated machine writes are not replayed", () => transportTest(h => {
@@ -351,7 +391,7 @@ it("pong cannot hide an unacknowledged decision; replay is bounded and visibly a
     fresh.open(); fresh.message(decisionSnapshot()); expect(fresh.sent).toHaveLength(1);
   }
   h.sockets.at(-1)!.message("pong"); h.advance(10_001);
-  expect(h.messages).toContainEqual(expect.objectContaining({type:"log",level:"warn",text:expect.stringContaining("could not be confirmed")}));
+  expect(h.messages).toContainEqual(expect.objectContaining({type:"log",level:"warn",text:expect.stringContaining("didn't go through")}));
   expect(h.sockets.reduce((n,s) => n+s.sent.filter(raw=>raw.includes('"choose_move"')).length,0)).toBe(3);
   source.close(); expect(h.tasks.size).toBe(0);
 }));
@@ -367,7 +407,7 @@ it("same-card Launch cannot replay across a changed PR head", () => transportTes
 it("offline intents expire rather than approving unexpectedly much later", () => transportTest(h => {
   const source=h.connect(), first=h.sockets[0];first.open();first.message(decisionSnapshot());first.close();
   source.send({type:"defer_move",moveId:"plan-1"}); h.advance(60_001);
-  expect(h.messages).toContainEqual(expect.objectContaining({type:"log",text:expect.stringContaining("could not be confirmed")}));
+  expect(h.messages).toContainEqual(expect.objectContaining({type:"log",text:expect.stringContaining("didn't go through")}));
   const fresh=h.sockets.at(-1)!;fresh.open();fresh.message(decisionSnapshot());expect(fresh.sent).toEqual([]);source.close();
 }));
 it("never queues a card or option that this source has not received", () => transportTest(h => {
@@ -390,7 +430,7 @@ it("offline nonreplayable choices request an explicit retry and never run after 
   const state=JSON.parse(decisionSnapshot());state.state.deck[0].options[0].actions=[{tool:"run_missing_check",args:{headSha:"a"},reason:"Queue a check"}];
   const source=h.connect(),first=h.sockets[0];first.open();first.message(JSON.stringify(state));first.close();
   source.send({type:"choose_move",moveId:"plan-1",optionId:"approve"});
-  expect(h.messages.at(-1)).toMatchObject({type:"log",level:"warn",text:expect.stringContaining("could not be confirmed")});
+  expect(h.messages.at(-1)).toMatchObject({type:"log",level:"warn",text:expect.stringContaining("didn't go through")});
   h.advance(300);const fresh=h.sockets[1];fresh.open();fresh.message(JSON.stringify(state));expect(fresh.sent).toEqual([]);source.close();
 }));
 

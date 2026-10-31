@@ -3,6 +3,7 @@ import { currentUser } from './accounts';
 import { signupMode, signupAllowed, hash } from './signup';
 import { isAllowed, readSessionDetails } from "./session";
 import { ipSubject } from "./rate-limit";
+import { sha256Hex } from "./encode";
 
 export interface BrowserSocketEnv { SESSION_SECRET: string; APP_PASSWORD?: string; ALLOWED_LOGINS: string; DEV_LOGIN?: string; DB?: D1Database; SIGNUP_GATE_MODE?: string }
 export interface BrowserSocketAuth { adminView?: string; login: string; expiresAt: number; epoch: string; issuedAt?: number; sessionHash?: string; userId?: number; rateSubject?: string; repo?:string; user?:AccessUser }
@@ -11,8 +12,7 @@ export interface BrowserSocketAuth { adminView?: string; login: string; expiresA
 // Attachments hold no cookie or literal credential. Changing an access control value
 // invalidates established connections when the updated Worker/DO environment loads.
 export async function browserSocketEpoch(env: Pick<BrowserSocketEnv, "SESSION_SECRET" | "APP_PASSWORD" | "ALLOWED_LOGINS">): Promise<string> {
-  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(["browser-socket-v1", env.SESSION_SECRET, env.APP_PASSWORD, env.ALLOWED_LOGINS])));
-  return [...new Uint8Array(bytes)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+  return sha256Hex(JSON.stringify(["browser-socket-v1", env.SESSION_SECRET, env.APP_PASSWORD, env.ALLOWED_LOGINS]));
 }
 
 export async function browserSocketAuth(request: Request, env: BrowserSocketEnv, now = Date.now()): Promise<BrowserSocketAuth | null> {

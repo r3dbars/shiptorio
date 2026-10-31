@@ -25,6 +25,9 @@ const CAUGHT_UP_MS = 2200; // how long "All caught up" stays before the caption 
 const AFTER_ANSWER_MS = 900; // a show(null) this soon after an answer is the deck running dry, not a hide
 const HOLD_SWIPE_SHARE = 0.6; // a hold card's swipe has to cross most of the card, and a flick never counts
 export const HOLD_MS = 800; // how long a hold card's Approve has to be held
+// A story card's Next right after the last answer is the tail of a double tap, not a read (QA 2026-10-31: with Reduce
+// Motion there is no typing to soak it up, so a double tap on "Hi, I'm Shippy!" skipped the Powered by Meta card).
+export const STORY_TAP_GUARD_MS = 450;
 
 // yes/no labels and hold are newer CardView fields (hub thread); read them so this works before and after they land
 type View = CardView & { yes?: string; no?: string; hold?: boolean };
@@ -100,8 +103,26 @@ function face(): Face {
   return f;
 }
 
+/** A yes too long for half the row ("Connect GitHub" on a 390 px phone read "Connect Git…"): the no button shrinks to
+ *  its own label and the yes takes the rest. Measured once per fill, after layout; an even split everywhere else. */
+function fitYes(f: Face) {
+  if (typeof requestAnimationFrame !== "function") return; // no layout to measure (headless tests)
+  requestAnimationFrame(() => {
+    const row = f.approve.parentElement;
+    if (!row || !f.root.isConnected) return;
+    row.classList.remove("wide-yes");
+    if (f.yes.scrollWidth > f.yes.clientWidth + 1) row.classList.add("wide-yes");
+  });
+}
+
 /** A story card with no second answer: only Next, and a left swipe or ← does nothing. */
 const solo = (card: View | null) => !!card?.shippy && !card.no;
+
+// The deck refills the shown card every frame. Swapping a label's text node under a press loses its click in Safari and
+// Firefox (Chrome keeps it), so unchanged words stay the same node.
+function setText(e: HTMLElement, text: string) {
+  if (e.textContent !== text) e.textContent = text;
+}
 
 function fill(f: Face, card: View) {
   f.root.dataset.card = card.id;
@@ -118,14 +139,15 @@ function fill(f: Face, card: View) {
   }
   if (card.guide === "shippy" && !f.guide) f.guide = mountShippyGuide(f.root);
   if (card.guide !== "shippy" && f.guide) { f.guide.destroy(); f.guide = undefined; }
-  f.no.textContent = card.no || "Later";
-  f.yes.textContent = card.yes || "Approve";
+  setText(f.no, card.no || "Later");
+  setText(f.yes, card.yes || "Approve");
+  fitYes(f);
   f.root.classList.toggle("hold", !!card.hold);
   if (card.hold) f.approve.setAttribute("aria-label", /^hold\b/i.test(f.yes.textContent!) ? f.yes.textContent! : `Hold to ${f.yes.textContent}`);
   else f.approve.removeAttribute("aria-label");
   f.root.setAttribute("aria-label", card.title);
-  f.title.textContent = card.title;
-  f.line.textContent = card.line;
+  setText(f.title, card.title);
+  setText(f.line, card.line);
   f.line.hidden = !card.line;
   setDots(f, card.dots);
 }
@@ -137,10 +159,10 @@ function fillStory(f: Face, card: View & { shippy: NonNullable<View["shippy"]> }
   f.root.classList.toggle("solo", !card.no);
   f.root.classList.remove("hold");
   f.approve.removeAttribute("aria-label");
-  f.no.textContent = card.no || "Later";
-  f.yes.textContent = card.yes || "Next";
+  setText(f.no, card.no || "Later");
+  setText(f.yes, card.yes || "Next");
   f.later.hidden = !card.no;
-  f.title.textContent = card.title;
+  setText(f.title, card.title);
   f.title.hidden = !card.title;
   f.dots.hidden = true;
   // screen readers get the whole line at once; the typed-out text is for the eyes
@@ -195,6 +217,7 @@ export const mountCard: MountCard = (host, handlers) => {
   const next = (f: Face) => {
     if (live !== f) return;
     if (f.story?.typing()) return f.story.finish();
+    if (f.story && performance.now() - answeredAt < STORY_TAP_GUARD_MS) return;
     answer("approve");
   };
 

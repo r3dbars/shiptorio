@@ -46,10 +46,6 @@ export function through(p: number, ph: Exclude<Phase, "none" | "done">): number 
 export const crossed = (a: number, b: number) => (b > a ? CUES.filter((c) => c.at > a && c.at <= b) : []);
 
 // ---------- easing ----------
-export const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
-/** u mapped into [a, b] as 0..1. */
-export const span = (u: number, a: number, b: number) => clamp01((u - a) / (b - a));
-export const easeOut = (x: number) => 1 - (1 - x) ** 3;
 export const easeInOut = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2);
 /** Lands past the target and settles, for heavy things clunking into place. */
 export const easeBack = (x: number) => { const c = 1.9; return 1 + (c + 1) * (x - 1) ** 3 + c * (x - 1) ** 2; };
