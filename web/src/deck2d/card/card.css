@@ -136,6 +136,9 @@
 @keyframes ic-px-pop { 0% { translate: 0 0; } 33% { translate: 0 calc(var(--p) * -2); } 66% { translate: 0 calc(var(--p) * -1); } 100% { translate: 0 0; } }
 
 .ironcard.px .ic-actions { margin: 0; gap: calc(var(--p) * 4); }
+/* a narrow phone (320-360px): Back takes only what it needs so the yes label ("Hold to ship", "Build next")
+   isn't cut to "Hold to s..." (QA 2026-10-31) */
+@media (max-width: 374px) { .ironcard.px .ic-actions { grid-template-columns: auto minmax(0, 1fr); } }
 .ironcard.px .ic-btn {
   position: relative; border: 0; border-image: none; filter: none; transform: none; transition: none;
   min-height: calc(var(--p) * 20); padding: 0 calc(var(--p) * 4); gap: calc(var(--p) * 3);
