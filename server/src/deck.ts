@@ -16,7 +16,7 @@ export interface DeckOptions {
   rules?: readonly DeckRule[];
   /** The caller may supply a model-authored bottleneck proposal instead of the safe default. */
   impliedMove?: Move;
-  /** A local agent is already planning or building: a build-stage jam is the line moving, not a call for the player. */
+  /** A local agent is already planning or building: a Planner or Builder jam is the line moving, not a call for the player. */
   buildMoving?: boolean;
   /** docs/ATTENTION.md: the player's Continues in a row per `kind|scope`; each one lifts that class a little. */
   yes?: Readonly<Record<string, number>>;
@@ -118,7 +118,8 @@ export function buildDeck(state: FactoryState, candidates: readonly Move[] = [..
     const move = enrichMove(candidate, state);
     if (allowed(move)) byId.set(move.id, move);
   }
-  const moving = options.buildMoving && state.bottleneck?.stage === "build";
+  // A planning job puts its item at Planner ("triage"), so that jam is Shippy writing the plan, not a no-op "Continue" card.
+  const moving = options.buildMoving && (state.bottleneck?.stage === "build" || state.bottleneck?.stage === "triage");
   if (state.bottleneck && !moving && ![...byId.values()].some(m => coversBottleneck(m, state))) {
     // Keep a carried card's identity and age, but always say what the queue holds now, not when the card was first raised.
     const fresh = impliedBottleneckMove(state, now)!;

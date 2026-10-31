@@ -135,6 +135,9 @@ export function liveBottleneckCandidates(state: FactoryState, jobs: readonly Bot
     if (!stage) continue;
     const stop: LiveBottleneckCandidate["stop"] = stage === "intake" ? "repo" : stage === "triage" ? "planner" : stage === "build" ? "builder" : stage === "ci" || stage === "verify" ? "checks" : stage === "review" ? "review" : stage === "merge" ? "gate" : "launch";
     const blocked = item.state === "rejected" || !!item.failure;
+    // A queued issue with no job yet waits for its plan card at Repo; nothing is building it.
+    const unstarted = stage === "build" && item.state === "queued" && !jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status));
+    if (unstarted && !blocked) { add({ id: `item:${item.id}:${stage}`, stop: "repo", itemId: item.id, reason: `An issue is ready to start: ${label(item)}.`, priority: 2, since: item.updatedAt, action: "work" }); continue; }
     const reason = blocked ? `A fix is needed before ${label(item)} can continue.`
       : stop === "repo" ? `An issue is ready to start: ${label(item)}.`
       : stop === "planner" ? `The plan for ${label(item)} is being prepared.`
