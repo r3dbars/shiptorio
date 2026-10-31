@@ -1,5 +1,5 @@
 import { DecisionOutbox, isDecision } from "./decision-outbox";
-import { socketDisconnected } from "../telemetry";
+import { socketDisconnected, startTelemetry } from "../telemetry";
 import { parseLiveMessage } from "./schemas";
 import { createRecorder, mountRecorder, recordingAllowed } from "../deck2d/data/replay";
 import type { Listener, Source, StatusListener } from "./config";
@@ -22,6 +22,7 @@ export async function sessionGone(request: typeof fetch = fetch): Promise<boolea
 }
 
 export function connectLive(repo: string, onMessage: Listener, onStatus: StatusListener, signedOut: () => Promise<boolean> = sessionGone): Source {
+  startTelemetry();
   const recorder = typeof location !== "undefined" && typeof location.href === "string" && recordingAllowed(new URL(location.href)) ? createRecorder() : null;
   const removeRecorder = recorder ? mountRecorder(recorder) : () => {};
   let ws: WebSocket | null = null;
