@@ -269,10 +269,20 @@ async function ship() {
   const started = await gh<{ title: string; state: string }>(`/issues/${issue}`);
   await note("github_issue", { issue, title: started?.title, state: started?.state });
   await startIssue();
-  let lastState = "", lastStage = "", tapped = new Set<string>(), reloaded = false, failedBuilds = 0;
+  let lastState = "", lastStage = "", tapped = new Set<string>(), reloaded = false, failedBuilds = 0, waitingSince = Date.now();
   while (Date.now() < deadline) {
     await page.waitForTimeout(2000);
     const it = item();
+    // The factory deals one plan card at a time. Another item's plan card left undecided (an old "failed twice"
+    // retry) keeps ours from ever being dealt: after 20s, set it aside with the deck's own Later, like a player would.
+    if (it?.state === "queued" && !openCards().some(m => m.itemId === itemId)) {
+      const blocker = openCards().find(m => m.itemId && m.itemId !== itemId && m.options.some(o => o.actions.some(a => a.tool === "plan_runner_job")));
+      if (blocker && Date.now() - waitingSince > 20_000 && !tapped.has(`later:${blocker.id}`)) {
+        tapped.add(`later:${blocker.id}`);
+        await note("later", { card: blocker.title, why: `its plan slot blocks ${itemId}` });
+        for (let i = 0; i < 20; i++) { if ((await cardOnScreen())?.id === blocker.id) { await shot("plan-slot-blocked"); await press("later"); break; } if (i >= 3 && await cardOnScreen()) await press("later"); await page.waitForTimeout(1200); }
+      }
+    } else waitingSince = Date.now();
     const stage = state?.pipeline?.filter(p => p.itemIds.includes(itemId)).map(p => `${p.id}:${p.state}`).join(",") ?? "";
     if (it && (it.state !== lastState || stage !== lastStage)) {
       const newlyRejected = it.state === "rejected" && lastState !== "rejected"; // replanning keeps it rejected; count arrivals only
