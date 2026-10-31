@@ -25,6 +25,22 @@ test("base refresh binds the open same-repository PR, old head and current targe
   } finally { globalThis.fetch = original; }
 });
 
+test("a stale pull.base.sha after the base moved is not a validation race when only looking for a refresh", async () => {
+  const original = globalThis.fetch;
+  const live = "c".repeat(40);
+  let mergeable_state = "clean";
+  globalThis.fetch = (async (input: string | Request | URL) => String(input).includes("/pulls/")
+    ? Response.json({ state: "open", merged: false, draft: false, mergeable_state, head: { sha: headSha, ref: branch, repo: { full_name: repo } }, base: { sha: baseSha, ref: "main", repo: { full_name: repo } } })
+    : Response.json({ object: { sha: live } })) as typeof fetch;
+  try {
+    // GitHub keeps base.sha from the PR's last push; the base branch moved on since (Testing #51 on 2026-10-31).
+    expect(await refreshTarget("test-token", repo, 1, branch, "main")).toBeNull();
+    mergeable_state = "behind";
+    expect(await refreshTarget("test-token", repo, 1, branch, "main")).toEqual({ headSha, baseSha: live, baseBranch: "main" });
+    await expect(refreshTarget("test-token", repo, 1, branch, "main", { headSha, baseSha, baseBranch: "main" })).rejects.toThrow("during validation");
+  } finally { globalThis.fetch = original; }
+});
+
 test("only a previously approved same-item runner publication grants refresh provenance", () => {
   const item = { id: "gh-1", branch, prNumber: 1 };
   const job: RunnerJob = { id: "old", itemId: item.id, repo, harness: "codex", branch, status: "completed", allowedPaths: ["src/fix.ts"], approvedAt: 1, headSha, prUrl: `https://github.com/${repo}/pull/1` };

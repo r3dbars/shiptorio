@@ -1023,7 +1023,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       await this.accountPut("runnerRefreshCursor", (cursor + 3) % refreshCandidates.length);
       for (const item of [...refreshCandidates.slice(cursor), ...refreshCandidates.slice(0, cursor)].slice(0, 3)) {
         if (await this.ctx.storage.get<number>(`runnerDeferred:${item.id}`) === item.updatedAt) continue;
-        const target = await refreshTarget(token, this.meta.repo, item.prNumber!, item.branch!, s.baseBranch);
+        // One PR that can't be read right now must not block dealing the next issue's plan below.
+        const target = await refreshTarget(token, this.meta.repo, item.prNumber!, item.branch!, s.baseBranch).catch((error: unknown) => { log("warn", "factory.refresh_target_skipped", { itemId: item.id, error: error instanceof Error ? error.message : String(error) }); return null; });
         if (!target || !ownsRefreshPr(jobs, item, this.meta.repo, target.headSha)) continue;
         const harness = presence.harnesses.includes("codex") ? "codex" : presence.harnesses.find(h => h !== "local");
         if (!harness) continue;
