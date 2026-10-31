@@ -28,6 +28,9 @@ const ORDER: FirstRunStage[] = ["intro", "hello", "repo", "engine"];
 const SAY_SEC = 2.4;
 const BUILD_SEC = STAGE_AT.gone;
 const ISLAND_SEC = Math.min(LAUNCH_BUILD_SECONDS, 8);
+// After the tour (which already named every station), the line builds quick and silent: the next station starts as
+// this one lands, and only "Your factory is ready." is said (Justin's thread, 2026-10-31: ~33s down to ~15s).
+const QUICK_BUILD_SEC = STAGE_AT.land, QUICK_ISLAND_SEC = 3, QUICK_REST = 0.1;
 
 // Plain words, one line each. No jargon, no "Shippy:" prefixes.
 export const FIRST_RUN_LINES = {
@@ -78,7 +81,11 @@ export interface FirstRunOptions {
   key?: string;
   /** The live factory already has work: it's not a first run, show it as it is. */
   established?(): boolean;
+  /** This browser finished Shippy's tour (TOURED_KEY), so the station lines would repeat it: build quick, no captions. */
+  toured?: boolean;
 }
+/** Set when a guest presses "Build mine" at the end of the tour; ?fresh=1 clears it with every other shiptorio key. */
+export const TOURED_KEY = "shiptorio:toured";
 
 export function createFirstRun(o: FirstRunOptions) {
   const key = `shiptorio:firstrun:${o.key ?? ""}`;
@@ -99,7 +106,7 @@ export function createFirstRun(o: FirstRunOptions) {
     boiler = next === "engine" || (seen.has(next) && next === "repo") ? 1 : 0;
     if (seen.has(next)) { built = new Set(AFTER[next]); size = next === "engine" ? "large" : "small"; island = next === "engine" ? "built" : "none"; script = []; playing = false; caption = null; focus = null; shippy = null; return; }
     built = new Set(before.built); size = before.size; island = "none"; islandProgress = undefined;
-    script = SCRIPTS[next].slice(); stepT = 0; playing = true; caption = null; focus = null; shippy = { pose: "folded", at: "corner" };
+    script = o.toured ? SCRIPTS[next].filter(x => !("say" in x && !("build" in x)) || x.say === L.ready) : SCRIPTS[next].slice(); stepT = 0; playing = true; caption = null; focus = null; shippy = { pose: "folded", at: "corner" };
   }
 
   function step(dt: number) {
@@ -117,16 +124,16 @@ export function createFirstRun(o: FirstRunOptions) {
       let done = false;
       if ("say" in cur && !("build" in cur)) { if (first) { caption = cur.say; focus = null; } done = stepT >= (cur.sec ?? SAY_SEC); }
       else if ("build" in cur) {
-        if (first) { built.add(cur.build); caption = cur.say; focus = cur.build; shippy = null; }
-        done = stepT >= BUILD_SEC;
+        if (first) { built.add(cur.build); caption = o.toured ? null : cur.say; focus = cur.build; shippy = null; }
+        done = stepT >= (o.toured ? QUICK_BUILD_SEC : BUILD_SEC);
       } else if ("grow" in cur) { if (first) { size = cur.grow; caption = null; } done = stepT >= GROW_SECONDS; }
       else if ("island" in cur) {
-        if (first) { island = "building"; caption = cur.island; focus = "launch"; }
-        islandProgress = Math.min(1, stepT / ISLAND_SEC);
+        if (first) { island = "building"; caption = o.toured ? null : cur.island; focus = "launch"; }
+        islandProgress = Math.min(1, stepT / (o.toured ? QUICK_ISLAND_SEC : ISLAND_SEC));
         if (islandProgress >= 1) { island = "built"; islandProgress = undefined; built.add("gate").add("launch"); done = true; }
       } else if ("boiler" in cur) { if (first) { caption = null; focus = "repo"; } boiler = Math.min(1, stepT / 1.6); done = boiler >= 1; }
       else if ("shippy" in cur) { shippy = cur.shippy; done = true; }
-      else done = stepT >= cur.rest;
+      else done = stepT >= (o.toured ? Math.min(cur.rest, QUICK_REST) : cur.rest);
       if (done) { script.shift(); stepT = 0; }
     }
   }
