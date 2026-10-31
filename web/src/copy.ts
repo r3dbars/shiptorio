@@ -459,8 +459,8 @@ export const CRASH = {
 };
 
 export const LEARN = {
-  line: (left: number) => `Approve ${left} more like this and then it's automatic.`,
-  aria: (have: number, need: number, left: number) => `${have} of ${need} approved. Approve ${left} more like this and then it's automatic.`,
+  line: (left: number) => `Approve ${left} more like this and it's automatic.`,
+  aria: (have: number, need: number, left: number) => `${have} of ${need} approved. Approve ${left} more like this and it's automatic.`,
   title: "The factory does these for you",
   why: "You said yes to these 3 times in a row. Launching still waits for you.",
   stop: "Ask me again",
