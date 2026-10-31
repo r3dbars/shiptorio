@@ -1,5 +1,9 @@
 # Attention: when Shiptorio is allowed to bug you
 
+> **Historical, 3D map era (marked 2026-10-29).** This page describes the old map, shaft or React UI, not the 2D deck
+> that is the product now. It stays here because code comments point at it. Where it disagrees with
+> [VISION.md](VISION.md), VISION wins.
+
 > Status: **on by default** since 2026-10-27 (Justin: "No flag just put it in main"). `?attention=0` brings back the old
 > Next Move card for one release; the global `attention` flag at /admin/flags stays as a kill switch. Thread "Design a calm attention system for players".
 > Mockup: https://claude.ai/artifact/Qb9bkmAVvmPYtZdWt2LrQb (Black Iron, real map art).
@@ -180,7 +184,7 @@ Classified from `web/src/ui`, `web/src/App.tsx`, `web/src/sound` and the server 
 | Stuck: work exceeded its waiting limit | `reliability.ts` | **Steer**, after the 2 min hold |
 | Plug in Claude or ChatGPT | `factory.ts` resources card | **Steer** when work is waiting; else Suggested |
 | Bottleneck: review the jam | `deck.ts impliedBottleneckMove` | **Steer** only if the jam is on the player (merge gate, no builder); else ambient on the map |
-| A source delivery needs attention | `factory.ts` failed webhook | **Cut** from the deck, goes to ops |
+| An incoming update didn't go through | `factory.ts` failed webhook | **Cut** from the deck, goes to ops |
 | Factory work needs attention | `factory.ts` reliability op | **Cut** to ops, unless the player can fix it (then Steer) |
 | Research X? | `gauntlet.ts researchMove` | **Suggested** |
 | File a customer's bug as an issue? | `support.ts` | **Suggested** |

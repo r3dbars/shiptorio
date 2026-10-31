@@ -1,49 +1,63 @@
 # Shiptorio context
 
-Everything we know about Shiptorio that isn't code, in one place, so every agent (Claude
-threads, Codex, whoever) works from the same picture. **Read [`../VISION.md`](../VISION.md) first** (the
-north star), then `AGENTS.md` at the repo root, then come here.
+Shared notes for every agent (Claude threads, Codex) and Justin. Start with [`../../AGENTS.md`](../../AGENTS.md).
+When you learn or decide something that will matter tomorrow, add it to the right file here and push.
 
-**Rule:** commit and push often. Lots of agents work on this repo at once. Before you start,
-`git fetch`, look at open PRs and recent commits on `main`. When you learn or decide
-something, add it here and push.
-
-## Index
+## Read these 5 first
 
 | File | What it is |
 | --- | --- |
-| [../VISION.md](../VISION.md) | **North star**: Justin's goals, principles, non-goals, current focus, and how to decide what's next. Read first |
-| [../PRODUCT.md](../PRODUCT.md) | **Product spec**: Spark as the Foreman agent, core loop, bottleneck engine, tools, trust, score, onboarding, demo scope |
-| [testing.md](testing.md) | Fast, contract, Wrangler E2E/visual and manual load regression suites |
-| [costs.md](costs.md) | Spark budgets, GitHub rate limits, polling backoff and operator controls |
-| [ops.md](ops.md) | Production diagnostics, Sentry setup, tracing, backup and recovery runbooks |
-| [decisions.md](decisions.md) | Decisions made so far and open items (who's blocked on what) |
-| [security.md](security.md) | Threat model, browser/API mitigations, rate budgets and audit boundaries |
-| [spark-audit.md](spark-audit.md) | **Meta Muse Spark audit**: every factory decision point, who decides (Spark vs rule), fallbacks, and where judges see it (issue comments, "How it thinks" panel) |
-| [growth-loop.md](growth-loop.md) | **Growth loop prototype**: PostHog funnel drop → experiment → ships through the gauntlet → measure station calls lift / no lift / hurt. `?source=sim&scenario=growth` |
-| [accounts.md](accounts.md) | **Accounts + sign-in API**: D1 users/sessions/user_repos tables, `accounts.ts` helpers, `requireUser`, per-repo mine keys, sign-up gate |
-| [support-mine.md](support-mine.md) | **Support mine**: customer email + Intercom → support well, Spark triage/drafts, the player-tap-only send rule, inlets, sim scenario |
-| [memory/](memory/) | Snapshot of the Claude project memory (one fact per file). `memory/MEMORY.md` is its index |
-| [threads.md](threads.md) | Short summary of each Claude project thread and what it produced |
-| [plan.md](plan.md) | Export of Justin's plan doc (game design, art, 12 items, architecture, build plan, demo script, risks) |
-| [feedback-factory/](feedback-factory/) | Feedback Factory canvas artboards (layout reference only, raw `.dc.html`) |
+| [../VISION.md](../VISION.md) | The north star: Justin's goals and how to decide what's next |
+| [demo-plan.md](demo-plan.md) | Plan to the demo video, day by day, and who owns which files now |
+| [pixel-deck.md](pixel-deck.md) | The game surface (the 2D deck), its folders and art rules |
+| [github-deck-loop.md](github-deck-loop.md) | How each station maps to real GitHub, Spark and runner events |
+| [branches.md](branches.md) | dev and main: where PRs go and how promotion works |
 
-Also in the repo (from PR #5): `PLAN.md`, `docs/ARCHITECTURE.md`, `docs/ART.md`,
-`docs/art-prototype.html` (Pixel Prototype), `docs/item-lab.html` (Item Lab, all 12 items),
-`briefs/`.
+## Working here
 
-## Source links (need a claude.ai login)
-
-| Thing | Link |
+| File | What it is |
 | --- | --- |
-| Plan doc | https://claude.ai/artifact/AWJrfEvb9c7BRwvQNcj1XL |
-| Repo handoff doc (local repo files verbatim, same as PR #5) | https://claude.ai/artifact/PEuV9HSPfkw9o4urNiY2nk |
-| Pixel Prototype | https://claude.ai/artifact/KGfEwhDLxxu8LMjGkcqNrK |
-| Item Lab | https://claude.ai/artifact/1LRgfMxAMrZ5gv1r2dkkKy |
-| Feedback Factory canvas (layout only) | https://claude.ai/artifact/HtWP6pHDcYn9TSByR6UJcn |
+| [demo-script.md](demo-script.md) | The 2-minute demo video: shots and voiceover |
+| [tutorial-script.md](tutorial-script.md) | Shippy's guided opening, card by card |
+| [codex-deck-handoff.md](codex-deck-handoff.md) | How Codex works on the deck |
+| [threads.md](threads.md) | Log of what each Claude thread and Codex task did |
+| [decisions.md](decisions.md) | Dated cleanup decisions, branch deletions and PR/issue closures |
+| [papercuts.md](papercuts.md) | Retained cleanup candidates that need a separate decision |
+| [testing.md](testing.md) | Test suites and how to run them |
+| [new-user-path.md](new-user-path.md) | The stranger run: a new account from sign-in to first card (`bun run stranger`) |
 
-## Things that override older docs
+## Reference (the code points here)
 
-- Stack is **Cloudflare**, not Fly.io + Neon. Ignore those parts of the plan/architecture docs.
-- Art is **pixel 3D, slate/amber, Silkscreen**. The Feedback Factory's brown Factorio palette is out.
-- No secrets in this folder, ever. Resource ids (D1, KV) aren't secrets.
+| File | What it is |
+| --- | --- |
+| [github-app.md](github-app.md) | GitHub App lifecycle: installs, webhooks, delivery |
+| [github-connect.md](github-connect.md) | GitHub sign-in failure handling |
+| [accounts.md](accounts.md) | Accounts and sign-in API |
+| [signup-abuse.md](signup-abuse.md) | Sign-up gate and abuse limits |
+| [runner-onboarding.md](runner-onboarding.md) | Pairing a local runner |
+| [native-test-prerequisites.md](native-test-prerequisites.md) | Runner test prerequisites |
+| [spark-audit.md](spark-audit.md) | Every decision Muse Spark makes, and its fallback |
+| [meta-api.md](meta-api.md) | How we use the Meta Model API |
+| [costs.md](costs.md) | Spark budgets and GitHub rate limits |
+| [taps.md](taps.md) | The log of what players approve and skip |
+| [security.md](security.md) | Threat model and mitigations |
+| [encrypted-credentials.md](encrypted-credentials.md) | How mine credentials are stored |
+| [ops.md](ops.md) | Diagnostics, Sentry, backup and recovery |
+| [docs-site.md](docs-site.md) | The public docs site at /docs |
+| [cold-load.md](cold-load.md) | First-load timing on a throttled phone, and how it's measured |
+| [landing.md](landing.md) | Deck entry, preview access and the retained production landing page |
+
+## Parked (code still exists, not in the demo)
+
+| File | What it is |
+| --- | --- |
+| [growth-loop.md](growth-loop.md) | PostHog growth loop prototype |
+| [support-mine.md](support-mine.md) | Customer email and Intercom as ore |
+| [pricing.md](pricing.md) | Draft pricing; the beta is free |
+
+## Evidence and history
+
+- Before/after screenshots live in project files (`shiptorio/evidence/<repo path>`), not in git. `.gitignore` blocks new ones.
+- [archive/](archive/README.md): retired docs (3D map era, old plans, one-off proofs). Not how things work today.
+
+No secrets in this folder, ever. Resource ids (D1, KV) aren't secrets.

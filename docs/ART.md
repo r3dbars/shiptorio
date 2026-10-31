@@ -1,5 +1,9 @@
 # Shiptorio art direction
 
+> **Historical, 3D map era (marked 2026-10-29).** This page describes the old map, shaft or React UI, not the 2D deck
+> that is the product now. It stays here because code comments point at it. Where it disagrees with
+> [VISION.md](VISION.md), VISION wins.
+
 Real 3D models rendered as pixel art, in the style of Thariq's (@trq212) game prototype clips:
 an orthographic camera at a 45° turn, a low-resolution render upscaled with hard pixel edges, a quantized palette,
 and dark outlines. Everything animates. UI is pixel lettering in dark boxes with thin light borders and round

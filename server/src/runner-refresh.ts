@@ -14,8 +14,11 @@ export async function refreshTarget(token: string, repo: string, pr: number, bra
   const pull = await gh<RefreshPull>(`/repos/${repo}/pulls/${pr}`, token, { headers: { "cache-control": "no-store" } });
   if (pull.state !== "open" || pull.merged || pull.draft || pull.head.ref !== branch || pull.base.ref !== baseBranch || pull.head.repo?.full_name.toLowerCase() !== repo.toLowerCase() || pull.base.repo?.full_name.toLowerCase() !== repo.toLowerCase() || !sha.test(pull.head.sha) || !sha.test(pull.base.sha)) throw new Error("Factory PR identity changed; request a fresh plan");
   const ref = await gh<{ object: { sha: string } }>(`/repos/${repo}/git/ref/heads/${baseBranch}`, token, { headers: { "cache-control": "no-store" } });
-  if (ref.object.sha !== pull.base.sha) throw new Error("Factory base changed during validation; request a fresh plan");
-  const target = { headSha: pull.head.sha, baseSha: pull.base.sha, baseBranch: pull.base.ref };
+  // GitHub's pull.base.sha is the base as of the PR's last push; it goes stale as soon as the base moves. When
+  // validating an approved job that is a real race. When only looking for a refresh target, the live ref is the base.
+  if (expected && ref.object.sha !== pull.base.sha) throw new Error("Factory base changed during validation; request a fresh plan");
+  if (!sha.test(ref.object.sha)) throw new Error("Factory base changed during validation; request a fresh plan");
+  const target = { headSha: pull.head.sha, baseSha: expected ? pull.base.sha : ref.object.sha, baseBranch: pull.base.ref };
   if (expected && (target.headSha !== expected.headSha || target.baseBranch !== expected.baseBranch)) throw new Error("Approved factory head or base changed; request a fresh plan");
   if (expected && target.baseSha !== expected.baseSha) throw new RefreshBaseMoved("Approved factory base changed; request a fresh plan");
   return expected || pull.mergeable_state === "behind" ? target : null;

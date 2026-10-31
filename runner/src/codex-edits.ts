@@ -34,6 +34,11 @@ export function parseCodexEdits(transcript: string, allowed: string[]): CodexEdi
   if (!completed || !final || Buffer.byteLength(final) > CODEX_EDIT_LIMITS.replyBytes) throw Error("Missing or oversized completed Codex response");
   let value: unknown;
   try { value = JSON.parse(final); } catch { throw Error("Codex final message is not JSON"); }
+  return checkEditProposal(value, allowed);
+}
+
+/** Shared by every subscription adapter: the proposal shape and scope rules never depend on the provider. */
+export function checkEditProposal(value: unknown, allowed: string[]): CodexEdits {
   const parsed = response.parse(value);
   for (const e of parsed.edits) {
     if (!allowed.includes(e.path) || !pathAllowed(e.path)) throw Error("Codex edit outside approved scope");
@@ -65,7 +70,7 @@ for(const e of edits){if(!files.has(e.path)){const target=join(root,e.path);let 
 for(const [path,f] of files){if(f.text===f.original)throw Error("Proposal has no effect");}
 for(const [path,f] of files){parent(path,true);const target=join(root,path);const fd=openSync(target,constants.O_RDWR|constants.O_NOFOLLOW|(f.original===null?constants.O_CREAT|constants.O_EXCL:0),0o600);try{const info=fstatSync(fd);if(!info.isFile()||info.nlink!==1||(f.info&&(info.ino!==f.info.ino||info.dev!==f.info.dev)))throw Error("Changed edit target");if(f.original!==null&&readFileSync(fd,"utf8")!==f.original)throw Error("Edit source changed");ftruncateSync(fd,0);const bytes=Buffer.from(f.text);let written=0;while(written<bytes.length){const n=writeSync(fd,bytes,written,bytes.length-written,written);if(!n)throw Error("Short edit write");written+=n;}}finally{closeSync(fd);}}
 console.log(JSON.stringify([...files.keys()]));`;
-  const result = await sandbox.run([process.execPath, "--no-env-file", "-e", program, JSON.stringify(checked.edits)]);
+  const result = await sandbox.run([process.execPath, "--no-env-file", "--config=/dev/null", "-e", program, JSON.stringify(checked.edits)]);
   if (result.code) throw Error("Supervisor rejected Codex edits; exact regular-file match required");
   const paths: unknown = JSON.parse(result.out);
   if (!Array.isArray(paths) || !paths.length || paths.some(p => typeof p !== "string" || !allowed.includes(p))) throw Error("Invalid applied Codex scope");

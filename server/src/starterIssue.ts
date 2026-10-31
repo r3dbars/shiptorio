@@ -8,7 +8,7 @@ import type { GitHubIssue } from "./sources/github";
 // Build 4 of the first run ("Re-rail the cart") needs one real issue to ride the line.
 // We pick the smallest safe open issue; if there is none, we offer a starter README
 // issue that is filed only when the player taps, since it's their repo.
-// Title and label match STARTER_ISSUE in web/src/buildout/journey.ts (the demo shop's #1).
+// Title and label match STARTER_ISSUE in web/src/deck2d/rules/sim.ts (the demo shop's #1).
 
 export const STARTER_LABEL = "shiptorio-starter";
 export const STARTER_ISSUE = {
@@ -116,7 +116,7 @@ async function repoCall(env: Env, repo: string): Promise<Call> {
 }
 
 /** Null when the planner can take a new job today, otherwise a plain reason it can't. */
-async function plannerRoom(env: Env, repo: string): Promise<string | null> {
+export async function plannerRoom(env: Env, repo: string): Promise<string | null> {
   try {
     const usage = await budgetUsage(env, await budgetAccount(env.DB, repo));
     if (usage.limits.disabled) return "The planner is paused right now.";

@@ -1,7 +1,8 @@
 // The unlock playbook (docs/BRAIN.md step 3). For each signal kind, the moves that clear it, best first.
 // The brain picks one of these by id and may reword its title and because line; it can't invent a play or a
 // tool. Actions are only the deck's existing safe tools; everything else is a link the player opens (the
-// signal's own evidence, or the repo page where the fix happens). Nothing here merges, sends or skips a check.
+// signal's own evidence, or the repo page where the fix happens). Nothing here merges or skips a check; the one
+// write, fix_failing_pr, files an issue and still needs its plan approved like any other build.
 
 import type { BrainSignal, BrainUnlock, MoveKind, UnlockEffort } from "@shiptorio/shared";
 
@@ -22,6 +23,11 @@ export interface Play {
 const gh = (repo: string | undefined, path: string) => repo && /^[\w-][\w.-]*\/[\w-][\w.-]*$/.test(repo) && !repo.includes("..") ? `https://github.com/${repo}/${path}` : undefined;
 const inspect = (s: BrainSignal) => ({ tool: "inspect_bottleneck", args: { signalId: s.id } });
 const connect = (kind: string) => () => ({ tool: "connect_source", args: { kind } });
+/** A red PR: Continue files a fix issue for the newest one (likely what the player is on) and puts it on the line. */
+const fixPr = (s: BrainSignal) => {
+  const failing = s.evidence.map(e => ({ pr: Number(/#(\d+)/.exec(e.label)?.[1]), url: e.url })).filter(e => e.pr > 0).sort((a, b) => b.pr - a.pr);
+  return failing[0] ? { tool: "fix_failing_pr", args: { pr: failing[0].pr, workflow: s.scope ?? "CI", url: failing[0].url } } : inspect(s);
+};
 
 export const PLAYBOOK: readonly Play[] = [
   // factory: the line itself
@@ -44,7 +50,7 @@ export const PLAYBOOK: readonly Play[] = [
   { play: "fix_flaky_test", kinds: ["ci_flaky"], kind: "verify", effort: "hours", title: "Fix the flaky test", path: "actions" },
   { play: "fix_red_main", kinds: ["ci_red_main"], kind: "unblock", effort: "minutes", title: "Get main green again", path: "actions?query=branch%3Amain" },
   { play: "ci_add_runners", kinds: ["ci_queue"], kind: "automate", effort: "minutes", title: "Stop PRs queueing for CI", path: "actions" },
-  { play: "fix_blocking_check", kinds: ["ci_blocking"], kind: "unblock", effort: "minutes", title: "Fix the check failing on your PRs", path: "pulls" },
+  { play: "fix_blocking_check", kinds: ["ci_blocking"], kind: "unblock", effort: "minutes", title: "Have the Builder fix the failing check", action: fixPr },
   { play: "add_ci", kinds: ["ci_missing"], kind: "automate", effort: "minutes", title: "Turn on CI so every PR gets checked", grows: ["+1 CHECK"], path: "actions/new" },
   // Sentry
   { play: "connect_sentry", kinds: ["sentry_missing"], kind: "input", effort: "minutes", title: "Connect Sentry to see what breaks", grows: ["+1 SOURCE"], action: connect("sentry") },

@@ -1,4 +1,4 @@
 {
-  "compilerOptions": { "target": "es2022", "module": "es2022", "moduleResolution": "bundler", "jsx": "react-jsx", "lib": ["es2022", "dom"], "types": ["bun", "@cloudflare/workers-types"], "strict": true, "noEmit": true, "skipLibCheck": true },
+  "compilerOptions": { "target": "es2022", "module": "es2022", "moduleResolution": "bundler", "lib": ["es2022", "dom"], "types": ["bun", "@cloudflare/workers-types"], "strict": true, "noEmit": true, "skipLibCheck": true },
   "include": ["e2e", "contract", "load", "../playwright.config.ts"]
 }

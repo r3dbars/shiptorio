@@ -42,18 +42,24 @@ test("public HTML, docs, legal, signup and authenticated HTML retain the central
     ["/", "", 200], ["/judge", "", 200], ["/judge/", "", 200],
     ["/welcome/index.html", "", 200], ["/docs", "", 200], ["/docs/security", "", 200],
     ["/privacy", "", 200], ["/terms", "", 200],
-    ["/?source=sim", preview, 200], ["/setup", preview, 200],
+    ["/deck?source=sim", preview, 200], ["/setup", preview, 200],
     ["/settings", cookie, 200], ["/runner/pair", cookie, 400],
     ["/runner/pair?code=ABCD-EFAB-1234", cookie, 200],
     ["/connect/sentry?repo=example/shop", cookie, 200],
     ["/connect/posthog?repo=example/shop", cookie, 200],
     ["/connect/support?repo=example/shop", cookie, 200],
-    ["/admin", cookie, 200], ["/admin/signup", cookie, 200], ["/admin/flags", cookie, 200],
+    ["/admin", cookie, 200], ["/admin/signup", cookie, 302], ["/admin/flags", cookie, 200],
   ];
   for (const [path, auth, status] of cases) {
     const response = await app.fetch(new Request(origin + path, { headers: auth ? { cookie: auth } : {} }), env);
     expect(response.status, path).toBe(status);
     expectHeaders(response, new URL(origin + path).pathname);
+  }
+  // The old app's demo links redirect to the deck now.
+  for (const [path, auth, target] of [["/?source=sim", preview, "/deck?source=sim"]]) {
+    const response = await app.fetch(new Request(origin + path, { headers: auth ? { cookie: auth } : {} }), env);
+    expect(response.status, path).toBe(302);
+    expect(response.headers.get("location"), path).toBe(target);
   }
   for (const path of ["/auth/login", "/waitlist", "/?source=sim"]) {
     const response = await app.fetch(new Request(origin + path), { ...env, SIGNUP_GATE_MODE: "waitlist" });

@@ -12,7 +12,7 @@ afconvert -f m4af -d aac@44100 -b 80000 /tmp/shiptorio-music/foundry-preview.wav
 - [65-second audition](foundry-preview.m4a): original CC0 score/instruments, rendered
   with OfflineAudioContext. Idle 0–13s, layers rising 13–31s, blocked 31–47s,
   launch 47–55s, working 55–65s. **Synthetic audition**, not a simulator recording.
-- [Desktop controls](desktop.png) and [iPhone 13 controls](phone.png): master volume
+- _Desktop controls (screenshot moved out of the repo: project files `shiptorio/evidence/docs/evidence/music/desktop.png`)_ and _iPhone 13 controls (screenshot moved out of the repo: project files `shiptorio/evidence/docs/evidence/music/phone.png`)_: master volume
   and separate music volume fit the activity tray. At 1440×900 and 390×844 CSS px
   (phone image is 3× device pixels).
 - [Browser results](results.json): no v2 score or audio requests before a gesture or

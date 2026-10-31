@@ -1,0 +1,28 @@
+[
+  {
+    "name": "phone-390",
+    "cards": [
+      "story-call-1",
+      "story-call-2",
+      "story-call-3"
+    ],
+    "existingSignIn": true,
+    "closeReplaysStory": true,
+    "watchChips": 0,
+    "signedOutRepoChips": 0,
+    "consoleErrors": []
+  },
+  {
+    "name": "desktop-1280",
+    "cards": [
+      "story-call-1",
+      "story-call-2",
+      "story-call-3"
+    ],
+    "existingSignIn": true,
+    "closeReplaysStory": true,
+    "watchChips": 0,
+    "signedOutRepoChips": 0,
+    "consoleErrors": []
+  }
+]

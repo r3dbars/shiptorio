@@ -1,12 +1,14 @@
 // Every message on the wire. Both lanes build against this file; change it in a PR both see.
 
 import { z } from "zod";
+import { PipelineStep } from "./pipeline";
 import { HoldingBack } from "./signals";
 import { GoalId, Goals } from "./goals";
 import {
   Actor,
   Autonomy,
   Learned,
+  LiveBottleneckPick,
   AutonomyLevel,
   Belt,
   Bottleneck,
@@ -33,6 +35,7 @@ import {
 // ---------- server → web ----------
 
 export const Patch = z.object({
+  pipeline: z.array(PipelineStep).length(6).optional(), // full replacement, never client-advanced
   items: z.array(Item).optional(), // upserts
   machines: z.array(Machine).optional(),
   belts: z.array(Belt).optional(),
@@ -46,6 +49,7 @@ export const Patch = z.object({
   goals: Goals.optional(),
   bottleneck: Bottleneck.nullable().optional(),
   holdingBack: HoldingBack.nullable().optional(),
+  liveBottleneck: LiveBottleneckPick.nullable().optional(),
   autonomy: Autonomy.optional(), // full replacement when present
   learned: z.array(Learned).optional(), // full replacement when present
   metrics: Metrics.optional(),
@@ -107,12 +111,14 @@ export const WebToServer = z.discriminatedUnion("type", [
   z.object({ type: z.literal("set_priority"), itemId: z.string().max(80), priority: z.enum(["rush", "park", "none"]) }),
   z.object({ type: z.literal("choose_move"), moveId: z.string(), optionId: z.string() }), // a Next Move button
   // Check-in swipes (docs/PRODUCT.md "Check-in"). Right is choose_move with the recommended option.
-  z.object({ type: z.literal("defer_move"), moveId: z.string() }), // left: later, back next check-in
+  z.object({ type: z.literal("defer_move"), moveId: z.string(), intentId: z.string().uuid().optional() }), // left: later, back next check-in
   // down: never. why: once = just this one, kind = stop this kind (a rule), spark = Spark decides these, wrong = Spark misread it (a scar)
   z.object({ type: z.literal("dismiss_move"), moveId: z.string(), why: z.enum(["once", "kind", "spark", "wrong"]) }),
   z.object({ type: z.literal("undo"), actionId: z.string() }),
   // docs/LEARN.md: stop doing this kind of card on its own; it asks the player again.
   z.object({ type: z.literal("unlearn"), key: z.string().max(200) }),
+  // Have Shippy look at the repo now instead of on his half-hour timer (scripts/e2e/real-loop.ts look).
+  z.object({ type: z.literal("brain_look") }),
   // Turn autonomy up to an unlocked level or back down. With district, permit sets that district's launch permit.
   z.object({ type: z.literal("set_autonomy"), level: AutonomyLevel.optional(), district: z.string().optional(), permit: z.boolean().optional() }),
   z.object({ type: z.literal("set_goal"), text: z.string().max(200) }),

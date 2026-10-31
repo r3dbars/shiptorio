@@ -23,10 +23,10 @@ esac
     await Bun.write(executable, fixture); await chmod(executable, 0o700);
     expect(await subscriptionSignedIn("claude_code", executable, home)).toBe(false);
     // The real runner entrypoint launches the provider and checks its persisted status.
-    const env = { ...process.env, PATH: `${root}:/usr/bin:/bin`, SHIPTORIO_RUNNER_ROOT: root, ANTHROPIC_API_KEY: "do-not-inherit", CLAUDE_CODE_OAUTH_TOKEN: "do-not-inherit", SHIPTORIO_RUNNER_TOKEN: "do-not-inherit" };
+    const env = { ...process.env, PATH: `${root}:/usr/bin:/bin`, SHIPTORIO_RUNNER_ROOT: root, SHIPTORIO_ENABLE_CLAUDE: "1", ANTHROPIC_API_KEY: "do-not-inherit", CLAUDE_CODE_OAUTH_TOKEN: "do-not-inherit", SHIPTORIO_RUNNER_TOKEN: "do-not-inherit" };
     const child = Bun.spawn([process.execPath, join(import.meta.dir, "../src/cli.ts"), "login", "claude"], { env, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
     const [out, err, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
-    expect({ code, err }).toEqual({ code: 0, err: "" }); expect(out).toContain("signed in for Shiptorio");
+    expect({ code, err }).toEqual({ code: 0, err: "" }); expect(out).toContain("Claude is signed in and ready");
     expect(await subscriptionSignedIn("claude_code", executable, home)).toBe(true);
     expect(await Bun.file(join(home, ".claude/.shiptorio-login")).exists()).toBe(true);
     expect((await stat(join(home, ".claude"))).mode & 0o777).toBe(0o700);

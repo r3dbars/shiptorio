@@ -6,6 +6,7 @@
 // that contract landing; once it's on main, swap TapSignal for the shared type.
 
 import { loadTaps, type TapRow } from "../taps";
+import { plural } from "../encode";
 
 export interface TapSignal {
   id: string;
@@ -23,7 +24,6 @@ export interface TapSignal {
 
 const WEEK = 7 * 86400000, FRESH = 30 * 60000, STALE_OPEN = 86400000;
 const id = (kind: string, scope?: string) => `taps:${kind}:${scope ?? "repo"}`;
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /** One factory's taps from the last week (any order) → at most a few signals, heaviest first. */
 export function tapSignals(rows: readonly TapRow[], now: number): TapSignal[] {
@@ -35,7 +35,8 @@ export function tapSignals(rows: readonly TapRow[], now: number): TapSignal[] {
   const ignored = week.filter(r => r.action === "gone" || (r.decided_at === null && now - r.shown_at > STALE_OPEN));
   if (ignored.length >= 3) out.push({ ...base, id: id("card_ignored"), kind: "card_ignored",
     title: `${plural(ignored.length, "card")} went untapped this week.`.slice(0, 160),
-    severity: Math.min(1, ignored.length / 10), metric: { value: ignored.length, unit: "cards" },
+    // Advice about the deck, not a stop on the line: never louder than a red PR or an empty builder.
+    severity: Math.min(0.5, ignored.length / 10), metric: { value: ignored.length, unit: "cards" },
     evidence: ignored.slice(0, 3).map(r => ({ label: `Untapped: ${r.title}`.slice(0, 120) })) });
 
   // Later after Later on the same kind of card: the brain keeps dealing something the player doesn't want now.
@@ -45,7 +46,7 @@ export function tapSignals(rows: readonly TapRow[], now: number): TapSignal[] {
     let streak = 0;
     while (streak < taps.length && (taps[streak].action === "later" || taps[streak].action === "never")) streak++;
     if (streak >= 3) out.push({ ...base, id: id("later_streak", kind), kind: "later_streak", scope: kind,
-      title: `You set aside the last ${streak} ${kind} cards.`, severity: Math.min(1, streak / 6), metric: { value: streak, unit: "cards" },
+      title: `You set aside the last ${streak} ${kind} cards.`, severity: Math.min(0.6, streak / 6), metric: { value: streak, unit: "cards" },
       evidence: taps.slice(0, Math.min(streak, 3)).map(r => ({ label: `${r.action === "later" ? "Later" : "Never"}: ${r.title}`.slice(0, 120) })) });
   }
 

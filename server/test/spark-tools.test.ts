@@ -1,6 +1,6 @@
 import { sparkTestEnv } from "./budget-fixture";
 import { afterEach, describe, expect, it } from "bun:test";
-import { compact, planLocalTask, reviewWithTools, runReadTool, type Toolbox } from "../src/spark-tools";
+import { compact, planLocalTask, reviewWithTools, runReadTool, RepositoryReadUnavailable, type Toolbox } from "../src/spark-tools";
 import { factoryBrief, signalsBrief, issueComments, ciReport } from "../src/spark-context";
 import type { FactoryState, Item } from "@shiptorio/shared";
 
@@ -31,6 +31,15 @@ function spark(script: unknown[]) {
 }
 
 describe("read tools", () => {
+  it("does not turn provider failures into missing files or cache the failed read", async () => {
+    let failed = true;
+    const cache = new Map<string, string | null>();
+    const source = box({paths:["package.json"],read:async()=>{if(failed)throw Error("temporary provider outage");return '{"scripts":{"test":"bun test"}}';}});
+    await expect(runReadTool(source,"read_file",{path:"package.json"},cache)).rejects.toBeInstanceOf(RepositoryReadUnavailable);
+    expect(cache.size).toBe(0);
+    failed=false;
+    expect(await runReadTool(source,"read_file",{path:"package.json"},cache)).toContain("bun test");
+  });
   it("redacts complete source before file and search result truncation", async () => {
     const source = `${"x".repeat(9900)}\n${syntheticPem}`;
     const boundary = box({ paths: ["src/config.ts"], read: async () => source });
@@ -191,6 +200,16 @@ describe("planner tools", () => {
 
   it("can't widen to a file it never read", async () => {
     spark([found[0], { tool: "read_file", path: "README.md", reason: "r" }, { ...found[3], files: ["README.md", "src/cart.ts"] }]);
+    await expect(planLocalTask(sparkTestEnv(), { title: "README", body: "", district: "/" }, ["README.md"], box(), async () => {}, { widen: true })).rejects.toThrow("explicit writable subset");
+  });
+
+  it("may add a new test file that proves the fix when the player approves the scope, but never a secret path", async () => {
+    const plan = (files: string[]) => [found[0], { tool: "read_file", path: "README.md", reason: "r" }, { ...found[3], files }];
+    spark(plan(["README.md", "test/readme.test.ts"]));
+    expect((await planLocalTask(sparkTestEnv(), { title: "README", body: "", district: "/" }, ["README.md"], box(), async () => {}, { widen: true })).files).toEqual(["README.md", "test/readme.test.ts"]);
+    spark(plan(["README.md", "test/readme.test.ts"]));
+    await expect(planLocalTask(sparkTestEnv(), { title: "README", body: "", district: "/" }, ["README.md"], box(), async () => {})).rejects.toThrow("explicit writable subset");
+    spark(plan(["README.md", ".github/test/x.test.ts"]));
     await expect(planLocalTask(sparkTestEnv(), { title: "README", body: "", district: "/" }, ["README.md"], box(), async () => {}, { widen: true })).rejects.toThrow("explicit writable subset");
   });
 

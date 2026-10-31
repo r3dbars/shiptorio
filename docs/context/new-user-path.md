@@ -2,7 +2,11 @@
 
 What a brand-new GitHub account goes through, step by step, timed, with every snag and who owns it.
 Re-run it any time: `bun run stranger` (or `node playtest/stranger/run.mjs` after `bun run build`).
-CI runs the **Stranger E2E** workflow on every PR to `main`, including drafts and docs-only changes.
+CI runs the **Stranger E2E** workflow on PRs to `dev` and `main`, including drafts. Documentation-only changes outside the public docs site get a successful scope check without rerunning the browser journey (`scripts/ci/docs-only.sh`).
+
+The current journey uses the 2D pixel deck. The Oct 26 timings below are historical fixture results, not a current live-ship receipt.
+
+**A judge's first minute (2026-10-31, #783):** `playtest/stranger/deck-first-run.mjs` plays as `https://shiptorio.dev`. Chromium maps that host to the local Worker (self-signed HTTPS), so the real front door applies: no password before the tour, the password popup at **Build mine**, then GitHub, the repo, Codex setup and Shippy's first card, on desktop 1280 and phone 390. After the tour, the signed-in first run builds the stations quick and silent (`shiptorio:toured`). Last local run: sign-in about 9s, and about 21s from plugging in Codex to the first card.
 
 ## How the dry run works
 

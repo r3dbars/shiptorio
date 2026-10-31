@@ -156,3 +156,24 @@ test("outer request leases survive eviction and block reset until released or ex
   const saved=await f.storage.get<any>("fixture");expect(saved.requestLeases[next.leaseId]).toBeLessThanOrEqual(Date.now()+300000);saved.requestLeases[next.leaseId]=Date.now()-1;await f.storage.put("fixture",saved);
   const expired=new FixtureRuntime(f.storage as any,f.env,f.worker);expect((await expired.fetch(f.request("http://fixture.internal/reset","POST"))).ok).toBe(true);
 });
+
+test("reset reports exact expiring lease blockers without leaking their identifiers or runner token", async () => {
+  const f = setup(), savedNow = Date.now;
+  Date.now = () => 1_000_000;
+  try {
+    const entered = await f.runtime.fetch(f.request("http://fixture.internal/enter", "POST"));
+    const { leaseId } = await entered.json() as { leaseId: string };
+    const saved = await f.storage.get<any>("fixture");
+    saved.runner = { token: "private-runner-token", until: 1_420_001, completed: false, pending: { jobId: f.job.id, lease: "private-receipt-lease" } };
+    await f.storage.put("fixture", saved);
+    const restored = new FixtureRuntime(f.storage as any, f.env, f.worker);
+    const busy = await restored.fetch(f.request("http://fixture.internal/reset", "POST"));
+    expect(busy.status).toBe(409); expect(busy.headers.get("retry-after")).toBe("421");
+    const text = await busy.text();
+    expect(JSON.parse(text)).toEqual({ code: "fixture_busy", blockers: ["request_leases", "runner_receipt"], activeRequests: 0, requestLeases: 1, leaseRetryAfterSeconds: 421 });
+    for (const secret of [leaseId, "private-runner-token", "private-receipt-lease", f.job.id]) expect(text).not.toContain(secret);
+    Date.now = () => 1_420_001;
+    // Both bounded leases expire naturally; no guard or receipt was bypassed.
+    expect((await restored.fetch(f.request("http://fixture.internal/reset", "POST"))).status).toBe(200);
+  } finally { Date.now = savedNow; }
+});

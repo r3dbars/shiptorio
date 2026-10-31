@@ -1,5 +1,6 @@
 import { PRIVATE_SOCKET_TIMING, PrivateSocketTiming } from "../../server/src/private-socket-timing";
 import { settleFixtureLease } from "./request-lease";
+import { sanitizedResetFailure } from "./reset-busy";
 // PRIVATE, isolated test backend. Production/staging application entries never import this file.
 import { app } from "../../server/src/index";
 import { fixtureSession, clearFixtureSession } from "./session";
@@ -8,9 +9,10 @@ import { makeSessionCookie } from "../../server/src/session";
 import { ISOLATED_TEST_CONTEXT, verifyTestDelegation } from "../../server/src/test-delegation";
 import { personaId, personaRepo } from "../../server/src/test-users-policy";
 import { fixtureOnlyFetch } from "./runtime";
-import type { FixtureEnv } from "./env";
+import { fixtureProviderEnv, type FixtureEnv } from "./env";
 import { Factory as SeededFactory } from "../bot/worker";
 export class Factory extends SeededFactory {
+  constructor(ctx: DurableObjectState, env: FixtureEnv) { super(ctx, fixtureProviderEnv(env)); }
   async prepareFixtureReset() {
     const existing = await this.ctx.storage.get<{ receipt: string; complete: boolean }>("fixtureReset");
     if (existing) {
@@ -44,7 +46,8 @@ export { FixtureProvider } from "./provider";
 
 globalThis.fetch = fixtureOnlyFetch;
 export default {
-  async fetch(request: Request, env: FixtureEnv, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, rawEnv: FixtureEnv, ctx: ExecutionContext): Promise<Response> {
+    const env = fixtureProviderEnv(rawEnv);
     if (env.FIXTURE_INSTANCE !== "shiptorio-fixture" || env.TEST_USERS !== "on" || env.PUBLIC_URL !== "https://shiptorio.dev") return new Response("Fixture disabled", { status: 503 });
     const timing = new FixtureTiming();
     const persona = await verifyTestDelegation(request, env.TEST_FACTORY_KEY ?? "");
@@ -54,7 +57,7 @@ export default {
       const repo = personaRepo(persona), id = personaId(persona), installation = 9000 + Math.abs(id);
       const provider = env.FIXTURE_PROVIDERS.get(env.FIXTURE_PROVIDERS.idFromName(persona));
       const stopped = await provider.fetch(new Request("http://fixture.internal/reset", { method: "POST", headers: { "x-test-persona": persona } }));
-      if (!stopped.ok) return new Response("Fixture reset failed", { status: stopped.status === 409 ? 409 : 503 });
+      if (!stopped.ok) return sanitizedResetFailure(stopped);
       const factory = env.FACTORY.get(env.FACTORY.idFromName(`repo:${990000 + Math.abs(id)}`)) as unknown as Factory;
       const reset = await factory.prepareFixtureReset();
       if (!reset.complete) return new Response("Fixture reset pending", { status: 409 });

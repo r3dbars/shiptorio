@@ -64,6 +64,9 @@ describe("card tap log", () => {
     expect(signals.find(s => s.kind === "later_streak")).toMatchObject({ title: "You set aside the last 3 verify cards.", source: "taps", freshUntil: now + 30 * 60000 });
     expect(signals.every(s => s.evidence.length >= 1 && s.title.length <= 160)).toBe(true);
     expect(tapSignals(rows.slice(0, 2), now)).toEqual([]);
+    // 28 untapped cards is advice about the deck, never louder than a red PR (ci_blocking starts at 0.7).
+    const many = Array.from({ length: 28 }, (_, h) => row({ card_id: `m${h}`, kind: "input", shown_at: at(h % 100 + 1), action: "gone", decided_at: at(h % 100) }));
+    expect(tapSignals(many, now).find(s => s.kind === "card_ignored")!.severity).toBe(0.5);
   });
 
   it("reads one factory's last week through the collector registry shape", async () => {
@@ -85,13 +88,10 @@ describe("/admin/taps", () => {
   const env = { SESSION_SECRET: "taps-test", APP_PASSWORD: "pw", ALLOWED_LOGINS: "r3dbars,other", ADMIN_LOGINS: "r3dbars", DB: testD1(),
     CACHE: { list: async () => ({ keys: [] }), put: async () => {}, get: async () => null } };
   const cookie = async (login: string) => (await makeSessionCookie("taps-test:pw", "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=") + "; " + await signedInCookie(env as never, login);
-  it("is admin only and serves the report for one factory", async () => {
+  it("retired report redirects only after the admin gate", async () => {
     for (const path of ["/admin/taps", "/admin/taps/data", "/admin/taps/app.js"]) expect((await app.fetch(new Request("https://shiptorio.com" + path, { headers: { cookie: await cookie("other") } }), env)).status).toBe(403);
     await offerCards(env.DB, [offeredRow("o/r", card("a"), "district:web", "rule", Date.now())]);
     const headers = { cookie: await cookie("r3dbars") };
-    expect(await (await app.fetch(new Request("https://shiptorio.com/admin/taps", { headers }), env)).text()).toContain("What players say yes and no to");
-    const data = await (await app.fetch(new Request("https://shiptorio.com/admin/taps/data?repo=o/r&rows=1", { headers }), env)).json() as any;
-    expect(data).toMatchObject({ days: 7, repo: "o/r", repos: ["o/r"], report: { total: { shown: 1 } }, signals: [] });
-    expect(data.rows).toHaveLength(1);
+    for(const path of ['/admin/taps','/admin/taps/data?repo=o/r&rows=1','/admin/taps/app.js']) {const response=await app.fetch(new Request('https://shiptorio.com'+path,{headers}),env);expect(response.status).toBe(302);expect(response.headers.get('location')).toBe('/admin');}
   });
 });

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <title>Build a station (dev)</title>
+    <!-- replay the construction moment (src/deck2d/build/) on any stop.  ?stop=builder auto-plays one, ?loop=1 forever, ?speed=0.5 -->
+    <link rel="preload" href="/fonts/silkscreen-400.woff2" as="font" type="font/woff2" crossorigin />
+    <style>
+#bar { position: fixed; left: 12px; right: 12px; bottom: 12px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: center; z-index: 5; }
+#bar button { font: 400 11px/1 'Silkscreen', monospace; letter-spacing: .06em; color: #f4ead8; background: rgba(20,14,10,.92); border: 2px solid #8a6a3a; min-height: 36px; padding: 0 12px; cursor: pointer; }
+#bar button.lock { border-color: #5a4434; color: #b8a48a; }
+#bar button:focus-visible { outline: 3px solid #6fb2ff; outline-offset: 2px; }
+#stage { position: fixed; inset: 0; }
+    </style>
+  </head>
+  <body>
+    <div id="stage"><canvas id="world" aria-label="Construction preview"></canvas></div>
+    <div id="bar"></div>
+    <script type="module" src="/src/deck2d/build/preview.ts"></script>
+  </body>
+</html>

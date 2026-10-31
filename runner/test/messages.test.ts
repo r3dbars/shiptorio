@@ -1,7 +1,16 @@
 import { expect, test } from "bun:test";
-import { ClaimResponse, RenewResponse } from "../src/messages";
+import { assertJobAssignment, ClaimResponse, RenewResponse } from "../src/messages";
 const id = "12345678-1234-4234-8234-123456789abc";
 const job = { id, repo: "r3dbars/shiptorio", harness: "codex", baseSha: "a".repeat(40), branch: `shiptorio/runner-${id}`, allowedPaths: ["src/a.ts"], plan: "Fix a", lease: id, token: "test", deadline: 1234 };
+test("runner accepts GitHub capitalization but rejects another repo, expired lease and changed branch", () => {
+  const assigned = ClaimResponse.parse({ job: { ...job, repo: "r3dbars/Testing" } }).job!;
+  expect(assigned.repo).toBe("r3dbars/testing"); // Recovery journals and receipt replay use the same identity as pairing.
+  expect(() => assertJobAssignment(assigned, "r3dbars/testing", 1000)).not.toThrow();
+  expect(() => assertJobAssignment(assigned, "other/testing", 1000)).toThrow("Invalid job assignment");
+  expect(() => assertJobAssignment(assigned, "r3dbars/testing-other", 1000)).toThrow("Invalid job assignment");
+  expect(() => assertJobAssignment(assigned, "r3dbars/testing", 1234)).toThrow("Invalid job assignment");
+  expect(() => assertJobAssignment({ ...assigned, branch: `shiptorio/runner-${crypto.randomUUID()}` }, "r3dbars/testing", 1000)).toThrow("Invalid job assignment");
+});
 test("HTTP job assignments reject malformed and escaping executable fields", () => {
   expect(ClaimResponse.parse({ job }).job?.id).toBe(id);
   expect(ClaimResponse.parse({ job: { ...job, command: "sh -c evil" } }).job).not.toHaveProperty("command");

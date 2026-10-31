@@ -6,6 +6,8 @@
 import { signalId, type BrainSignal, type Evidence, type SignalCollector } from "@shiptorio/shared";
 import { gh } from "../github";
 import { OutboundError } from "../reliability";
+import { RateLimitError } from "../rate-limit";
+import { log } from "../telemetry";
 
 /** The fields we use from GET /repos/{repo}/actions/runs. */
 export interface WorkflowRun {
@@ -188,7 +190,8 @@ export function deriveCiSignals(runs: readonly WorkflowRun[], { repo, defaultBra
       title: (list.length === 1
         ? `"${workflow}" is failing on ${shown}, so it can't ship.`
         : `"${workflow}" is failing on ${list.length} open PRs (${shown}). One fix could unblock all of them.`).slice(0, 160),
-      severity: clamp(0.3 + Math.min(0.5, list.length * 0.12)),
+      // A red check stops a finished PR from shipping, so even one outweighs a growing backlog.
+      severity: clamp(0.7 + Math.min(0.2, (list.length - 1) * 0.1)),
       metric: { value: list.length, unit: "PRs" },
       evidence: list.slice(0, 3).map((b) => ({ label: `Failing on #${b.pr}`, url: b.run.html_url })),
     });
@@ -203,7 +206,7 @@ export interface CiCache {
   put<T>(key: string, value: T): Promise<void>;
 }
 /** at = when runs were read, triedAt = last fetch attempt. runs null = never read. denied = no Actions access. */
-interface CiSnapshot { at: number; triedAt: number; runs: WorkflowRun[] | null; denied?: boolean; dirty?: boolean }
+interface CiSnapshot { at: number; triedAt: number; runs: WorkflowRun[] | null; denied?: boolean; dirty?: boolean; fromChecks?: boolean; openPrs?: number[] }
 const cacheKey = (repo: string) => `ci:runs:v1:${repo}`;
 
 /** KV-backed cache (the Worker's CACHE binding), with a per-isolate map when there's no binding. */
@@ -222,8 +225,14 @@ export interface CiContext {
   token?: string;
   cache: CiCache;
   openPrs?: readonly number[];
+  /** A forced look: read GitHub again unless the snapshot is under 15s old. */
+  force?: boolean;
   /** Test seam. Defaults to the GitHub App installation client. */
   fetchRuns?: (repo: string, token: string, sinceIso: string) => Promise<WorkflowRun[]>;
+  /** Test seam for the open PR numbers read alongside Actions runs. */
+  fetchOpenPrs?: (repo: string, token: string) => Promise<number[]>;
+  /** Test seam for the fallback when the App can't read Actions. Defaults to check runs (checks: read). */
+  fetchChecks?: (repo: string, token: string, defaultBranch: string) => Promise<WorkflowRun[]>;
 }
 
 export async function fetchRuns(repo: string, token: string, sinceIso: string): Promise<WorkflowRun[]> {
@@ -234,6 +243,45 @@ export async function fetchRuns(repo: string, token: string, sinceIso: string): 
     created_at: r.created_at, updated_at: r.updated_at, html_url: r.html_url,
     pull_requests: (r.pull_requests ?? []).map((p) => ({ number: p.number })),
   }));
+}
+
+/** Our GitHub App asks for checks: read, not Actions, so /actions/runs is a 403 on a real install. Check runs on the
+ * open PRs' heads and on the default branch say the same things that matter most (red main, a check blocking PRs),
+ * shaped as runs so one derive serves both. Found by the real-loop proof: a red PR never reached Shippy. */
+/** A forced look reads every source at once and they share the install's one-a-second GitHub slot, so this second
+ * call often lands behind a queue and gets RateLimitError. Wait out a short one rather than drop to 0.8 confidence. */
+async function openPrsOf(ctx: CiContext, repo: string, token: string): Promise<number[] | undefined> {
+  const read = ctx.fetchOpenPrs ?? (ctx.fetchRuns ? undefined : fetchOpenPrs);
+  for (let attempt = 0; read && attempt < 3; attempt++) {
+    try { return await read(repo, token); } catch (error) {
+      const wait = error instanceof RateLimitError ? error.retryAt - Date.now() : Infinity;
+      if (attempt === 2 || wait > 15_000) { log("warn", "ci.open_prs_failed", { repo, error: String(error).slice(0, 200) }); return undefined; }
+      await new Promise(r => setTimeout(r, Math.max(250, wait)));
+    }
+  }
+  return undefined;
+}
+
+export async function fetchOpenPrs(repo: string, token: string): Promise<number[]> {
+  return (await gh<{ number: number }[]>(`/repos/${repo}/pulls?state=open&per_page=100`, token)).map(p => p.number);
+}
+
+export async function fetchCheckRuns(repo: string, token: string, defaultBranch: string): Promise<WorkflowRun[]> {
+  type CheckRun = { id: number; name: string; head_sha: string; status: string; conclusion: string | null; started_at: string | null; completed_at: string | null; html_url: string };
+  const checks = async (ref: string) => (await gh<{ check_runs?: CheckRun[] }>(`/repos/${repo}/commits/${encodeURIComponent(ref)}/check-runs?per_page=50`, token)).check_runs ?? [];
+  const asRun = (c: CheckRun, branch: string, event: string, prs: { number: number }[]): WorkflowRun => ({
+    id: c.id, name: c.name, head_branch: branch, head_sha: c.head_sha, event, status: c.status, conclusion: c.conclusion,
+    run_started_at: c.started_at ?? undefined, created_at: c.started_at ?? c.completed_at ?? new Date(0).toISOString(),
+    updated_at: c.completed_at ?? c.started_at ?? new Date(0).toISOString(), html_url: c.html_url, pull_requests: prs,
+  });
+  const pulls = await gh<{ number: number; head: { sha: string; ref: string } }[]>(`/repos/${repo}/pulls?state=open&per_page=10&sort=updated&direction=desc`, token);
+  // One at a time: GitHub calls share a one-a-second slot per install and a burst past it throws RateLimitError,
+  // which used to drop every PR's checks. One ref failing to load mustn't hide the others' red ones.
+  const out: WorkflowRun[] = [];
+  for (const [ref, branch, event, prs] of [[defaultBranch, defaultBranch, "push", []] as const, ...pulls.map(p => [p.head.sha, p.head.ref, "pull_request", [{ number: p.number }]] as const)]) {
+    try { out.push(...(await checks(ref)).map(c => asRun(c, branch, event, [...prs]))); } catch { /* skip this ref */ }
+  }
+  return out;
 }
 
 function cantRead(repo: string, now: number): BrainSignal {
@@ -255,19 +303,30 @@ export async function readCiSignals(ctx: CiContext, now: number): Promise<BrainS
   if (!token) return [cantRead(repo, now)];
   let snapshot = await cache.get<CiSnapshot>(cacheKey(repo));
   const age = snapshot ? now - snapshot.triedAt : Infinity;
-  if (!snapshot || age >= POLL_MS || (snapshot.dirty && age >= MIN_REFETCH_MS)) {
+  if (!snapshot || age >= POLL_MS || (ctx.force && age >= 15_000) || (snapshot.dirty && age >= MIN_REFETCH_MS)) {
+    const checks = () => (ctx.fetchChecks ?? fetchCheckRuns)(repo, token, ctx.defaultBranch);
     try {
-      snapshot = { at: now, triedAt: now, runs: await (ctx.fetchRuns ?? fetchRuns)(repo, token, new Date(now - WINDOW_MS).toISOString()) };
+      // Once Actions said no, go straight to check runs: asking again costs a call and can fail other ways.
+      snapshot = snapshot?.fromChecks
+        ? { at: now, triedAt: now, runs: await checks(), fromChecks: true }
+        : { at: now, triedAt: now, runs: await (ctx.fetchRuns ?? fetchRuns)(repo, token, new Date(now - WINDOW_MS).toISOString()),
+          // Which PRs are still open, so a red one counts at full confidence. One call; unknown on a failure.
+          openPrs: ctx.openPrs ? undefined : await openPrsOf(ctx, repo, token) };
     } catch (error) {
-      const denied = error instanceof OutboundError && (error.status === 403 || error.status === 404);
-      // Keep the old runs (they age out on freshUntil) and don't retry until the next poll.
-      snapshot = denied ? { at: now, triedAt: now, runs: null, denied } : { at: snapshot?.at ?? now, triedAt: now, runs: snapshot?.runs ?? null };
+      const denied = !snapshot?.fromChecks && error instanceof OutboundError && (error.status === 403 || error.status === 404);
+      // No Actions access: fall back to check runs. Otherwise keep the old runs (they age out on freshUntil) and
+      // don't retry until the next poll.
+      const fresh = denied ? await checks().catch(() => null) : null;
+      snapshot = fresh ? { at: now, triedAt: now, runs: fresh, fromChecks: true } : denied ? { at: now, triedAt: now, runs: null, denied }
+        : { at: snapshot?.at ?? now, triedAt: now, runs: snapshot?.runs ?? null, fromChecks: snapshot?.fromChecks };
     }
     await cache.put(cacheKey(repo), snapshot);
   }
   if (snapshot.denied) return [cantRead(repo, snapshot.at)];
   if (!snapshot.runs) return [];
-  return deriveCiSignals(snapshot.runs, { repo, defaultBranch: ctx.defaultBranch, observedAt: snapshot.at, openPrs: ctx.openPrs });
+  // Check runs are read only on open PRs' heads, so every PR they name is open.
+  const openPrs = ctx.openPrs ?? snapshot.openPrs ?? (snapshot.fromChecks ? [...new Set(snapshot.runs.flatMap(r => r.pull_requests?.map(p => p.number) ?? []))] : undefined);
+  return deriveCiSignals(snapshot.runs, { repo, defaultBranch: ctx.defaultBranch, observedAt: snapshot.at, openPrs });
 }
 
 export const ciCollector: SignalCollector<CiContext> = { source: "ci", everyMs: POLL_MS, read: readCiSignals };

@@ -70,7 +70,7 @@ export async function recoverWorkspace(root: string, job: Job) {
 }
 
 /** Replay unacknowledged receipts even when claim returns null (server already completed the job). */
-export async function replayReceipts(root: string, repo: string, send: (receipt: unknown) => Promise<unknown>) {
+export async function replayReceipts(root: string, repo: string, send: (receipt: unknown) => Promise<unknown>, now = Date.now()) {
   const home = resolve(root, ".recovery");
   const names = await readdir(home).catch((e) => { if (e.code === "ENOENT") return []; throw e; });
   for (const name of names.filter(n => /^[a-f0-9-]{36}\.json$/.test(n))) {
@@ -78,11 +78,21 @@ export async function replayReceipts(root: string, repo: string, send: (receipt:
     const job = JobAssignment.parse({ ...journal.assignment, token: "reacquired-only" });
     if (job.repo !== repo) continue;
     const receipt = Bun.file(resolve(root, ".work", `${job.id}.receipt.json`));
-    if (!await receipt.exists()) continue;
+    if (!await receipt.exists()) {
+      // A sleeping/restarted runner must not keep an expired unfinished workspace forever.
+      // The server owns the lease outcome; this work can no longer be published.
+      if (job.deadline <= now) { const workspace = await recoverWorkspace(root, job); await workspace.close(); }
+      continue;
+    }
     const data = await receipt.json();
     if (data.jobId !== job.id || data.lease !== job.lease) throw new Error("Receipt lease mismatch");
     try { await send(data); }
-    catch (error) { if (job.deadline > Date.now()) throw error; continue; }
+    catch (error) {
+      // Preserve evidence through a network outage. Once an expired attempt is rejected
+      // permanently, retire its workspace; keep the receipt itself for the local audit trail.
+      if (job.deadline <= now && !retryable(error)) { const workspace = await recoverWorkspace(root, job); await workspace.close(); }
+      throw error;
+    }
     const workspace = await recoverWorkspace(root, job); await workspace.close();
   }
 }

@@ -1,5 +1,6 @@
 import { budgetDb } from "./budget-fixture";
 import { BudgetError } from "../src/budget";
+import { RepositoryReadUnavailable } from "../src/spark-tools";
 import { credentialEnv } from "./credential-fixture";
 import { authorizedDB, membershipCache, authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
 import { describe, expect, it, mock } from "bun:test";
@@ -18,14 +19,14 @@ const { Factory } = await import("../src/factory");
 
 function fixture(items: Item[] = [], extraEnv: Record<string, unknown> = {}) {
   const state = FactoryState.parse({ repo: "r3dbars/demo", baseBranch: "main", districts: [], ...starterLine(), items, science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 });
-  const data = new Map<string, unknown>([["state", structuredClone(state)], ["meta", { repo: state.repo, installationId: 1 }]]);
+  const data = new Map<string, unknown>([["githubAccessCheckedAt", Date.now()], ["state", structuredClone(state)], ["meta", { repo: state.repo, installationId: 1 }]]);
   let alarm: number | null = null;
   const events: unknown[] = [];
   const storage = {
     async get(key: string) { return structuredClone(data.get(key)); },
     async put(key: string, value: unknown) { data.set(key, structuredClone(value)); },
     async delete(key: string) { return data.delete(key); },
-    async list(options: { prefix: string; limit?: number }) { return new Map([...data.entries()].filter(([key]) => key.startsWith(options.prefix)).slice(0, options.limit)); },
+    async list(options: { prefix: string; limit?: number }) { return new Map([...data.entries()].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).filter(([key]) => key.startsWith(options.prefix)).slice(0, options.limit)); }, // like Durable Object storage: ascending key order
     async transaction<T>(fn: (tx: { get(key: string): Promise<unknown>; put(key: string, value: unknown): Promise<void> }) => Promise<T>): Promise<T> { return fn(storage); },
     async getAlarm() { return alarm; },
     async setAlarm(value: number) { alarm = value; },
@@ -38,6 +39,33 @@ function fixture(items: Item[] = [], extraEnv: Record<string, unknown> = {}) {
   return { factory, data, events, alarm: () => alarm, reload: () => new Factory(ctx as never, credentialEnv({ ...env, DB: authorizedDB(env.DB), CACHE: membershipCache }) as never), saved: () => data.get("state") as FactoryState };
 
 }
+
+it("runner polling never holds the exclusive lock while preparing or refreshing player cards", async () => {
+  const f = fixture();
+  f.data.set("runnerPair", "pair");
+  const internal = f.factory as unknown as {
+    ctx: { blockConcurrencyWhile<T>(fn: () => Promise<T>): Promise<T> };
+    offerRunnerPlan(): Promise<void>; refreshDecisions(): Promise<void>;
+  };
+  const original = internal.ctx.blockConcurrencyWhile.bind(internal.ctx);
+  let locked = false, offers = 0, refreshes = 0;
+  internal.ctx.blockConcurrencyWhile = fn => original(async () => {
+    locked = true; try { return await fn(); } finally { locked = false; }
+  });
+  internal.offerRunnerPlan = async () => { expect(locked).toBe(false); offers++; };
+  internal.refreshDecisions = async () => { expect(locked).toBe(false); refreshes++; };
+  expect(await f.factory.claimRunner("pair", ["codex"])).toBeNull();
+  expect(offers).toBe(1);
+  expect(refreshes).toBeGreaterThan(0);
+  expect(f.data.get("runnerPair")).toBe("pair");
+});
+
+it("starting an inbox issue keeps one PR on the line and never starts another build behind it", async () => {
+  const f = fixture([{ id:'gh-16', title:'README', kind:'cleanup', source:'github_issue', district:'/', state:'inspecting', attempts:1, updatedAt:1, prNumber:27 }]);
+  expect(await f.factory.startInboxIssue(28, 'r3dbars')).toEqual({ waitingFor:27 });
+  expect([...f.data.keys()].some(k=>k.startsWith('runnerJob:'))).toBe(false);
+  for (const n of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) await expect(f.factory.startInboxIssue(n, 'r3dbars')).rejects.toThrow('Invalid issue');
+});
 
 // Observe the real patch/scheduler boundaries without replacing their effects.
 function inventoryFixture() {
@@ -666,6 +694,35 @@ it('exhausted deliveries leave a durable dead letter and player card while later
   expect(f.data.has('delivery:broken')).toBe(false);
 });
 
+it('one failing delivery waits out its backoff while later deliveries keep flowing in the same tick', async () => {
+  const f = fixture();
+  const seen: string[] = [];
+  (f.factory as unknown as { handleGitHub: (event: string) => Promise<void> }).handleGitHub = async event => { seen.push(event); if (event === 'bad') throw new Error('bad payload'); };
+  await f.factory.enqueueGitHub('a-broken', 'bad', {});
+  await f.factory.enqueueGitHub('b-healthy', 'good-1', {});
+  await f.factory.enqueueGitHub('c-healthy', 'good-2', {});
+  await f.factory.alarm();
+  expect(seen).toEqual(['bad', 'good-1', 'good-2']);
+  expect(f.data.has('delivery:b-healthy')).toBe(false);
+  expect(f.data.has('delivery:c-healthy')).toBe(false);
+  expect((f.data.get('delivery:a-broken') as { attempts: number; nextAt: number })).toMatchObject({ attempts: 1 });
+  expect((f.data.get('delivery:a-broken') as { nextAt: number }).nextAt).toBeGreaterThan(Date.now());
+});
+
+it('processes deliveries in arrival order, not delivery-GUID order', async () => {
+  const f = fixture();
+  const seen: string[] = [];
+  (f.factory as unknown as { handleGitHub: (event: string) => Promise<void> }).handleGitHub = async event => { seen.push(event); };
+  const realNow = Date.now;
+  let clock = realNow();
+  Date.now = () => clock;
+  try {
+    for (const [guid, event] of [['ffff', 'opened'], ['aaaa', 'synchronize'], ['cccc', 'closed']]) { clock += 1000; await f.factory.enqueueGitHub(guid, event, {}); }
+  } finally { Date.now = realNow; }
+  await f.factory.alarm();
+  expect(seen).toEqual(['opened', 'synchronize', 'closed']);
+});
+
 it('reconciliation repairs missed merge, close, moved head and check-run events independently', async () => {
   const keys = await crypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']);
   const pem = `-----BEGIN PRIVATE KEY-----\n${Buffer.from(await crypto.subtle.exportKey('pkcs8', keys.privateKey)).toString('base64')}\n-----END PRIVATE KEY-----`;
@@ -752,7 +809,7 @@ it("a GitHub cooldown rests GitHub-bound tick work until it passes instead of re
   expect([reconciles, offers]).toEqual([2, 1]);
 });
 
-for (const outcome of ["pass", "error", "comment"] as const) {
+for (const outcome of ["pass", "error", "comment", "tree_error"] as const) {
   it(`discards an old-head AI review when the head moves during ${outcome === "comment" ? "comment publication" : outcome === "error" ? "a failed review" : "review"}`, async () => {
     const keys = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
     const pem = `-----BEGIN PRIVATE KEY-----\n${Buffer.from(await crypto.subtle.exportKey("pkcs8", keys.privateKey)).toString("base64")}\n-----END PRIVATE KEY-----`;
@@ -769,6 +826,7 @@ for (const outcome of ["pass", "error", "comment"] as const) {
       const url = String(input);
       if (url.includes("/comments?")) return Response.json([]);
       if (url.endsWith("/access_tokens")) return Response.json({ token: "test" });
+      if (url.includes("/git/trees/")) return Response.json(outcome === "tree_error" ? {tree:[],truncated:true} : {tree:[{path:"server/src/cart.ts",type:"blob"}]});
       if (url.endsWith("/pulls/42")) return Response.json({ state: "open", merged: false, base: { ref: "main", sha: "base" }, head: { sha: f.saved().items[0].inspection!.headSha } });
       if (url.includes("/check-runs?")) return Response.json({ total_count: 1, check_runs: [{ name: "CI", app: { id: 15368 }, head_sha: f.saved().items[0].inspection!.headSha, status: "completed", conclusion: "success" }] });
       if (url.includes("/status?")) return Response.json({ total_count: 0, statuses: [] });
@@ -781,6 +839,7 @@ for (const outcome of ["pass", "error", "comment"] as const) {
       throw new Error(`Unexpected request ${url}`);
     }) as typeof fetch;
     internals.think = async () => {
+      if (outcome === "tree_error") throw Error("Reviewer must not run without the repository tree");
       if (outcome !== "comment") { started(); await waiting; }
       if (outcome === "error") throw new Error("Old review failed");
       return { verdict: "pass", reason: "Old diff is correct", findings: [] };
@@ -788,6 +847,14 @@ for (const outcome of ["pass", "error", "comment"] as const) {
     try {
       await internals.load();
       const run = internals.runGauntlet();
+      if (outcome === "tree_error") {
+        await run;
+        expect(f.saved().items[0].state).toBe("inspecting");
+        expect(stageOf(f.saved().items[0], "ai")?.state).toBe("pending");
+        expect(f.saved().items[0].scars ?? []).toEqual([]);
+        expect(comments).toEqual([]);
+        return;
+      }
       await entered;
       // A new head has completed CI and proof while the previous review is still awaiting I/O.
       await internals.patch({ items: [reviewing(newHead)] });
@@ -816,13 +883,14 @@ it("budget and rate-limit waits leave AI review pending without a rework scar", 
   globalThis.fetch = (async (input: unknown) => {
     const url = String(input);
     if (url.endsWith("/access_tokens")) return Response.json({ token: "paused-review-token" });
+    if (url.includes("/git/trees/")) return Response.json({tree:[]});
     if (url.endsWith("/pulls/42")) return Response.json({ state: "open", merged: false, head: { sha: "head" }, base: { ref: "main", sha: "base" } });
     if (url.includes("/check-runs?")) return Response.json({ total_count: 1, check_runs: [{ name: "CI", app: { id: 15368 }, head_sha: "head", status: "completed", conclusion: "success" }] });
     if (url.includes("/status?")) return Response.json({ total_count: 0, statuses: [] });
     return Response.json([]);
   }) as unknown as typeof fetch;
   try {
-    for (const error of [new BudgetError("Spark daily budget exhausted"), new RateLimitError(Date.now() + 60000)]) {
+    for (const error of [new BudgetError("Spark daily budget exhausted"), new RateLimitError(Date.now() + 60000), new RepositoryReadUnavailable()]) {
       const reviewing = setStage(setStage(item({ state: "inspecting", inspection: freshInspection("head") }), "ci", "passed", "green"), "verify", "passed", "proof");
       const f = fixture([reviewing], { GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "test" });
       const internals = f.factory as unknown as { load(): Promise<unknown>; runGauntlet(): Promise<void>; think(): Promise<unknown> };
@@ -832,6 +900,44 @@ it("budget and rate-limit waits leave AI review pending without a rework scar", 
       expect(f.saved().items[0].state).toBe("inspecting");
       expect(stageOf(f.saved().items[0], "ai")?.state).toBe("pending");
       expect(f.saved().items[0].scars ?? []).toEqual([]);
+    }
+  } finally { globalThis.fetch = original; }
+});
+
+it("a planner timeout or 429 leaves AI review pending, says one calm line and waits out the rest", async () => {
+  const { SparkError } = await import("../src/spark");
+  const { planningFailure, PLANNER_REST_KEY, PLANNER_BUSY_LINE } = await import("../src/planning-retry");
+  const keys = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
+  const pem = `-----BEGIN PRIVATE KEY-----\n${Buffer.from(await crypto.subtle.exportKey("pkcs8", keys.privateKey)).toString("base64")}\n-----END PRIVATE KEY-----`;
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (input: unknown) => {
+    const url = String(input);
+    if (url.endsWith("/access_tokens")) return Response.json({ token: "busy-review-token" });
+    if (url.includes("/git/trees/")) return Response.json({tree:[]});
+    if (url.endsWith("/pulls/42")) return Response.json({ state: "open", merged: false, head: { sha: "head" }, base: { ref: "main", sha: "base" } });
+    if (url.includes("/check-runs?")) return Response.json({ total_count: 1, check_runs: [{ name: "CI", app: { id: 15368 }, head_sha: "head", status: "completed", conclusion: "success" }] });
+    if (url.includes("/status?")) return Response.json({ total_count: 0, statuses: [] });
+    return Response.json([]);
+  }) as unknown as typeof fetch;
+  try {
+    for (const error of [new SparkError("Planner rate limit (429)", Date.now() + 60000), new DOMException("The operation timed out.", "TimeoutError")]) {
+      const reviewing = setStage(setStage(item({ state: "inspecting", inspection: freshInspection("head") }), "ci", "passed", "green"), "verify", "passed", "proof");
+      const f = fixture([reviewing], { GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "test" });
+      const internals = f.factory as unknown as { load(): Promise<unknown>; runGauntlet(): Promise<void>; think(): Promise<unknown>; log(level: string, text: string): void };
+      const lines: string[] = [], log = internals.log.bind(f.factory);
+      internals.log = (level, text) => { lines.push(text); log(level, text); };
+      let calls = 0;
+      // The real think() parks the planner on these failures before rethrowing.
+      internals.think = async () => { calls++; f.data.set(PLANNER_REST_KEY, planningFailure(undefined, error)); throw error; };
+      await internals.load();
+      await internals.runGauntlet();
+      expect(f.saved().items[0].state).toBe("inspecting");
+      expect(stageOf(f.saved().items[0], "ai")?.state).toBe("pending");
+      expect(f.saved().items[0].scars ?? []).toEqual([]);
+      expect(lines.includes(PLANNER_BUSY_LINE)).toBe(true);
+      expect(lines.some(l => /Station (paused|request failed)|couldn't run/.test(l))).toBe(false);
+      await internals.runGauntlet();
+      expect(calls).toBe(1);
     }
   } finally { globalThis.fetch = original; }
 });
@@ -897,4 +1003,150 @@ describe("Rush and Park from a cart's callout", () => {
     const plans = (f.saved().deck ?? []).filter((m) => m.options.some((o) => o.actions.some((a) => a.tool === "plan_runner_job")));
     expect(plans).toHaveLength(1);
   });
+
+  it("an undecided send-back retry doesn't hog the plan slot from the next issue", async () => {
+    const f = fixture([waiting("gh-1"), item({ id: "gh-9", state: "rejected", prNumber: 57 })], { SPARK_DISABLED: "1" });
+    f.data.set("runnerPresence", { harnesses: ["codex"], seenAt: Date.now() });
+    // Testing #57 on 2026-10-31: "#57 failed twice" sat on the deck and #58 never got its Plan card.
+    const retry = { id: "retry-gh-9", title: "#57 failed twice", why: "Proof: no test", itemId: "gh-9", stage: "inspect", kind: "review", createdAt: 1, options: [{ id: "rework-codex", label: "Try again", recommended: true, actions: [{ tool: "plan_runner_job", args: { harness: "codex" }, reason: "Re-plan" }] }, { id: "later", label: "Look later", recommended: false, actions: [] }] };
+    f.data.set("openMoves", [retry]);
+    await (f.factory as unknown as { offerRunnerPlan(): Promise<void> }).offerRunnerPlan();
+    const deck = f.saved().deck ?? [];
+    expect(deck.map((m) => m.id)).toContain("retry-gh-9");
+    expect(deck.filter((m) => m.itemId === "gh-1" && m.options.some((o) => o.actions.some((a) => a.tool === "plan_runner_job")))).toHaveLength(1);
+  });
+});
+
+
+it("retries AI review only on the same green head, preserving prior evidence and merge approval", async () => {
+  const keys = await crypto.subtle.generateKey({name:"RSASSA-PKCS1-v1_5",modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:"SHA-256"},true,["sign","verify"]);
+  const pem = `-----BEGIN PRIVATE KEY-----\n${Buffer.from(await crypto.subtle.exportKey("pkcs8",keys.privateKey)).toString("base64")}\n-----END PRIVATE KEY-----`;
+  const head = "a".repeat(40);
+  const rejected = setStage(setStage(setStage(item({state:"inspecting",inspection:freshInspection(head)}),"ci","passed","green"),"verify","passed","proof"),"ai","rework","Repository could not be read");
+  const f=fixture([rejected],{GITHUB_APP_ID:"1",GITHUB_APP_PRIVATE_KEY:pem});
+  const original=globalThis.fetch;
+  globalThis.fetch=(async (input: unknown)=>{
+    const url=String(input);
+    if(url.endsWith("/access_tokens")) return Response.json({token:"fixture-review"});
+    if(url.endsWith("/pulls/42")) return Response.json({state:"open",merged:false,head:{sha:head},base:{ref:"main",sha:"base"}});
+    if(url.includes("/check-runs?")) return Response.json({total_count:1,check_runs:[{name:"CI",app:{id:15368},head_sha:head,status:"completed",conclusion:"success"}]});
+    if(url.includes("/status?")) return Response.json({total_count:0,statuses:[]});
+    throw Error("Unexpected review retry request");
+  }) as typeof fetch;
+  try {
+    expect(await f.factory.retryAIReview("gh-1","b".repeat(40))).toBe(false);
+    expect(await f.factory.retryAIReview("gh-1",head)).toBe(true);
+    const after=f.saved().items[0];
+    expect(after.state).toBe("inspecting");
+    expect(stageOf(after,"ci")?.state).toBe("passed");
+    expect(stageOf(after,"verify")?.state).toBe("passed");
+    expect(stageOf(after,"ai")?.state).toBe("pending");
+    expect(after.inspection?.humanApproved).toBe(false);
+    expect(after.scars).toEqual(rejected.scars);
+    expect(await f.factory.retryAIReview("gh-1",head)).toBe(false);
+  } finally {globalThis.fetch=original;}
+});
+
+
+it("paused factories retain queued deliveries without processing them, then resume once", async () => {
+  const f = fixture([], {SPARK_DISABLED:"1"});
+  const internal = f.factory as unknown as {env:{DB:{prepare(sql:string):any}};handleGitHub():Promise<void>;reconnectMines():Promise<void>;reconcileGitHub():Promise<void>};
+  const prepare=internal.env.DB.prepare.bind(internal.env.DB);
+  let paused=true, handled=0;
+  internal.env.DB.prepare=sql=>sql.includes("FROM admin_controls") ? {bind:()=>({first:async()=>paused?{scope:"r3dbars/demo"}:null})} : prepare(sql);
+  internal.handleGitHub=async()=>{handled++;};
+  internal.reconnectMines=internal.reconcileGitHub=async()=>{};
+  const pending={event:"issues",payload:{},attempts:0};
+  f.data.set("delivery:paused",pending);
+  await f.factory.alarm();
+  expect(handled).toBe(0);
+  expect(f.data.get("delivery:paused")).toEqual(pending);
+  expect(f.data.has("done:delivery:paused")).toBe(false);
+  expect(f.alarm()).toBeGreaterThan(Date.now());
+  paused=false;
+  await f.factory.alarm();
+  expect(handled).toBe(1);
+  expect(f.data.has("delivery:paused")).toBe(false);
+  expect(f.data.get("done:delivery:paused")).toBeGreaterThan(Date.now());
+});
+
+
+it("a delayed pre-merge CI response cannot rewind a confirmed launch", async () => {
+  const keys=await crypto.subtle.generateKey({name:"RSASSA-PKCS1-v1_5",modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:"SHA-256"},true,["sign","verify"]);
+  const pem=`-----BEGIN PRIVATE KEY-----\n${Buffer.from(await crypto.subtle.exportKey("pkcs8",keys.privateKey)).toString("base64")}\n-----END PRIVATE KEY-----`;
+  const head="a".repeat(40);
+  const waiting=item({state:"on_pad",inspection:freshInspection(head),branch:"shiptorio/runner-test"});
+  const f=fixture([waiting],{GITHUB_APP_ID:"1",GITHUB_APP_PRIVATE_KEY:pem});
+  const entered=Promise.withResolvers<void>(), release=Promise.withResolvers<void>();
+  const original=globalThis.fetch;
+  globalThis.fetch=(async(input:unknown)=>{
+    const url=String(input);
+    if(url.endsWith("/access_tokens")) return Response.json({token:"fixture-ci-race"});
+    if(url.endsWith("/pulls/42")) {entered.resolve();await release.promise;return Response.json({state:"open",merged:false,base:{ref:"main",sha:"base"},head:{sha:head}});}
+    if(url.includes("/check-runs?")) return Response.json({total_count:1,check_runs:[{name:"CI",app:{id:15368},head_sha:head,status:"in_progress",conclusion:null}]});
+    if(url.includes("/status?"))return Response.json({total_count:0,statuses:[]});
+    throw Error("Unexpected CI race request");
+  }) as typeof fetch;
+  try {
+    const pending=f.factory.onCheckSuite([42],false,"pending",head);
+    await entered.promise;
+    await f.factory.onPullClosed(42,true,"merged-sha");
+    release.resolve();await pending;
+    expect(f.saved().items[0].state).toBe("launched");
+    expect(f.saved().items[0].orbit?.mergeSha).toBe("merged-sha");
+    expect(f.saved().science.red).toBe(1);
+  } finally {release.resolve();globalThis.fetch=original;}
+});
+
+it("a recorded merge repairs an older stale item without awarding another rocket", async () => {
+  const before=item({state:"on_pad",inspection:freshInspection("head")});
+  const f=fixture([before]);
+  await f.factory.onPullClosed(42,true,"merged-sha");
+  const score=structuredClone(f.saved().science);
+  await (f.factory as unknown as {patch(p:Patch):Promise<void>}).patch({items:[before]});
+  await f.factory.onPullClosed(42,true,"merged-sha");
+  expect(f.saved().items[0].state).toBe("launched");
+  expect(f.saved().items[0].orbit?.mergeSha).toBe("merged-sha");
+  expect(f.saved().science).toEqual(score);
+});
+
+it("a confirmed merged PR still reconciles when its item was refreshed during the GitHub read", async () => {
+  const keys=await crypto.subtle.generateKey({name:"RSASSA-PKCS1-v1_5",modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:"SHA-256"},true,["sign","verify"]);
+  const pem=`-----BEGIN PRIVATE KEY-----\n${Buffer.from(await crypto.subtle.exportKey("pkcs8",keys.privateKey)).toString("base64")}\n-----END PRIVATE KEY-----`;
+  const before=item({state:"inspecting",inspection:freshInspection("head")});
+  const f=fixture([before],{GITHUB_APP_ID:"1",GITHUB_APP_PRIVATE_KEY:pem});
+  const internal=f.factory as unknown as {reconcileGitHub():Promise<void>;patch(p:Patch):Promise<void>};
+  f.data.set("reconcileAt",0);
+  const entered=Promise.withResolvers<void>(),release=Promise.withResolvers<void>();
+  const original=globalThis.fetch;
+  globalThis.fetch=(async(input:unknown)=>{
+    const url=String(input);
+    if(url.endsWith("/access_tokens"))return Response.json({token:"fixture-merged-race"});
+    if(url.includes("/pulls?"))return Response.json([]);
+    if(url.endsWith("/pulls/42")){entered.resolve();await release.promise;return Response.json({state:"closed",merged:true,merge_commit_sha:"merged-sha",head:{sha:"head"}});}
+    throw Error("Unexpected merge reconciliation request");
+  }) as typeof fetch;
+  try{
+    await f.factory.exportState();
+    const pending=internal.reconcileGitHub();
+    await entered.promise;
+    await internal.patch({items:[{...before,updatedAt:Date.now()}]});
+    release.resolve();await pending;
+    expect(f.saved().items[0].state).toBe("launched");
+    expect(f.saved().items[0].orbit?.mergeSha).toBe("merged-sha");
+    expect(f.saved().science.red).toBe(1);
+  }finally{release.resolve();globalThis.fetch=original;}
+});
+
+it("an idle tick writes the snapshot once and leaves unchanged cards and deck book alone", async () => {
+  const f = fixture();
+  const storage = (f.factory as unknown as { ctx: { storage: { put(key: string, value: unknown): Promise<void> } } }).ctx.storage;
+  const put = storage.put.bind(storage), keys: string[] = [];
+  storage.put = async (key, value) => { keys.push(key); return put(key, value); };
+  await f.factory.alarm();
+  keys.length = 0;
+  for (let i = 0; i < 3; i++) await f.factory.alarm();
+  expect(keys.filter(k => k === "state")).toHaveLength(3);
+  expect(keys.filter(k => k === "openMoves" || k === "deckBook")).toEqual([]);
+  expect(f.saved().tick).toBe(4);
 });

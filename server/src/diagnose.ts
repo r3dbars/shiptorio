@@ -14,7 +14,8 @@ import { findPlay, playsFor, unlockFor, type PlayContext } from "./unlocks";
 
 // ---------- memory ----------
 
-export interface Parked { until: number; weight: number }
+/** what: the evidence the card named when parked, so a break that names something new (another red PR) comes back. */
+export interface Parked { until: number; weight: number; what?: string[] }
 export interface Cleared { bottleneckId: string; play: string; title: string; clearedAt: number; heldMs: number }
 
 export interface BrainMemory {
@@ -61,6 +62,11 @@ export const BRAIN = {
 } as const;
 
 const utcDay = (now: number) => new Date(now).toISOString().slice(0, 10);
+/** A break: something that just stopped a PR from shipping. New ones get a look right away, even under a heavier card. */
+const BREAKS: ReadonlySet<string> = new Set(["ci_blocking", "ci_red_main"]);
+/** What a signal names (one evidence row per failing PR for a break), order-free. */
+export const named = (s: BrainSignal) => [...new Set(s.evidence.map(e => e.label))].sort();
+const NEAR_TIE = 0.05;
 const bucket = (w: number) => Math.round(Math.min(1, Math.max(0, w)) * 4);
 
 /** Fresh signals the player hasn't parked (or that got clearly heavier since), heaviest first, above the floor. */
@@ -69,13 +75,19 @@ export function eligible(signals: readonly BrainSignal[], memory: BrainMemory, n
     const w = signalWeight(s, now);
     if (w < BRAIN.floor) return false;
     const parked = memory.later[s.id];
-    if (parked && now < parked.until && w < parked.weight + BRAIN.worse) return false;
+    const news = BREAKS.has(s.kind) && parked?.what && named(s).some(x => !parked.what!.includes(x));
+    if (parked && now < parked.until && w < parked.weight + BRAIN.worse && !news) return false;
     const acted = memory.acted[s.id];
     return acted === undefined || now - acted >= BRAIN.actedMs;
   }).slice(0, BRAIN.maxSignals);
 }
 
-const mainKey = (open: readonly BrainSignal[], now: number) => open[0] ? `${open[0].id}:${bucket(signalWeight(open[0], now))}` : "";
+/** The picture the throttle watches: the main signal and how heavy it reads (not how old the read is: a signal fading
+ * between 10-minute CI polls would otherwise cross a bucket on every poll and buy a fresh model look each time), plus
+ * every open break and what it names. */
+const mainKey = (open: readonly BrainSignal[]) => open[0]
+  ? [`${open[0].id}:${bucket(open[0].severity * open[0].confidence)}`, ...open.filter(s => BREAKS.has(s.kind)).map(s => `${s.id}=${named(s).join(",")}`)].join("|")
+  : "";
 
 /**
  * Drops expired parks, and closes every unlock that worked: the current card, or one the player said Continue
@@ -101,18 +113,19 @@ export function reconcile(memory: BrainMemory, signals: readonly BrainSignal[], 
   };
 }
 
-export type RunCall = { run: boolean; why: string };
+/** capped: out of runs or budget for today. The rule (no model call) can still move the card. */
+export type RunCall = { run: boolean; why: string; capped?: true };
 
 /** Throttle: diagnose when the main signal changes or every 30 min; never in a burst, never past the caps. */
 export function shouldDiagnose(memory: BrainMemory, signals: readonly BrainSignal[], now: number, budget: { used: number; limit: number } | null): RunCall {
   const open = eligible(signals, memory, now);
   if (!open.length) return { run: false, why: "Nothing is holding the factory back." };
   const today = memory.runs.day === utcDay(now) ? memory.runs.count : 0;
-  if (today >= BRAIN.dailyRuns) return { run: false, why: `Already looked ${today} times today.` };
-  if (budget && budget.limit > 0 && budget.used >= budget.limit * BRAIN.budgetShare) return { run: false, why: "Saving the rest of today's thinking for planning and review." };
+  if (today >= BRAIN.dailyRuns) return { run: false, why: `Already looked ${today} times today.`, capped: true };
+  if (budget && budget.limit > 0 && budget.used >= budget.limit * BRAIN.budgetShare) return { run: false, why: "Saving the rest of today's thinking for planning and review.", capped: true };
   const since = memory.lastAt === undefined ? Infinity : now - memory.lastAt;
   if (since < BRAIN.minGapMs * 2 ** Math.min(memory.fails, 4)) return { run: false, why: "Looked a moment ago." };
-  const changed = mainKey(open, now) !== memory.mainKey;
+  const changed = mainKey(open) !== memory.mainKey;
   if (memory.quiet && !changed && since < BRAIN.everyMs) return { run: false, why: "Still nothing worth a card." };
   if (!memory.current) return { run: true, why: "No card up yet." };
   if (!open.some(s => s.id === memory.current!.bottleneck.id)) return { run: true, why: "The last card was answered." };
@@ -126,9 +139,10 @@ export function shouldDiagnose(memory: BrainMemory, signals: readonly BrainSigna
 /** docs/BRAIN.md fallback: heaviest eligible signal, its source's default area, its kind's first play. */
 export function ruleDiagnosis(signals: readonly BrainSignal[], memory: BrainMemory, now: number, ctx: PlayContext = {}): { bottleneck: BrainBottleneck; unlock: BrainUnlock } | null {
   const open = eligible(signals, memory, now);
-  // On a near-tie keep the current card, so the deck doesn't flip between two equal problems.
+  // On a near-tie keep the current card, so the deck doesn't flip between two equal problems. A clearly
+  // heavier signal still wins: a red PR at 0.7 beats an advice card at 0.5.
   const cur = memory.current && open.find(s => s.id === memory.current!.bottleneck.id);
-  const main = cur && bucket(signalWeight(cur, now)) === bucket(signalWeight(open[0], now)) ? cur : open[0];
+  const main = cur && signalWeight(open[0], now) - signalWeight(cur, now) < NEAR_TIE ? cur : open[0];
   if (!main || signalWeight(main, now) < BRAIN.ruleFloor) return null;
   const bottleneck: BrainBottleneck = { id: main.id, area: DEFAULT_AREA[main.source], title: main.title.slice(0, 80), why: (main.evidence[0]?.label ?? main.title).slice(0, 200), signalIds: [main.id], confidence: main.confidence, by: "rule", decidedAt: now };
   return { bottleneck, unlock: unlockFor(playsFor(main.kind)[0], main, main.id, ctx) };
@@ -167,8 +181,8 @@ const turn = z.object({
 export type DiagnoseStep = { tool: string; reason: string; result: string; at: number };
 export type ModelDiagnosis = { bottleneck: BrainBottleneck; unlock: BrainUnlock; reason: string } | { quiet: true; reason: string };
 
-/** Player copy is plain words: never the model's name. */
-export const playerCopy = (text: string, max: number) => text.replace(/\b(muse\s+)?spark\b/gi, "the factory").replace(/\s+/g, " ").trim().slice(0, max);
+/** Player copy is plain words: never the model's name. A sentence that started with it still starts with a capital. */
+export const playerCopy = (text: string, max: number) => text.trim().replace(/\b(?:muse\s+)?spark\b/gi, (_name: string, at: number) => at === 0 ? "The factory" : "the factory").replace(/\s+/g, " ").slice(0, max);
 
 const summarize = (s: BrainSignal, now: number) => ({
   id: s.id, source: s.source, kind: s.kind, title: redactText(s.title).slice(0, 160), weight: Number(signalWeight(s, now).toFixed(2)), confidence: s.confidence,
@@ -271,18 +285,20 @@ export async function runDiagnose(input: RunInput): Promise<RunResult> {
   if (!open.length) return quiet("Nothing is holding the factory back.", memory, !!input.memory.current);
   const call = shouldDiagnose(memory, signals, now, input.budget);
   const keep = memory.current && open.some(s => s.id === memory.current!.bottleneck.id) ? memory.current : undefined;
-  if (!call.run && keep) return { memory, diagnosis: { at: now, signals: fresh, bottleneck: keep.bottleneck, unlock: keep.unlock, reason: call.why }, decided: false, thought: false, cleared, why: call.why };
-  if (!call.run && memory.quiet && memory.mainKey === mainKey(open, now)) return quiet(call.why, memory, false);
+  // Out of budget, a new main signal still gets a look from the rule, so a red PR can't wait for tomorrow behind an old card.
+  const ruleLook = call.capped && mainKey(open) !== memory.mainKey;
+  if (!call.run && keep && !ruleLook) return { memory, diagnosis: { at: now, signals: fresh, bottleneck: keep.bottleneck, unlock: keep.unlock, reason: call.why }, decided: false, thought: false, cleared, why: call.why };
+  if (!call.run && memory.quiet && memory.mainKey === mainKey(open)) return quiet(call.why, memory, false);
   const place = (b: BrainBottleneck, u: BrainUnlock): BrainMemory => ({ ...memory, quiet: false, current: { bottleneck: b, unlock: u, shownAt: b.id === memory.current?.bottleneck.id ? memory.current.shownAt : now } });
   const rule = (fellBack: string | undefined, thought: boolean): RunResult => {
     const r = ruleDiagnosis(signals, memory, now, input.ctx);
     if (!r) return { ...quiet(fellBack ? `Rule: nothing heavy enough for a card (${fellBack})`.slice(0, 300) : "Nothing heavy enough for a card.", memory, !!memory.current), thought, fellBack };
-    return { memory: { ...place(r.bottleneck, r.unlock), mainKey: mainKey(open, now) }, diagnosis: { at: now, signals: fresh, ...r, reason: `${fellBack ? "Rule pick: " : ""}${r.bottleneck.title}`.slice(0, 300) }, decided: true, thought, cleared, fellBack, why: call.why };
+    return { memory: { ...place(r.bottleneck, r.unlock), mainKey: mainKey(open) }, diagnosis: { at: now, signals: fresh, ...r, reason: `${fellBack ? "Rule pick: " : ""}${r.bottleneck.title}`.slice(0, 300) }, decided: true, thought, cleared, fellBack, why: call.why };
   };
   if (!call.run) return rule(undefined, false); // over budget or capped with nothing up: the rule still deals a card
   if (!input.think) return rule("No model configured.", false);
   const day = utcDay(now);
-  memory = { ...memory, lastAt: now, mainKey: mainKey(open, now), runs: { day, count: (memory.runs.day === day ? memory.runs.count : 0) + 1 } };
+  memory = { ...memory, lastAt: now, mainKey: mainKey(open), runs: { day, count: (memory.runs.day === day ? memory.runs.count : 0) + 1 } };
   const brief: DiagnoseBrief = {
     goal: input.goal, signals: open, now, playerFeedback: input.playerFeedback,
     current: keep ? { bottleneckId: keep.bottleneck.id, title: keep.bottleneck.title } : undefined,
@@ -305,9 +321,9 @@ export async function runDiagnose(input: RunInput): Promise<RunResult> {
 // ---------- the player's taps ----------
 
 /** Later parks the bottleneck for a day at its current weight; Continue gives the unlock time to work and watches it. Either frees the slot. */
-export function tapBrain(memory: BrainMemory, bottleneckId: string, choice: "continue" | "later", weight: number, now: number): BrainMemory {
+export function tapBrain(memory: BrainMemory, bottleneckId: string, choice: "continue" | "later", weight: number, now: number, what?: string[]): BrainMemory {
   const cur = memory.current?.bottleneck.id === bottleneckId ? memory.current : undefined;
   const next: BrainMemory = { ...memory, current: cur ? undefined : memory.current };
-  if (choice === "later") return { ...next, later: { ...memory.later, [bottleneckId]: { until: now + BRAIN.laterMs, weight } } };
+  if (choice === "later") return { ...next, later: { ...memory.later, [bottleneckId]: { until: now + BRAIN.laterMs, weight, ...(what ? { what } : {}) } } };
   return { ...next, acted: { ...memory.acted, [bottleneckId]: now }, pending: cur ? { ...memory.pending, [bottleneckId]: { unlock: cur.unlock, title: cur.bottleneck.title, since: now } } : memory.pending };
 }

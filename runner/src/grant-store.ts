@@ -1,4 +1,4 @@
-import { loadPairings, updatePairing, type Pairing, type GrantRejectionCode } from "./pairing";
+import { loadPairings, tokenClaims, updatePairing, type Pairing, type GrantRejectionCode } from "./pairing";
 
 // Decoding only compares local copies; the server still verifies signatures,
 // the live session, repository access and revocation on every authenticated call.
@@ -6,7 +6,7 @@ function grant(pair: Pairing) {
   try {
     const [body, signature, extra] = pair.token.split(".");
     if (!body || !signature || extra || pair.token.length > 2048) throw Error();
-    const value = JSON.parse(atob(body.replace(/-/g, "+").replace(/_/g, "/")));
+    const value = tokenClaims(pair.token);
     if (value.purpose !== "runner" || value.repo?.toLowerCase() !== pair.repo.toLowerCase() || typeof value.pairId !== "string" || !value.pairId || !Number.isFinite(value.expires) || value.expires !== pair.expires) throw Error();
     const user = value.user;
     if (user !== undefined && (!Number.isSafeInteger(user?.id) || typeof user.login !== "string" || typeof user.sessionHash !== "string" || !Number.isFinite(user.expiresAt))) throw Error();
@@ -25,7 +25,7 @@ export async function loadConnections(root: string, env: { SHIPTORIO_REPO?: stri
   const repo = env.SHIPTORIO_REPO?.toLowerCase(), token = env.SHIPTORIO_RUNNER_TOKEN;
   if (repo && token) {
     let expires: number;
-    try { expires = JSON.parse(atob(token.split(".")[0].replace(/-/g, "+").replace(/_/g, "/"))).expires; }
+    try { expires = tokenClaims(token).expires; }
     catch { throw new Error("Invalid configured runner grant; pair this repository again"); }
     const candidate = { repo, token, expires }; grant(candidate);
     const index = pairs.findIndex(pair => pair.repo === repo);
@@ -59,4 +59,22 @@ export async function persistGrantRejection(root: string, pair: Pairing, code: G
     if (!current || current.token !== pair.token) return current;
     return { ...current, rejected: { code, at: now } };
   });
+}
+
+/** Import an existing standalone installation into launchd without re-pairing.
+ * A different server or replacement pairing never inherits another grant. */
+export async function importServicePairings(source: string, target: string, sourceOrigin: string, targetOrigin: string, now = Date.now()) {
+  if (source === target || sourceOrigin !== targetOrigin) return [];
+  const imported: string[] = [];
+  for (const pair of await loadPairings(source)) {
+    const candidate = grant(pair);
+    if (pair.rejected || candidate.expires <= now) continue;
+    await updatePairing(pair.repo, target, current => {
+      if (current && grant(current).binding !== candidate.binding) return current;
+      const selected = current ? latest(current, pair) : pair;
+      if (!current || selected.token !== current.token) imported.push(pair.repo);
+      return selected;
+    });
+  }
+  return imported;
 }

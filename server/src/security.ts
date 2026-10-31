@@ -49,8 +49,15 @@ export function securityHeaders(request: Request, artNonce?: string, turnstile =
 // signed form proof for browsers that strip Origin. Every other mutation fails
 // closed without an exact same-origin header, including future API endpoints.
 export function browserMutationAllowed(request: Request, routePath = new URL(request.url).pathname): boolean {
-  if (!["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) return true;
   const url = new URL(request.url);
+  // Logout revokes a session even though its existing navigation is GET (HEAD uses
+  // the same handler). Lax cookies accompany cross-site top-level navigations.
+  if (routePath === "/auth/logout" && ["GET", "HEAD"].includes(request.method)) {
+    const origin = request.headers.get("origin"), site = request.headers.get("sec-fetch-site");
+    return site !== "cross-site" && site !== "same-site" &&
+      (origin === url.origin || !origin && (site === "same-origin" || site === "none"));
+  }
+  if (!["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) return true;
   if (["/webhooks/github", "/webhooks/sentry", "/access", "/api/runner-device/start", "/api/runner-device/poll", "/api/runner-device/join"].includes(routePath)
     || /^\/webhooks\/sentry\/[\w.-]+\/[\w.-]+$/.test(routePath)
     || /^\/webhooks\/support\/[\w.-]+\/[\w.-]+\/[0-9a-f]{40}$/.test(routePath) || /^\/webhooks\/intercom\/[\w.-]+\/[\w.-]+$/.test(routePath)
@@ -58,11 +65,16 @@ export function browserMutationAllowed(request: Request, routePath = new URL(req
   return request.headers.get("origin") === url.origin && request.headers.get("sec-fetch-site") !== "cross-site";
 }
 
+const media = /\.(webp|png|jpe?g|gif|svg|woff2?|mp3|m4a|ogg|mp4|webm)$/i;
 // Only authenticated content-hashed assets are immutable. Gates/errors/pages stay private and fresh.
 export function browserCacheControl(request: Request, status: number): string {
   const hash = /^\/assets\/[^/]+-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$/;
   // the public docs site is the same for everyone, so browsers and the edge may keep it a few minutes
   if (["GET", "HEAD"].includes(request.method) && [200, 304].includes(status) && isPublicDocs(new URL(request.url).pathname)) return "public, max-age=300";
-  return ["GET", "HEAD"].includes(request.method) && [200, 304].includes(status) && hash.test(new URL(request.url).pathname)
-    ? "private, max-age=31536000, immutable" : "no-store";
+  if (!["GET", "HEAD"].includes(request.method) || ![200, 304].includes(status)) return "no-store";
+  const path = new URL(request.url).pathname;
+  if (hash.test(path)) return "private, max-age=31536000, immutable";
+  // Art, fonts and sound (web/public) keep their names across deploys, so a browser may reuse them for a few minutes and
+  // then revalidate. no-store made every visit re-download ~1 MB of deck art and send each file back through the gate.
+  return media.test(path) ? "private, max-age=300" : "no-store";
 }

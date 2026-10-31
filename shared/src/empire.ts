@@ -3,7 +3,7 @@
 // overview (rollups, the worst bottleneck across islands) and the satellites on the map.
 
 import { z } from "zod";
-import { Stage, type FactoryState } from "./model";
+import { Stage } from "./model";
 
 export const IslandSummary = z.object({
   repo: z.string(),

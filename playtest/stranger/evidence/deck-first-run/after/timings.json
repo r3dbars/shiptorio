@@ -1,0 +1,92 @@
+[
+  {
+    "view": "desktop-1280",
+    "totalMs": 9856,
+    "steps": [
+      {
+        "name": "enter-deck",
+        "ms": 2186
+      },
+      {
+        "name": "github-sign-in",
+        "ms": 2388
+      },
+      {
+        "name": "choose-repository",
+        "ms": 2153
+      },
+      {
+        "name": "codex-setup",
+        "ms": 824
+      },
+      {
+        "name": "runner-ready",
+        "ms": 142
+      },
+      {
+        "name": "first-issue-card",
+        "ms": 1821
+      }
+    ],
+    "slowest": [
+      {
+        "name": "github-sign-in",
+        "ms": 2388
+      },
+      {
+        "name": "enter-deck",
+        "ms": 2186
+      },
+      {
+        "name": "choose-repository",
+        "ms": 2153
+      }
+    ],
+    "errors": []
+  },
+  {
+    "view": "phone-390",
+    "totalMs": 9611,
+    "steps": [
+      {
+        "name": "enter-deck",
+        "ms": 2071
+      },
+      {
+        "name": "github-sign-in",
+        "ms": 2738
+      },
+      {
+        "name": "choose-repository",
+        "ms": 1988
+      },
+      {
+        "name": "codex-setup",
+        "ms": 602
+      },
+      {
+        "name": "runner-ready",
+        "ms": 149
+      },
+      {
+        "name": "first-issue-card",
+        "ms": 1813
+      }
+    ],
+    "slowest": [
+      {
+        "name": "github-sign-in",
+        "ms": 2738
+      },
+      {
+        "name": "enter-deck",
+        "ms": 2071
+      },
+      {
+        "name": "choose-repository",
+        "ms": 1988
+      }
+    ],
+    "errors": []
+  }
+]

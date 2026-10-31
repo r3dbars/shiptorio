@@ -22,3 +22,10 @@ web/test/a11y/out/
 # Per-owner self-host config and non-secret progress
 server/wrangler.selfhost.json
 server/.selfhost/
+
+# Screenshots and evidence shots live in project files, not git (kept: web/public, docs/site/img)
+*.png
+!web/public/**/*.png
+!docs/site/img/*.png
+!docs/readme/*.png
+

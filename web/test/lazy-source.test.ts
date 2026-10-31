@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { connectLazyLive } from "../src/source";
+import { connectLazyLive } from "../src/source/connect";
 
 test("failed live chunks report offline without an unhandled rejection or a late callback after disposal", async () => {
   const statuses: string[] = [];
@@ -27,4 +27,10 @@ test("lazy source never queues an approval for replay and does not forward after
   source.send(approval); expect(sends).toBe(1);
   source.close(); source.send(approval);
   expect([sends, closes]).toEqual([1, 1]);
+});
+
+test("the scenario list the deck reads without the sim matches the sim's own", async () => {
+  const { SCENARIOS } = await import("../src/sim/engine");
+  const { SCENARIO_NAMES } = await import("../src/source/config");
+  expect([...SCENARIO_NAMES]).toEqual(Object.keys(SCENARIOS));
 });

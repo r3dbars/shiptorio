@@ -3,6 +3,7 @@ import { BrainSignal, SIGNAL_KINDS, freshSignals } from "@shiptorio/shared";
 import clogged from "./fixtures/ci/clogged-runs.json";
 import healthy from "./fixtures/ci/healthy-runs.json";
 import { GitHubError } from "../src/github";
+import { RateLimitError } from "../src/rate-limit";
 import { ciCollector, deriveCiSignals, markCiDirty, minutes, POLL_MS, type CiCache, type CiContext, type WorkflowRun } from "../src/signals/ci";
 
 const now = Date.parse("2026-10-27T18:00:00Z");
@@ -147,6 +148,43 @@ describe("CI collector: reading cheaply", () => {
     expect(calls).toBe(2);
   });
 
+  it("a forced look reads GitHub again, but not twice in 15 seconds", async () => {
+    let calls = 0;
+    const c = ctx({ fetchRuns: async () => { calls++; return healthyRuns; } });
+    await ciCollector.read(c, now);
+    await ciCollector.read({ ...c, force: true }, now + 10_000);
+    expect(calls).toBe(1);
+    await ciCollector.read({ ...c, force: true }, now + 16_000);
+    expect(calls).toBe(2);
+  });
+
+  it("after Actions says no, reads check runs directly, and a hiccup keeps them trusted as open PRs", async () => {
+    let actions = 0, checks = 0;
+    const c = ctx({ fetchRuns: async () => { actions++; throw new GitHubError(403, "/actions/runs", "GET"); }, fetchChecks: async () => { checks++; return cloggedRuns; } });
+    await ciCollector.read(c, now);
+    const again = await ciCollector.read({ ...c, force: true }, now + 20_000);
+    expect([actions, checks]).toEqual([1, 2]);
+    expect(again[0].observedAt).toBe(now + 20_000);
+    c.fetchChecks = async () => { throw new Error("rate limited"); };
+    const kept = await ciCollector.read({ ...c, force: true }, now + 40_000);
+    expect(kept.map(s => s.confidence)).toEqual(again.map(s => s.confidence));
+  });
+
+  it("reads which PRs are open alongside Actions runs, so a red PR counts at full confidence", async () => {
+    const failing = { id: 1, name: "check", head_branch: "seed", head_sha: "a".repeat(40), event: "pull_request", status: "completed", conclusion: "failure", created_at: new Date(now - 3_600_000).toISOString(), updated_at: new Date(now - 3_500_000).toISOString(), html_url: "https://github.com/x/y/runs/1", pull_requests: [{ number: 39 }] };
+    const read = (open: number[]) => ciCollector.read(ctx({ fetchRuns: async () => [failing], fetchOpenPrs: async () => open }), now);
+    expect((await read([39])).find(s => s.kind === "ci_blocking")!.confidence).toBe(1);
+    expect((await read([12])).some(s => s.kind === "ci_blocking")).toBe(false); // closed PRs don't count
+  });
+
+  it("waits out a short GitHub queue for the open PR list instead of dropping confidence", async () => {
+    const failing = { id: 1, name: "check", head_branch: "seed", head_sha: "a".repeat(40), event: "pull_request", status: "completed", conclusion: "failure", created_at: new Date(now - 3_600_000).toISOString(), updated_at: new Date(now - 3_500_000).toISOString(), html_url: "https://github.com/x/y/runs/1", pull_requests: [{ number: 39 }] };
+    let tries = 0;
+    const signals = await ciCollector.read(ctx({ fetchRuns: async () => [failing], fetchOpenPrs: async () => { if (tries++ === 0) throw new RateLimitError(Date.now() + 300); return [39]; } }), now);
+    expect(tries).toBe(2);
+    expect(signals.find(s => s.kind === "ci_blocking")!.confidence).toBe(1);
+  });
+
   it("keeps the last runs when GitHub hiccups, and backs off a full poll", async () => {
     const c = ctx({ fetchRuns: async () => cloggedRuns });
     await ciCollector.read(c, now);
@@ -163,8 +201,17 @@ describe("CI collector: reading cheaply", () => {
 
   it("never throws for not connected: no token or no Actions access is ci_missing", async () => {
     expect((await ciCollector.read(ctx({ token: undefined }), now)).map((s) => s.kind)).toEqual(["ci_missing"]);
-    const denied = await ciCollector.read(ctx({ fetchRuns: async () => { throw new GitHubError(403, "/x", "GET"); } }), now);
+    const denied = await ciCollector.read(ctx({ fetchRuns: async () => { throw new GitHubError(403, "/x", "GET"); }, fetchChecks: async () => { throw new GitHubError(403, "/y", "GET"); } }), now);
     expect(denied.map((s) => s.kind)).toEqual(["ci_missing"]);
     expect(denied[0].title).toContain("can't read");
+  });
+
+  it("without Actions access, check runs on open PRs still show a check blocking a PR", async () => {
+    const failing = { id: 1, name: "check", head_branch: "seed", head_sha: "a".repeat(40), event: "pull_request", status: "completed", conclusion: "failure", created_at: new Date(now - 3_600_000).toISOString(), updated_at: new Date(now - 3_500_000).toISOString(), html_url: "https://github.com/x/y/runs/1", pull_requests: [{ number: 39 }] };
+    const signals = await ciCollector.read(ctx({ fetchRuns: async () => { throw new GitHubError(403, "/x", "GET"); }, fetchChecks: async (_r, _t, branch) => { expect(branch).toBe("main"); return [failing]; } }), now);
+    expect(signals.map(s => s.kind)).toContain("ci_blocking");
+    expect(signals.find(s => s.kind === "ci_blocking")!.title).toContain("#39");
+    expect(signals.find(s => s.kind === "ci_blocking")!.severity).toBeGreaterThan(0.6); // louder than any backlog
+    expect(signals.find(s => s.kind === "ci_blocking")!.confidence).toBe(1); // check runs are read on open PRs only
   });
 });

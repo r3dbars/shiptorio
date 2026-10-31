@@ -1,6 +1,6 @@
 ---
 title: Self-host Shiptorio
-description: Run your own factory on Cloudflare with your Meta Spark key, your GitHub App, and your local agents.
+description: Run your own factory on Cloudflare with your Meta Muse Spark key, your GitHub App, and your local agents.
 section: Start here
 order: 5
 ---
@@ -8,7 +8,7 @@ order: 5
 
 <p class="lede">Your Cloudflare account. Your API keys. Your factory.</p>
 
-Shiptorio runs as one Cloudflare Worker with static assets, a SQLite Durable Object per repo, a D1 database and a KV namespace. Meta Muse Spark makes factory decisions using **your Meta API key**. Your local Claude Code or Codex subscription builds the changes through the [runner](/docs/runner).
+Shiptorio runs as one Cloudflare Worker with static assets, a SQLite Durable Object per repo, a D1 database and a KV namespace. Meta Muse Spark makes factory decisions using **your Meta API key**. Your local Codex or Muse Code subscription builds the changes through the [runner](/docs/runner).
 
 ## Before you start
 
@@ -66,11 +66,11 @@ Its permissions and event subscriptions must match the [GitHub App guide](/docs/
 
 ## Start your factory
 
-Open the printed **Sign in** URL, sign in with your allowlisted GitHub account, pick an installed repo, and [connect your runner](/docs/runner). Use the preview password when prompted. Spark plans; your local agent builds; the [gauntlet](/docs/gauntlet) checks the result.
+Open the printed **Sign in** URL, sign in with your allowlisted GitHub account, pick an installed repo, and [connect your runner](/docs/runner). Use the preview password when prompted. Shippy plans; your local agent builds; [Checks and Review](/docs/the-line) check the result.
 
 Only the GitHub login you supplied is initially allowed in, and it is also the administrator. To invite others, edit `ALLOWED_LOGINS` in the generated config as a comma-separated list and deploy with the explicit config command below. Changes made directly to that config are overwritten the next time you run the wizard; keep the admin login restricted. The hosted service's waitlist gate is not enabled.
 
-Sentry and PostHog are optional: connect them from your own app using [Mines](/docs/sources). The generated credential encryption key lets those integrations store their keys encrypted. No production telemetry credentials or mine settings are copied into your deployment.
+Sentry and PostHog are optional extra sources of work and aren't part of the deck yet. The generated credential encryption key lets those integrations store their keys encrypted. No production telemetry credentials or mine settings are copied into your deployment.
 
 ## Update, resume and recover
 
@@ -112,14 +112,14 @@ When updating an older self-host installation with another owner, rerun the wiza
 
 ## Administrator testing and support
 
-The wizard's `ADMIN_LOGINS` owner can use `/admin` or Menu → God. No maintainer
+The wizard's `ADMIN_LOGINS` owner can open `/admin` directly. No maintainer
 account is implied, and `*` never means administrator. View another installed
 factory as a player in read-only mode, then explicitly enable write mode if needed.
 Actions appear in the audit log. You can adjust progress/autonomy and daily limits,
-skip scheduling waits, or pause new Spark calls and runner handout for one factory
+skip scheduling waits, or pause new Shippy calls and runner handout for one factory
 or the whole installation. Limits include usage already spent; zero stops new work.
 Factory reset requires confirmation and refuses active builds/open PR work.
-Verification and the Launch/permit gate always apply, including administrator work.
+Verification still applies to administrator work. The deck's Gate requires the player to hold Ship it.
 The preview password remains enabled.
 
 ### Sample-save retention

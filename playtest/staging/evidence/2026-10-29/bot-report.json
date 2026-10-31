@@ -1,0 +1,141 @@
+{
+  "persona": "test-newbie",
+  "origin": "http://localhost:8894",
+  "fixture": true,
+  "fixturePRs": 1,
+  "fixtureMerges": 1,
+  "observedLaunch": true,
+  "viewportLaunches": [
+    {
+      "width": 390,
+      "repo": "test-fixture/test-newbie",
+      "confirmed": true,
+      "mode": "fresh-transition",
+      "itemIds": [
+        "gh-1"
+      ],
+      "minimumShipped": 1,
+      "counter": "science"
+    },
+    {
+      "width": 1280,
+      "repo": "test-fixture/test-newbie",
+      "confirmed": true,
+      "mode": "persisted-item",
+      "itemIds": [
+        "gh-1"
+      ],
+      "minimumShipped": 1,
+      "counter": "science"
+    }
+  ],
+  "receiptAttached": true,
+  "steps": [
+    {
+      "width": 390,
+      "label": "signed-in",
+      "file": "390-01-signed-in.png",
+      "url": "http://localhost:8894/deck?source=live"
+    },
+    {
+      "width": 390,
+      "label": "github-install",
+      "file": "390-02-github-install.png",
+      "url": "https://github.com/apps/shiptorio-stub/installations/new"
+    },
+    {
+      "width": 390,
+      "label": "installed-fixture",
+      "file": "390-03-installed-fixture.png",
+      "url": "http://localhost:8894/deck?source=live"
+    },
+    {
+      "width": 390,
+      "label": "github-install",
+      "file": "390-04-github-install.png",
+      "url": "https://github.com/apps/shiptorio-stub/installations/new"
+    },
+    {
+      "width": 390,
+      "label": "installed-fixture",
+      "file": "390-05-installed-fixture.png",
+      "url": "http://localhost:8894/deck?source=live"
+    },
+    {
+      "width": 390,
+      "label": "github-install",
+      "file": "390-06-github-install.png",
+      "url": "https://github.com/apps/shiptorio-stub/installations/new"
+    },
+    {
+      "width": 390,
+      "label": "installed-fixture",
+      "file": "390-07-installed-fixture.png",
+      "url": "http://localhost:8894/deck?source=live"
+    },
+    {
+      "width": 390,
+      "label": "open-repo",
+      "file": "390-08-open-repo.png",
+      "url": "http://localhost:8894/deck?source=live&repo=test-fixture%2Ftest-newbie"
+    },
+    {
+      "width": 390,
+      "label": "continue",
+      "file": "390-09-continue.png",
+      "url": "http://localhost:8894/deck?source=live&repo=test-fixture%2Ftest-newbie"
+    },
+    {
+      "width": 390,
+      "label": "continue",
+      "file": "390-10-continue.png",
+      "url": "http://localhost:8894/deck?source=live&repo=test-fixture%2Ftest-newbie"
+    },
+    {
+      "width": 390,
+      "label": "held-launch",
+      "file": "390-11-held-launch.png",
+      "url": "http://localhost:8894/deck?source=live&repo=test-fixture%2Ftest-newbie"
+    },
+    {
+      "width": 390,
+      "label": "launch-confirmed-over-socket",
+      "file": "390-12-launch-confirmed-over-socket.png",
+      "url": "http://localhost:8894/deck?source=live&repo=test-fixture%2Ftest-newbie"
+    },
+    {
+      "width": 390,
+      "label": "final",
+      "file": "390-13-final.png",
+      "url": "http://localhost:8894/deck?source=live&repo=test-fixture%2Ftest-newbie"
+    },
+    {
+      "width": 1280,
+      "label": "signed-in",
+      "file": "1280-01-signed-in.png",
+      "url": "http://localhost:8894/deck?source=live"
+    },
+    {
+      "width": 1280,
+      "label": "open-repo",
+      "file": "1280-02-open-repo.png",
+      "url": "http://localhost:8894/deck?source=live&repo=test-fixture%2Ftest-newbie"
+    },
+    {
+      "width": 1280,
+      "label": "launch-confirmed-over-socket",
+      "file": "1280-03-launch-confirmed-over-socket.png",
+      "url": "http://localhost:8894/deck?source=live&repo=test-fixture%2Ftest-newbie"
+    },
+    {
+      "width": 1280,
+      "label": "final",
+      "file": "1280-04-final.png",
+      "url": "http://localhost:8894/deck?source=live&repo=test-fixture%2Ftest-newbie"
+    }
+  ],
+  "frictions": [],
+  "failures": [],
+  "fingerprint": "e3b0c44298fc1c14",
+  "passed": true
+}

@@ -3,7 +3,8 @@ import ts from 'typescript';
 import { readFileSync } from 'node:fs';
 import { FactoryState, Patch, ServerToWeb } from '../../shared/src';
 import { assertWire } from './assert-wire';
-import { applyPatch } from '../../web/src/store';
+import { applyPatch } from '../../web/src/source/patch';
+import { fold } from '../../web/src/deck2d/data/source';
 
 const read = (path: string) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
 const variants = ServerToWeb.options.map(s => s.shape.type.value);
@@ -39,7 +40,7 @@ describe('wire contract drift guards', () => {
   });
 
   it('covers every Patch field in the actual web reducer (new fields fail closed)', () => {
-    const source = ts.createSourceFile('store.ts', read('web/src/store.ts'), ts.ScriptTarget.Latest, true);
+    const source = ts.createSourceFile('patch.ts', read('web/src/source/patch.ts'), ts.ScriptTarget.Latest, true);
     const consumed = new Set<string>();
     const visit = (node: ts.Node) => {
       if (ts.isPropertyAccessExpression(node) && node.expression.getText(source) === 'p') consumed.add(node.name.text);
@@ -59,24 +60,9 @@ describe('wire contract drift guards', () => {
     expect(applyPatch(withMachine, { removed: [{ kind: 'machine', id: 'm' }] }).machines).toEqual([]);
   });
 
-  it('executes every message through the real web handler, including resolution and log retention', () => {
-    const source = ts.createSourceFile('store.ts', read('web/src/store.ts'), ts.ScriptTarget.Latest, true);
-    let handler: ts.ArrowFunction | undefined;
-    const visit = (node: ts.Node) => {
-      if (ts.isVariableDeclaration(node) && node.name.getText(source) === 'onMessage' && node.initializer && ts.isArrowFunction(node.initializer)) handler = node.initializer;
-      ts.forEachChild(node, visit);
-    };
-    visit(source);
-    expect(handler).toBeDefined();
-    // Run the checked-in hook callback with React's setter contract, without a DOM or a parallel reducer.
-    const js = ts.transpileModule(`const dispatch = ${handler!.getText(source)};`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
+  it('executes every state message through the real deck fold, including resolution', () => {
     let current: FactoryState | null = null;
-    let log: any[] = [], unlock: any;
-    const dispatch = new Function('setState', 'setLog', 'setUnlock', 'applyPatch', 'MAX_LOG', `${js}; return dispatch;`)(
-      (value: any) => { current = typeof value === 'function' ? value(current) : value; },
-      (update: any) => { log = update(log); }, (value: any) => { unlock = value; }, applyPatch, 80,
-    );
-    const send = (value: unknown) => dispatch(ServerToWeb.parse(value));
+    const send = (value: unknown) => { current = fold(current, ServerToWeb.parse(value)); };
     send(fixtures.snapshot);
     expect<unknown>(current).toEqual(state);
     send(fixtures.patch);
@@ -88,13 +74,11 @@ describe('wire contract drift guards', () => {
     send(fixtures.move_resolved);
     expect((current as unknown as FactoryState).move).toBeNull();
     expect((current as unknown as FactoryState).deck).toEqual([]);
+    // Messages that carry no state (log lines, unlock toasts) leave it untouched.
+    const before = current;
     send(fixtures.autonomy_unlocked);
-    expect(unlock.text).toBe('Unlocked');
-    expect(log.at(-1).level).toBe('success');
-    for (let i = 0; i < 81; i++) send({ ...fixtures.log, text: String(i) });
-    expect(log).toHaveLength(80);
-    expect(log[0].text).toBe('1');
-    expect(log.at(-1).text).toBe('80');
+    send(fixtures.log);
+    expect(current).toBe(before);
   });
 
   it('accounts for every production browser-message emitter', () => {
@@ -115,17 +99,16 @@ describe('wire contract drift guards', () => {
     expect(read('web/src/source/schemas.ts')).toContain('ServerToWeb.parse(value)');
   });
 
-  it('requires a web message branch for every variant and keeps the fallback reserved for log', () => {
-    const code = read('web/src/store.ts');
-    const source = ts.createSourceFile('store.ts', code, ts.ScriptTarget.Latest, true);
+  it('names only real message variants in the deck fold, and every state-carrying one', () => {
+    const source = ts.createSourceFile('source.ts', read('web/src/deck2d/data/source.ts'), ts.ScriptTarget.Latest, true);
     const handled = new Set<string>();
     const visit = (node: ts.Node) => {
       if (ts.isBinaryExpression(node) && node.left.getText(source) === 'msg.type' && node.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken && ts.isStringLiteral(node.right)) handled.add(node.right.text);
       ts.forEachChild(node, visit);
     };
     visit(source);
-    // The final else appends log lines; TypeScript also narrows this remainder to LogLine.
-    expect(code).toContain('const { type: _, ...line } = msg;');
-    expect([...handled].sort()).toEqual(variants.filter(v => v !== 'log').sort());
+    for (const type of handled) expect(variants).toContain(type as typeof variants[number]);
+    expect([...handled].sort()).toEqual(['deck', 'move', 'move_resolved', 'patch', 'snapshot']);
   });
+
 });

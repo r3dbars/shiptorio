@@ -63,3 +63,17 @@ jobs:
         run: bun playtest/staging/probe.ts
         env:
           SHIPTORIO_TEST_PASSWORD: ${{ secrets.SHIPTORIO_TEST_PASSWORD }}
+
+      - name: Install browser for deployed guest smoke
+        run: bun x playwright install --with-deps chromium
+      - name: Verify deployed 2D guest entry
+        run: node playtest/staging/deck-smoke.mjs
+        env:
+          SHIPTORIO_TEST_PASSWORD: ${{ secrets.SHIPTORIO_TEST_PASSWORD }}
+          SMOKE_OUT: ${{ runner.temp }}/deck-smoke
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: deployed-deck-guest-smoke
+          path: ${{ runner.temp }}/deck-smoke/
+          retention-days: 7

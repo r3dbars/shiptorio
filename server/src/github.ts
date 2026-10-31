@@ -9,6 +9,7 @@ import { githubLease } from "./github-concurrency";
 // GitHub App auth + webhook verification, using only WebCrypto so it runs on Workers.
 import { isOwnPlanComment, normalizeGitHub, TRUST_LABEL, trustedAuthor, type GitHubIssue, type GitHubPayload } from "./sources/github";
 import type { Signal } from "./sources/types";
+import { sha256Hex } from "./encode";
 
 const API = "https://api.github.com";
 const UA = "shiptorio";
@@ -92,8 +93,7 @@ interface TokenEntry { token: string; expiresAt: number; installationId: number;
 const tokenCache = new Map<string, TokenEntry>();
 const tokenOwners = new Map<string, Omit<TokenEntry, "token">>();
 async function tokenFingerprint(token: string) {
-  const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(token)));
-  return [...hash].map(byte => byte.toString(16).padStart(2, "0")).join("");
+  return sha256Hex(token);
 }
 const pendingTokens = new Map<string, Promise<string>>();
 const distrusted = new Set<number>();
@@ -120,9 +120,16 @@ const queued = new Map<string, number>();
 const contexts = new Map<string, { db: D1Database; scope: string }>();
 const cooldowns = new Map<string, { next: number; failures: number }>();
 const readCache = new GitHubReadCache();
+// One hung D1, KV or body read must not hold its scope's queue (and the cap of 8) forever.
+// Paced delay (5s) + lease-bounded fetch (30s) fit well inside this.
+export const GITHUB_STEP_DEADLINE_MS = 45_000;
+function withDeadline<T>(work: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new RateLimitError(Date.now() + 1000)), GITHUB_STEP_DEADLINE_MS); });
+  return Promise.race([work, late]).finally(() => clearTimeout(timer));
+}
 async function credentialKey(token: string) {
-  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
-  return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, "0")).join("");
+  return sha256Hex(token);
 }
 function boundedSet<K, V>(map: Map<K, V>, key: K, value: V) {
   if (map.size >= 500 && !map.has(key)) map.delete(map.keys().next().value!);
@@ -131,7 +138,40 @@ function boundedSet<K, V>(map: Map<K, V>, key: K, value: V) {
 export async function registerGithubCredential(token: string, db: D1Database, scope: string) {
   boundedSet(contexts, await credentialKey(token), { db, scope });
 }
+// Share only overlapping identical reads, never a completed response. Each caller
+// reaches this point after gh() checked its current installation and repository.
+// Writes, explicit freshness/cancellation controls, and different credentials stay separate.
+const pendingReads = new Map<string, Promise<unknown>>();
+const readGenerations = new Map<string, string>();
 async function ghRequest<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
+  const fingerprint = await credentialKey(token);
+  const owner = tokenOwners.get(fingerprint);
+  const generationKey = owner ? `github:installation:${owner.installationId}` : contexts.get(fingerprint)?.scope ?? fingerprint;
+  if (!readGenerations.has(generationKey) || (init.method ?? "GET").toUpperCase() !== "GET") {
+    // Random generations avoid reusing an old key after bounded-map eviction.
+    boundedSet(readGenerations, generationKey, crypto.randomUUID());
+  }
+  const headers = new Headers(init.headers);
+  const shared = (init.method ?? "GET").toUpperCase() === "GET"
+    && Object.keys(init).every(field => field === "method" || field === "headers")
+    && !headers.has("if-none-match") && !headers.has("if-modified-since")
+    && !headers.has("range") && !headers.has("cache-control");
+  if (!shared) return queuedGhRequest<T>(path, token, init);
+  const identity = JSON.stringify(["inflight", readGenerations.get(generationKey), owner?.env.GITHUB_APP_ID, owner?.installationId, owner?.version, owner?.scope]);
+  const key = await readCache.key(fingerprint, identity, path, headers);
+  let pending = pendingReads.get(key);
+  if (!pending) {
+    // The ordinary queue/deadline still bounds the work; avoid retaining an
+    // unbounded number of keys if many unrelated credentials arrive together.
+    if (pendingReads.size >= 500) return queuedGhRequest<T>(path, token, init);
+    pending = queuedGhRequest<T>(path, token, init);
+    pendingReads.set(key, pending);
+    const current = pending;
+    void pending.finally(() => { if (pendingReads.get(key) === current) pendingReads.delete(key); }).catch(() => {});
+  }
+  return structuredClone(await pending) as T;
+}
+async function queuedGhRequest<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
   const key = await credentialKey(token), owner = tokenOwners.get(key);
   // Bounded context eviction must never remove an installation's shared budget.
   const context = owner?.env.DB ? { db: owner.env.DB, scope: `github:installation:${owner.installationId}` } : contexts.get(key);
@@ -141,7 +181,8 @@ async function ghRequest<T>(path: string, token: string, init: RequestInit = {})
   if ((queued.get(scope) ?? 0) >= 8) throw new RateLimitError(Date.now() + 60000);
   queued.set(scope, (queued.get(scope) ?? 0) + 1);
   const previous = queues.get(scope) ?? Promise.resolve();
-  const request = previous.catch(() => {}).then(async () => {
+  // The deadline starts on this call's turn, so waiting behind others never counts against it.
+  const request = previous.catch(() => {}).then(() => withDeadline((async () => {
     let state = cooldowns.get(scope) ?? { next: 0, failures: 0 };
     if (context) {
       const row = await context.db.prepare("SELECT next_at, failures FROM api_limits WHERE scope = ?").bind(scope).first<{ next_at: number; failures: number }>();
@@ -204,7 +245,7 @@ async function ghRequest<T>(path: string, token: string, init: RequestInit = {})
       // Keep the API outcome if release storage is unavailable; the lease expires.
       try { await lease?.release(); } catch { /* bounded crash recovery */ }
     }
-  });
+  })()));
   queues.set(scope, request);
   try { return await request; } finally {
     const left = (queued.get(scope) ?? 1) - 1;
@@ -265,7 +306,7 @@ export async function gh<T>(path: string, token: string, init: RequestInit = {})
 
 interface InstallationTokenScope {
   repositories: string[];
-  permissions: { contents: "write"; metadata: "read" };
+  permissions: { contents: "write"; metadata: "read" } | { issues: "read"; metadata: "read" };
 }
 
 export async function installationToken(env: AppCredentials, installationId: number, scope?: InstallationTokenScope): Promise<string> {

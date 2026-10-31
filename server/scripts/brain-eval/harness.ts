@@ -57,7 +57,7 @@ const zero = (): Meter => ({ calls: 0, input: 0, output: 0, nanoUsd: 0, unmeasur
  * Wraps fetch so every chat completion's usage lands on the current meter, whoever made the call.
  * Returns a restore function; always call it.
  */
-export function meterFetch(current: () => Meter): () => void {
+export function meterFetch(current: () => Meter, model?: string): () => void {
   const real = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -68,7 +68,7 @@ export function meterFetch(current: () => Meter): () => void {
     m.calls++; m.ms += Date.now() - t;
     try {
       const usage = ((await res.clone().json()) as { usage?: TokenUsage }).usage;
-      const cost = measuredCost(usage);
+      const cost = measuredCost(usage, model);
       if (cost) { m.input += cost.input; m.output += cost.output; m.nanoUsd += cost.cost; } else m.unmeasured++;
     } catch { m.unmeasured++; }
     return res;
@@ -83,6 +83,9 @@ export function memoryBudget(): Pick<SparkEnv, "DB" | "budgetAccount"> {
   const db = new Database(":memory:");
   db.exec("CREATE TABLE spark_usage(account TEXT, day TEXT, calls INTEGER DEFAULT 0, tokens INTEGER DEFAULT 0, PRIMARY KEY(account, day))");
   db.exec("CREATE TABLE admin_controls(scope TEXT PRIMARY KEY, paused INTEGER NOT NULL DEFAULT 0)"); // reserveSpark checks the admin pause (#353)
+  // Every paid call is charged against the dollar ledger too, factory or not.
+  db.exec("CREATE TABLE spark_factory_budgets(repo TEXT PRIMARY KEY, daily_nano_usd INTEGER NOT NULL)");
+  db.exec("CREATE TABLE spark_factory_calls(id TEXT PRIMARY KEY, repo TEXT, day TEXT, model TEXT, input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0, cached_tokens INTEGER DEFAULT 0, nano_usd INTEGER, settled INTEGER DEFAULT 0, account TEXT)");
   return {
     budgetAccount: async () => "brain-eval",
     DB: { prepare(sql: string) {
@@ -234,10 +237,10 @@ export function summarize(mode: string, model: string, cases: CaseResult[]): Rep
 export const ready = (c: EvalCase): boolean => c.signals(T0).every(s => SIGNAL_KINDS[s.source].includes(s.kind)) && (!c.goals || !!tiltByGoals);
 
 /** Runs every case (or the ones named) through one mode. `think` undefined = the rule fallback alone. */
-export async function evaluate(opts: { mode: string; model: string; think?: Think; only?: string[] }): Promise<Report> {
+export async function evaluate(opts: { mode: string; model: string; think?: Think; only?: string[]; priceAs?: string }): Promise<Report> {
   const results: CaseResult[] = [];
   let meter = zero();
-  const restore = meterFetch(() => meter);
+  const restore = meterFetch(() => meter, opts.priceAs);
   try {
     for (const c of CASES.filter(c => (!opts.only?.length || opts.only.includes(c.id)) && ready(c))) {
       meter = zero();
@@ -268,4 +271,11 @@ export function render(r: Report): string {
     `Quiet when nothing's wrong: ${s.quietRight}/${s.quietCases}. Over-nags: ${s.overNags} (${pct(s.overNagRate)} of chances)`,
     `Decisions ${s.thinks}, model calls ${s.calls}, fallbacks ${s.fallbacks}. Per decision: $${s.usdPerDecision.toFixed(5)}, ${Math.round(s.tokensPerDecision)} tokens, ${Math.round(s.msPerDecision)} ms. Total $${s.usdTotal.toFixed(4)}`);
   return lines.join("\n");
+}
+
+/** One line per mode, so two models read side by side. */
+export function compare(reports: Report[]): string {
+  const head = `${pad("model", 22)} ${pad("hit", 5)} ${pad("signal", 7)} ${pad("move", 5)} ${pad("words", 6)} ${pad("quiet", 6)} ${pad("nags", 5)} ${pad("fallbk", 7)} ${pad("$/decision", 11)} ${pad("ms/dec", 7)} $total`;
+  const rows = reports.map(r => { const s = r.summary; return `${pad(r.model, 22)} ${pad(pct(s.hitRate), 5)} ${pad(pct(s.signalRate), 7)} ${pad(pct(s.playRate), 5)} ${pad(pct(s.wordingRate), 6)} ${pad(`${s.quietRight}/${s.quietCases}`, 6)} ${pad(String(s.overNags), 5)} ${pad(String(s.fallbacks), 7)} ${pad(`$${s.usdPerDecision.toFixed(5)}`, 11)} ${pad(String(Math.round(s.msPerDecision)), 7)} $${s.usdTotal.toFixed(4)}`; });
+  return ["Side by side", head, ...rows].join("\n");
 }

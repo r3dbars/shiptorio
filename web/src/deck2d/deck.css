@@ -1,0 +1,148 @@
+@font-face { font-family: "Silkscreen"; src: url("/fonts/silkscreen-400.woff2") format("woff2"); font-display: swap; }
+:root {
+  --iron: #1d1a1c;
+  --iron-hi: #2b2526;
+  --brass: #c98a32;
+  --brass-hi: #ffc35a;
+  --ink: #f6e3c0;
+  --dim: #c9b08c;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; background: #2a1410; overflow: hidden; }
+body { -webkit-tap-highlight-color: transparent; overscroll-behavior: none; user-select: none; -webkit-user-select: none; font-family: "Silkscreen", ui-monospace, monospace; color: var(--ink); }
+/* Until the first frame draws (and behind it on a slow phone): the same dimmed sky the deck opens on, over a palette
+   gradient, so a stranger never looks at an empty screen while the scripts load (deck.html preloads the picture). */
+body.deck-page {
+  background: url("/deck/art/sky-dim.webp") 50% 0 / cover no-repeat,
+    linear-gradient(#432f29, #713e30 35%, #a04430 60%, #652203);
+  image-rendering: pixelated;
+}
+#world { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+#world.drag { cursor: grabbing; }
+
+.zoom {
+  position: fixed; right: calc(14px + env(safe-area-inset-right, 0px)); top: calc(14px + env(safe-area-inset-top, 0px));
+  font: inherit; font-size: 13px; color: var(--ink); padding: 9px 12px; cursor: pointer;
+  background: linear-gradient(180deg, var(--iron-hi), var(--iron)); border: 3px solid #0c0a0b; border-radius: 4px;
+  box-shadow: inset 0 0 0 2px var(--brass);
+}
+.zoom:focus-visible { outline: 3px solid var(--brass-hi); outline-offset: 2px; }
+.shippy-tools { position: fixed; top: 14px; left: 14px; z-index: 20; display: flex; gap: 4px; }
+.shippy-tools button { font: inherit; font-size: 11px; padding: 9px 8px; color: #fdec9a; background: #121e2b; border: 2px solid #a36915; cursor: pointer; }
+.shippy-tools button:focus-visible { outline: 2px solid #bcf6f6; outline-offset: 2px; }
+
+.toast {
+  position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+  margin: 0; font-size: 14px; color: var(--ink); text-shadow: 0 2px 0 #000; opacity: 0; transition: opacity .4s; pointer-events: none;
+  width: calc(100% - 24px); max-width: 560px; text-align: center; /* live captions name the PR and station, so they wrap */
+}
+.toast.on { opacity: 1; }
+.machine-tools { position: fixed; top: 12px; left: 12px; right: 12px; z-index: 20; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.machine-tools button, .machine-tools select { font: inherit; font-size: 11px; padding: 8px; color: #fdec9a; background: #121e2b; border: 2px solid #a36915; cursor: pointer; }
+.machine-tools label { font-size: 11px; color: #eed3c5; }
+.machine-tools button[aria-pressed="true"] { background: #422616; border-color: #fdc727; }
+.machine-tools button:focus-visible, .machine-tools select:focus-visible { outline: 2px solid #bcf6f6; outline-offset: 2px; }
+.machine-rehearsal .zoom { top: auto; bottom: 100px; }
+
+.ic-card[data-card^="connection-"] { max-height: calc(100dvh - 130px); overflow-y: auto; }
+
+/* Demo controls own the top-left row; "See all" tucks under it on the right instead of drifting over the clouds. */
+.machine-rehearsal .zoom { top: calc(62px + env(safe-area-inset-top, 0px)); bottom: auto; }
+
+/* Desktop: the caption is the one line that tells the story, so it reads at a glance from across the room. Silkscreen
+   is drawn on an 8px grid, so 24px keeps it crisp (3x). Phones keep the 14px line above. */
+@media (min-width: 900px) and (min-height: 560px) {
+  .toast { font-size: 24px; text-shadow: 0 3px 0 #000; }
+  .toast { max-width: 960px; }
+  .zoom { font-size: 16px; height: 40px; padding: 0 14px; } /* 13px Silkscreen falls between its 8px grid steps and smears; 16px is a clean 2x */
+}
+
+/* The live first run: Shippy's one line reads like a line, not a footnote, and nothing else competes with it. */
+body.first-run .toast, body.guest-tour .toast { width: calc(100% - 24px); white-space: normal; text-align: center; font-size: 18px; line-height: 1.35; padding: 10px 16px; max-width: 520px; background: #121e2bd9; border: 2px solid #a36915; box-shadow: 0 3px 0 #000; }
+@media (min-width: 900px) and (min-height: 560px) { body.first-run .toast, body.guest-tour .toast { font-size: 24px; max-width: 960px; } }
+
+/* The preview password at "create your own factory" (password.ts). Same iron-and-brass as the card. */
+.deck-password { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 16px; background: #0c0a0bb3; user-select: text; -webkit-user-select: text; }
+.deck-password form { width: min(420px, 100%); max-width: calc(100vw - 32px); padding: 18px; font-family: "Pixelify Sans", "Silkscreen", ui-monospace, monospace; background: linear-gradient(180deg, var(--iron-hi), var(--iron)); border: 3px solid #0c0a0b; border-radius: 4px; box-shadow: inset 0 0 0 2px var(--brass), 0 6px 0 #000; }
+.deck-password h2 { margin: 0 0 8px; font-size: 22px; font-weight: 700; color: var(--brass-hi); }
+.deck-password p { margin: 0 0 12px; font-size: 16px; line-height: 1.35; color: var(--dim); }
+.deck-password input { width: 100%; height: 48px; padding: 0 12px; font: inherit; font-size: 18px; color: var(--ink); background: #0c0a0b; border: 2px solid var(--brass); border-radius: 3px; }
+.deck-password .err { margin: 8px 0 0; color: #ff9c86; min-height: 0; }
+.deck-password .err:empty { display: none; }
+.deck-password .row { display: flex; flex-wrap: wrap-reverse; gap: 8px; margin-top: 14px; } /* too narrow for both on one line (320 px): the yes goes on top */
+.deck-password button { flex: 1 1 auto; min-width: 0; min-height: 48px; padding: 0 8px; font: inherit; font-size: 17px; font-weight: 700; white-space: nowrap; cursor: pointer; border-radius: 3px; border: 3px solid #0c0a0b; }
+.deck-password .approve { color: #21180d; background: linear-gradient(180deg, var(--brass-hi), var(--brass)); }
+.deck-password .later { color: var(--ink); background: var(--iron-hi); box-shadow: inset 0 0 0 2px #5a4a3a; }
+.deck-password form[aria-busy="true"] .approve { opacity: .6; cursor: progress; }
+.deck-password input:focus-visible, .deck-password button:focus-visible { outline: 3px solid var(--brass-hi); outline-offset: 2px; }
+/* Desktop: the popup sits over the iron card, which grows with the screen; match its size and its font so the ask
+   doesn't shrink to tiny caps at 1920. Phones keep the compact popup above. */
+@media (min-width: 900px) and (min-height: 600px) {
+  .deck-password form { width: min(540px, 100%); padding: 24px; font-family: "Pixelify Sans", "Silkscreen", ui-monospace, monospace; }
+  .deck-password h2 { font-size: 26px; margin-bottom: 10px; }
+  .deck-password p { font-size: 18px; line-height: 1.35; margin-bottom: 16px; }
+  .deck-password input { height: 56px; font-size: 20px; }
+  .deck-password .row { gap: 12px; margin-top: 18px; }
+  .deck-password button { min-height: 56px; font-size: 19px; }
+}
+
+/* Tap a station: its "what is this" note (stations/whatis.ts). Same steel-and-brass as the first-run line; still, no fade. */
+.whatis { position: fixed; left: 0; top: 0; z-index: 15; width: max-content; max-width: min(260px, calc(100vw - 32px)); padding: 8px 10px;
+  font-size: 12px; line-height: 1.4; color: var(--ink); background: #121e2b; border: 2px solid #a36915; box-shadow: 0 3px 0 #000; cursor: pointer; }
+.whatis b { display: block; margin-bottom: 2px; font-weight: 400; color: #fdc727; }
+@media (min-width: 900px) and (min-height: 560px) { .whatis { font-size: 16px; max-width: 340px; padding: 10px 14px; } }
+
+/* The city (city/labels.ts): scenery only, so just words: one label under each island and the line, and after the dim a
+   quiet brass COMING SOON plate under each island's label. DOM text in the caption font on an opaque soot chip, at 12 px / 16 px
+   (phone / desktop) for the labels and the plates alike, so Silkscreen lands on whole device px (12 px is 3 per Silkscreen px
+   at dpr 2, 16 px is 2 at dpr 1) and the boxes match city/camera.ts LABEL_CSS (label 16 / 20 tall, plate 20 / 24 tall). The
+   chip's 1 px edge is an inset shadow, so it never changes the box. Text is #c0988e (dark), #eed3c5 (lit), #fdec9a (the island
+   the story is showing right now, and the line) on #0a0604, all above 7:1. The plate is the same soot chip with a brass-brown
+   edge and dim brass text (#c98115 on #0a0604 is 6.4:1), so it says COMING SOON without out-shouting the line's #fdec9a, the
+   brightest text in the ring. aria-hidden: the canvas names the city, and captions stay in #toast. A plate appears as a step,
+   never a fade. The Zoom button sits above the labels. */
+.city-labels { position: fixed; inset: 0; z-index: 5; pointer-events: none; overflow: hidden; }
+.city-tag { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.city-label { font-size: 12px; line-height: 1; padding: 2px 4px; white-space: nowrap; color: #c0988e; background: #0a0604; box-shadow: inset 0 0 0 1px #432f29; }
+.city-label.lit { color: #eed3c5; }
+.city-label.now { color: #fdec9a; }
+.city-label.line { color: #fdec9a; max-width: min(64vw, 440px); overflow: hidden; text-overflow: ellipsis; }
+.city-plate { font-size: 12px; line-height: 1; padding: 2px 4px; text-transform: uppercase; white-space: nowrap; color: #c98115; background: #0a0604; border: 2px solid #6d370c; box-shadow: 0 2px 0 #0a0604; }
+@media (min-width: 900px) and (min-height: 560px) { .city-label { font-size: 16px; } .city-plate { font-size: 16px; padding: 2px 6px; } }
+/* Pixel text stays pixel text: no font smoothing on the labels, the plates and the reveal's captions (macOS would grey the
+   square edges of Silkscreen's pixels otherwise). */
+.city-label, .city-plate, body[data-deck-zoom="city"] .toast, body[data-city-beat]:not([data-city-beat=""]) .toast { -webkit-font-smoothing: none; font-smooth: never; }
+/* An island's caption is two lines (CITY_COPY.island, joined by a newline): show the break, only at city zoom. */
+body[data-deck-zoom="city"] .toast { white-space: pre-line; line-height: 1.25; }
+/* ... and at city zoom it sits on the same opaque soot chip as the labels, so it reads over the sunset's bright clouds. It is as
+   wide as its longest line (a phone's lines are at most 340 px at 14 px: 362 px with the padding and edge, in a 366 px band). */
+body[data-deck-zoom="city"] .toast { width: max-content; max-width: calc(100% - 24px); padding: 4px 10px; background: #0a0604; border: 1px solid #432f29; }
+/* The reveal's first caption ("That's one line.") is at line zoom, so it gets the same chip for the whole reveal, from the line
+   beat on. data-city-beat is "" whenever the story is not in its reveal (the engine sets it to the empty string, so the bare
+   attribute selector would match every page): only a real beat counts, and manual and live captions stay as they were. */
+body[data-city-beat]:not([data-city-beat=""]) .toast { width: max-content; max-width: calc(100% - 24px); padding: 4px 10px; background: #0a0604; border: 1px solid #432f29; }
+/* A phone's city caption is 12 px, like its labels: 3 device px per Silkscreen px at dpr 2, and a two-line island caption
+   (at most 30 characters a line: 245 px of text, a 267 px chip) stays two lines down to a 320 px screen. */
+@media (max-width: 899px) { body[data-deck-zoom="city"] .toast { font-size: 12px; } }
+/* No caption, no chip: an empty caption is not left as an empty soot box while it fades out (the card beat, the manual city). */
+body[data-deck-zoom="city"] .toast:empty { visibility: hidden; }
+/* A card coming up takes the bottom of the screen at once: the caption under it cuts out instead of fading through the
+   translucent plate for .4s (calm rule, one thing moves at a time). It still fades back in once the card has gone. */
+.toast.under-card { transition: none; }
+/* Reduced motion: a caption cuts in and out, it does not fade. */
+@media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+.zoom { z-index: 6; }
+body[data-deck-zoom="city"] .shippy-tools { display: none; }
+/* The card takes focus when it comes up (main.ts, for screen readers) but it is not a control: no focus ring on the card itself.
+   (Chrome's ring on a dark page is #99c8ff and #eeeeee, a light frame round the whole plate.) Its buttons keep their own ring. */
+.ic-card[tabindex="-1"]:focus { outline: none; }
+/* The reveal's last card (city beat "card") says "Sign in with GitHub", which is longer than its button: the button gets the
+   wider column and its words stay on one line; under 520 px the two buttons stack (Replay above, Sign in below, DOM order).
+   The Sign in button is two art px taller and a little narrower inside, so its g clears the stripe along the bottom.
+   Scoped to that beat, so every other card is exactly as it was. */
+body[data-city-beat="card"] .ic-card .ic-actions { grid-template-columns: minmax(0, .75fr) minmax(0, 1.5fr); }
+body[data-city-beat="card"] .ic-card .ic-btn b { overflow: visible; text-overflow: clip; white-space: nowrap; }
+body[data-city-beat="card"] .ic-card .ic-btn.approve { min-height: calc(var(--p) * 22); padding-inline: calc(var(--p) * 3); }
+@media (max-width: 519px) { body[data-city-beat="card"] .ic-card .ic-actions { grid-template-columns: minmax(0, 1fr); } }

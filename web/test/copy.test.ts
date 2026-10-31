@@ -4,13 +4,13 @@ import ts from "typescript";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { inventory } from "../scripts/copy-strings";
-import { CREDIT, HUD, LEVEL_LABEL } from "../src/copy";
+import { CREDIT, HUD } from "../src/copy";
 
 const all = inventory();
 
 test("the inventory finds the player copy", () => {
   expect(all.length).toBeGreaterThan(300);
-  expect(all.some((f) => f.file === "copy.ts" && f.text === "Suggested")).toBe(true);
+  expect(all.some((f) => f.file === "copy.ts" && f.text === "Place")).toBe(true);
 });
 
 test('no "Spark" in player copy, except the one credit', () => {
@@ -44,5 +44,4 @@ test('players see "folder", not "district"', () => {
 test('"Build" means one thing: agents build, you place', () => {
   expect(HUD.dock.place).toBe("Place");
   expect(HUD.factory).not.toBe("Build"); // the map view toggle
-  expect(LEVEL_LABEL.build).toBe("Build"); // the autonomy level where the factory builds on its own
 });

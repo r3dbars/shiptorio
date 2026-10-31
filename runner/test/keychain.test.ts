@@ -100,7 +100,7 @@ printf 'dedicated-provider-called'
     }
     const invoke = async (...args: string[]) => {
       const child = Bun.spawn([process.execPath, join(import.meta.dir, "../src/cli.ts"), ...args], {
-        env: { PATH: `${bin}:/usr/bin:/bin`, SHIPTORIO_RUNNER_ROOT: root }, stdin: "ignore", stdout: "pipe", stderr: "pipe",
+        env: { PATH: `${bin}:/usr/bin:/bin`, SHIPTORIO_RUNNER_ROOT: root, SHIPTORIO_ENABLE_CLAUDE: "1" }, stdin: "ignore", stdout: "pipe", stderr: "pipe",
       });
       const [out, err, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
       return { out, err, code };
@@ -108,16 +108,16 @@ printf 'dedicated-provider-called'
     const codex = await invoke("login", "codex");
     expect(codex.code).toBe(0);
     expect(codex.out).toContain("dedicated-provider-called");
-    expect(codex.err).toContain("Claude Code is unavailable: its private Keychain could not be unlocked");
+    expect(codex.err).toContain("Claude could not unlock its saved sign-in");
     expect(codex.err).not.toContain(original);
     const claude = await invoke("login", "claude");
     expect(claude.code).not.toBe(0);
     expect(claude.out).not.toContain("dedicated-provider-called");
-    expect(claude.err).toContain("Repair the private Keychain before signing in to Claude");
+    expect(claude.err).toContain("Claude could not unlock its saved sign-in");
     const doctor = await invoke("doctor");
     expect(doctor.code).not.toBe(0);
-    expect(doctor.out).toContain("FAIL auth:claude_code");
-    expect(doctor.out).toContain("FAIL sandbox:claude_code");
+    expect(doctor.out).toContain("Sign in to Claude again");
+    expect(doctor.out).toContain("Claude could not complete its safety check");
     expect(await Bun.file(join(home, ".codex/codex-sandbox-invoked")).exists()).toBe(true);
     expect(await Bun.file(join(home, ".codex/claude-invoked")).exists()).toBe(false);
     expect(await readFile(password, "utf8")).not.toBe(original);

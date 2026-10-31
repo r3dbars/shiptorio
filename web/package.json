@@ -5,27 +5,18 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && bun ../scripts/bundle-budget.ts",
+    "build": "vite build && vite build -c vite.deck.config.ts && bun ../scripts/bundle-budget.ts",
     "typecheck": "tsc --noEmit",
-    "a11y": "node test/a11y/audit.mjs && node test/a11y/keyboard.mjs",
-    "test:chunks": "bun ../scripts/bundle-budget.ts --test"
+    "a11y": "node test/a11y/audit.mjs"
   },
   "dependencies": {
-    "@sentry/react": "^11.9.0",
-    "@shiptorio/shared": "workspace:*",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "three": "^0.180.0"
+    "@sentry/browser": "^11.9.0",
+    "@shiptorio/shared": "workspace:*"
   },
   "devDependencies": {
-    "@types/react": "^19.1.0",
-    "@types/react-dom": "^19.1.0",
-    "@types/three": "^0.180.0",
-    "@vitejs/plugin-react": "^5.0.0",
     "axe-core": "^4.14.0",
     "happy-dom": "21.0.4",
     "marked": "14.1.4",
-    "typescript": "^5.9.0",
     "vite": "^7.1.0"
   }
 }

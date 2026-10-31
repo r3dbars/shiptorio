@@ -4,6 +4,7 @@
 import { z } from "zod";
 import { HoldingBack } from "./signals";
 import { Goals } from "./goals";
+import { PipelineStep } from "./pipeline";
 
 // Science colors double as the kind of work an item is.
 export const ItemKind = z.enum(["bug", "feature", "cleanup", "tests"]);
@@ -144,7 +145,7 @@ export const MachineType = z.enum([
 export type MachineType = z.infer<typeof MachineType>;
 
 // Who does the work inside an assembler (or splitter).
-export const Harness = z.enum(["spark", "claude_code", "codex", "cursor", "grok", "local"]);
+export const Harness = z.enum(["spark", "claude_code", "codex", "muse_code", "cursor", "grok", "local"]);
 export type Harness = z.infer<typeof Harness>;
 
 export const MachineState = z.enum(["idle", "working", "blocked"]);
@@ -247,7 +248,7 @@ export type MoveKind = z.infer<typeof MoveKind>;
 
 // One gauntlet stamp on a card: a station that passed, failed or never ran.
 export const MoveEvidence = z.object({
-  station: z.string(), // "CI", "Verify bay", or a Station id
+  station: z.string(), // "CI check", "Proof check", or a Station id
   ok: z.boolean(),
   note: z.string().optional(), // "repro'd, then gone"
 });
@@ -278,7 +279,10 @@ export const Move = z.object({
 export type Move = z.infer<typeof Move>;
 
 // docs/LEARN.md: a kind of card the factory now answers on its own, after the player said yes enough times in a row.
-export const Learned = z.object({ key: z.string(), label: z.string(), since: z.number() });
+export const Learned = z.object({
+  key: z.string(), label: z.string(), since: z.number(),
+  items: z.array(z.string()).max(50).optional(), // items the factory started on its own under this key, so the deck can say so
+});
 export type Learned = z.infer<typeof Learned>;
 
 export const DistrictTrust = z.object({
@@ -349,6 +353,8 @@ export const Thought = z.object({
   outcome: z.string(), // what it decided: "bug → web"
   reason: z.string(), // why, in its own words
   simulated: z.boolean().optional(), // sim mode only; never set by the live server
+  // The agent's tool calls for this decision, in order (diagnose: read_signal, read_factory, ... then diagnose).
+  steps: z.array(z.object({ tool: z.string(), reason: z.string(), result: z.string() })).max(8).optional(),
 });
 export type Thought = z.infer<typeof Thought>;
 export const Brain = z.object({
@@ -386,7 +392,7 @@ export function scorecard(brain: Brain | undefined): Scorecard {
 // A station action is a Next Move option scoped to one station (docs/LOOP.md "Click any station").
 export const StationAction = z.object({
   id: z.string(),
-  label: z.string(), // "Build a second verify bay"
+  label: z.string(), // "Build a second proof check"
   recommended: z.boolean().default(false), // Spark's pick
 });
 export type StationAction = z.infer<typeof StationAction>;
@@ -394,7 +400,7 @@ export type StationAction = z.infer<typeof StationAction>;
 export const Station = z.object({
   id: z.string(),
   kind: StationKind,
-  name: z.string(), // "Verify bay"
+  name: z.string(), // "Proof check"
   machineId: z.string().optional(), // the machine on the map that is this station
   districts: z.array(z.string()).optional(), // districts whose launch permit needs it; absent = all
   wip: z.number().int(), // items in line
@@ -496,6 +502,15 @@ export const Experiment = z.object({
 });
 export type Experiment = z.infer<typeof Experiment>;
 
+/** The single live-deck focus. This is advice, never an authorization to execute work. */
+export const LiveBottleneckPick = z.object({
+  stop: z.enum(["repo", "planner", "builder", "checks", "review", "gate", "launch"]),
+  itemId: z.string().optional(),
+  reason: z.string().max(140),
+  source: z.enum(["spark", "fallback"]),
+});
+export type LiveBottleneckPick = z.infer<typeof LiveBottleneckPick>;
+
 export const FactoryState = z.object({
   repo: z.string(),
   baseBranch: z.string(),
@@ -511,8 +526,10 @@ export const FactoryState = z.object({
   goal: z.string().optional(), // goalText(goals): the sentence Spark's prompts read
   goals: Goals.optional(), // shared/src/goals.ts: what the player wants, picked on one earned card
   bottleneck: Bottleneck.nullable().optional(),
-  holdingBack: HoldingBack.nullable().optional(), // the bottleneck brain's pick (docs/BRAIN.md), behind the "brain" flag
+  holdingBack: HoldingBack.nullable().optional(),
+  liveBottleneck: LiveBottleneckPick.nullable().optional(), // the bottleneck brain's pick (docs/BRAIN.md), behind the "brain" flag
   move: Move.nullable().optional(), // the open Next Move card
+  pipeline: z.array(PipelineStep).length(6).optional(), // derived presentation; actions still use exact move IDs
   deck: z.array(Move).max(12).optional(), // the check-in deck, ranked; deck[0] is the open card
   autonomy: Autonomy.optional(),
   learned: z.array(Learned).max(40).optional(), // docs/LEARN.md: card kinds the factory does on its own now

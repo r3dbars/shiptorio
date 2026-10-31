@@ -1,5 +1,5 @@
 import type { Job } from "./messages";
-import type { Pairing, GrantRejectionCode } from "./pairing";
+import { tokenClaims, type Pairing, type GrantRejectionCode } from "./pairing";
 
 export class RunnerGrantRejected extends Error {
   constructor(public code: GrantRejectionCode, public status: number) {
@@ -25,7 +25,7 @@ export function renewalDue(pair: Pick<Pairing, "expires"> & Partial<Pick<Pairing
   if (pair.expires > now + RENEW_BEFORE_MS) return false;
   try {
     // Scheduling only: the server still verifies the signed grant and live session on every call.
-    const ceiling = JSON.parse(atob(pair.token!.split(".")[0].replace(/-/g, "+").replace(/_/g, "/"))).user?.expiresAt;
+    const ceiling = tokenClaims(pair.token!).user?.expiresAt;
     if (Number.isFinite(ceiling) && pair.expires >= ceiling) return false;
   } catch { /* Older/malformed local records do not suppress renewal. */ }
   return true;
@@ -41,12 +41,19 @@ export async function maintainConnection(pair: Pairing, options: {
 }
 export function authExpired(output: string): boolean {
   // Positive provider evidence only: configd/Seatbelt/network errors are not sign-in errors.
-  return /(?:token|session|authentication|credentials?).{0,35}(?:expired|revoked|invalid)|(?:unauthorized|authentication_required|not logged in|please (?:log|sign) in|run (?:codex login|claude (?:auth )?login))|(?:invalid_grant|invalid_api_key|invalid api key|refresh_token_reused|refresh token.{0,80}already used|(?:sign|log) in again)/i.test(output);
+  return /(?:token|session|authentication|credentials?).{0,35}(?:expired|revoked|invalid)|(?:unauthorized|authentication_required|not logged in|please (?:log|sign) in|run (?:codex login|muse login|claude (?:auth )?login))|(?:invalid_grant|invalid_api_key|invalid api key|refresh_token_reused|refresh token.{0,80}already used|(?:sign|log) in again)/i.test(output);
+}
+/** The provider said the account is out of usage or credits. Returns its "try again at ..." hint when it gave one. */
+export function usageLimited(output: string): { until?: string } | null {
+  if (!/usage limit|hit your (?:\w+ )?limit|purchase more credits|insufficient_quota|quota exceeded|out of credits|credit balance is too low/i.test(output)) return null;
+  const until = /try again (?:at|after|in) ([^.\n]{3,60})/i.exec(output)?.[1]?.trim();
+  return until ? { until } : {};
 }
 export function agentOffline(output: string): boolean {
   return /connection (?:reset|refused|closed)|network (?:unreachable|error)|stream (?:disconnected|closed)|(?:request|connect|connection) timed? ?out|unable to connect|could not resolve (?:host|proxy)|failed to connect|error sending request|dns (?:error|lookup failed)/i.test(output);
 }
-export const loginCommand = (h: Subscription) => `shiptorio-runner login ${h === "codex" ? "codex" : "claude"}`;
+export const agentName = (h: Subscription) => h === "codex" ? "Codex" : h === "muse_code" ? "Muse Code" : "Claude";
+export const loginCommand = (h: Subscription) => `shiptorio-runner login ${h === "codex" ? "codex" : h === "muse_code" ? "muse" : "claude"}`;
 export interface Diagnostic { check: string; ok: boolean; detail: string }
 export async function diagnose(options: {
   harnesses: Job["harness"][]; pairs: Pairing[];
@@ -61,7 +68,7 @@ export async function diagnose(options: {
     try { await run(); results.push({ check: name, ok: true, detail: "OK" }); }
     catch { results.push({ check: name, ok: false, detail: remedy }); }
   };
-  if (!options.harnesses.length) results.push({ check: "auth", ok: false, detail: "Install Codex CLI or Claude Code." });
+  if (!options.harnesses.length) results.push({ check: "auth", ok: false, detail: "Install Codex or Muse Code." });
   for (const h of options.harnesses) {
     await check(`auth:${h}`, async () => { if (!await options.auth(h)) throw Error(); }, h === "local" ? "Check the local model endpoint." : `Sign in again: ${loginCommand(h)}`);
   }
@@ -92,4 +99,17 @@ export class AuthFailures {
     if (!status || this.failed.get(h) === credentialVersion) return false;
     this.failed.delete(h); return true;
   }
+}
+
+/** Fixed public categories only: provider output, paths and credentials never become server copy. */
+export class RunnerExecutionFailure extends Error {
+  constructor(readonly kind: 'timeout' | 'stopped' | 'limit', readonly agent: 'Codex' | 'Muse Code' | 'Claude' = 'Codex', until?: string) {
+    super(kind === 'limit'
+      ? `${agent} is out of usage${until ? ` until ${until}` : ''}. Add credits or switch agents, then approve again. No code was published.`
+      : `${agent} ${kind === 'timeout' ? 'timed out' : 'stopped'} before finishing. No code was published.`);
+    this.name = 'RunnerExecutionFailure';
+  }
+}
+export function runnerFailureSummary(error: unknown): string {
+  return error instanceof RunnerExecutionFailure ? error.message : 'Local runner stopped; inspect local evidence and approve another attempt.';
 }

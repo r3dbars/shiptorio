@@ -1,8 +1,10 @@
 import { isLocal } from "./auth";
-import { sameOriginPath } from "./redirect";
+import { DECK_HOSTS, deckFrontDoor, sameOriginPath } from "./redirect";
 import { makeSessionCookie, readSession } from "./session";
 import { gatePage } from "./gate-page";
 import { boundedBody } from "./webhook-body";
+import { hmacSigningKey } from "./hmac-key";
+import { escapeHtml, toHex } from "./encode";
 
 export interface AccessEnv {
   APP_PASSWORD?: string;
@@ -13,7 +15,6 @@ export interface AccessEnv {
 
 const COOKIE = "shiptorio_access";
 const headers = { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "frame-ancestors 'none'; base-uri 'none'; form-action 'self'", "x-content-type-options": "nosniff" };
-const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 /** The docs site (/docs/*): static pages about how the game works, no factory data. */
 export const isPublicDocs = (path: string) => path === "/docs" || path.startsWith("/docs/");
@@ -38,9 +39,8 @@ const FORM_COOKIE = "shiptorio_access_form";
 const FORM_TTL = 600_000;
 async function formSignature(secret: string, origin: string, payload: string): Promise<string> {
   const enc = new TextEncoder();
-  const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const bytes = new Uint8Array(await crypto.subtle.sign("HMAC", key, enc.encode(`preview-form:${origin}:${payload}`)));
-  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  const key = await hmacSigningKey(secret);
+  return toHex(await crypto.subtle.sign("HMAC", key, enc.encode(`preview-form:${origin}:${payload}`)));
 }
 async function gate(request: Request, secret: string, error = "", next = "/", status = 401): Promise<Response> {
   const payload = `${Date.now() + FORM_TTL}.${crypto.randomUUID()}`;
@@ -66,17 +66,29 @@ async function validForm(request: Request, secret: string, token: string | null)
 // shiptorio.com is public: anyone without the preview cookie gets the landing page at "/"
 // (web/public/welcome/), its files, robots/sitemap and the waitlist. Everything else stays gated.
 const PUBLIC_FILE = /^\/(?:welcome\/[\w.-]*|fonts\/[\w.-]+|brand\/[\w.-]+|robots\.txt|sitemap\.xml)$/;
-// Judge mode is a local simulation. Only its page and content-hashed JS/CSS are
-// public; no API, websocket, source map, arbitrary asset or private app route is opened.
+// Judge mode is the deck's story, a local simulation (no API, no account). Only its page, content-hashed JS/CSS and
+// the deck's static art are public; no API, websocket, source map, arbitrary asset or private app route is opened.
 export const isJudgePage = (path: string) => path === "/judge" || path === "/judge/";
 export const isJudgeAsset = (path: string) => /^\/assets\/[^/]+-[A-Za-z0-9_-]{8,}\.(?:js|css)$/.test(path);
-export type PublicRoute = "landing" | "file" | "waitlist" | "judge";
+// shiptorio.dev opens straight into the tutorial (Justin 2026-10-29): the deck page, its front-door redirect and its
+// static art are public there. The tutorial is scripted in the page, so nothing else opens: /api/*, /auth/callback,
+// /connect, runner and socket routes still need the preview password, which the deck asks for at "create your factory".
+const DECK_FILE = /^\/deck\/(?:art|px|traces)\/(?:[\w-]+\/)*[\w-]+\.(?:webp|png|json)$/;
+export function isPublicDeck(url: URL): boolean {
+  if (!DECK_HOSTS.has(url.hostname)) return false;
+  const path = url.pathname;
+  if (path === "/") return deckFrontDoor(url) !== null;
+  return path === "/deck" || path === "/deck/" || path === "/deck.html" || DECK_FILE.test(path);
+}
+export type PublicRoute = "landing" | "file" | "waitlist" | "judge" | "deck";
 export async function publicRoute(request: Request, env: AccessEnv): Promise<PublicRoute | null> {
   const url = new URL(request.url);
   const read = request.method === "GET" || request.method === "HEAD";
   if (read && isJudgePage(url.pathname)) return "judge";
   if (read && isJudgeAsset(url.pathname)) return "file";
   if (read && PUBLIC_FILE.test(url.pathname)) return "file";
+  if (read && DECK_FILE.test(url.pathname)) return "file"; // the deck's static art, which /judge draws on every host
+  if (read && isPublicDeck(url)) return "deck";
   if (url.pathname === "/api/waitlist" && request.method === "POST") return "waitlist";
   if (!read || url.pathname !== "/" || (env.DEV_LOGIN && isLocal(url))) return null;
   // App deep links (/?onboard=repo&source=live from the GitHub install, ?source=sim, ...) still go to the

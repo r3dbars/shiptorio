@@ -1,284 +1,147 @@
 # AGENTS.md
 
-Context for coding agents (Codex, Claude Code, etc.) working on Shiptorio. Read this
-before you change anything.
+Read this before you change anything. It's short on purpose: what's true **today** (2026-10-30). History lives in
+[`docs/context/archive/`](docs/context/archive/README.md); don't follow rules you find there.
 
-**North star first: read [`docs/VISION.md`](docs/VISION.md) before deciding what to build next.** It's Justin's
-high-level goals on one page, with a "how to decide what's next" checklist.
+## Read first
 
-**Current focus (Justin, 2026-10-27, [`docs/VISION.md`](docs/VISION.md#current-focus-a-great-player-experience-justin-2026-10-27-1050)):**
-(1) make the core loop great to play on phone and desktop (`docs/GAMEPLAY.md`);
-(2) prove real clean ships on Testing and one real autonomy level-up;
-(3) match the vertical map to Justin's Black Iron mockup (PR #204), side-by-side screenshots before merge;
-(4) polish and reliability over new surfaces; (5) judge mode stays as it is;
-(6) park build mode, pricing, empire and new mines. Codex: reliability prompts only (deploy guardrail, E2E tests,
-runner reliability, limits/quota visibility, security). This supersedes the earlier judge-first Nov 4 plan.
-
-**Shared context (decisions, open items, plan export, memory, design refs) lives in
-[`docs/context/`](docs/context/README.md). Commit and push often: many agents work here at once,
-so check open PRs and recent `main` commits before you start.**
-
-**New features ship ON on dev, no URL flag needed (Justin, 2026-10-28: "can we just always have no flags by
-default? ... everything just pushed into dev, I can experiment with it all").** On shiptorio.dev every preview feature
-is on; shiptorio.com keeps its defaults until a promotion flips them. Gate a new web feature with
-`feature("name")` from `web/src/flags.ts` (on at shiptorio.dev, `?name=0` / `?name=1` anywhere, `?preview=1` for the
-whole dev set on localhost), never a bare `?name=1` check. A new server flag goes in `FLAG_DEFAULTS` (prod default);
-staging's `FEATURES=all` turns it on there. Make it work alongside every other dev feature (the simple screen,
-the floating city art, progress, empire) and screenshot the plain shiptorio.dev path, not a flagged URL.
-See [`docs/context/branches.md`](docs/context/branches.md#new-features-are-on-on-dev).
-
-**The loop in one page: [`docs/LOOP.md`](docs/LOOP.md)** (visual: `docs/loop.html`). Ore → power → line →
-**verification gauntlet** (CI inspector, verify bay, AI review, merge gate, orbit watch) → rocket; fails ride the
-rework belt back to Spark with a scar tag; every station is clickable.
-
-**Public docs site: `docs/site/*.md`, served at shiptorio.com/docs** (built by `web/docs-site.ts`, public past the
-preview password). It describes what the code does *today*, not the plan. When you change player-facing behavior
-(gauntlet, permits, research, mines, runner commands), update the matching page in the same PR.
-`web/test/docs-site.test.ts` fails CI on a broken link or anchor.
-
-**Product spec: [`docs/PRODUCT.md`](docs/PRODUCT.md).** How Muse Spark runs the factory as the Foreman
-agent: the core loop, the bottleneck engine and Next Move card, Spark's tools by trust tier, what the
-player decides vs Spark, launch permits, the real metrics behind the score, onboarding, and hackathon
-scope. It wins over PLAN.md / ARCHITECTURE.md on product behavior.
+1. [`docs/VISION.md`](docs/VISION.md): the north star. Justin's goals and how to decide what's next.
+2. [`docs/context/demo-plan.md`](docs/context/demo-plan.md): the plan to the demo video, day by day, and who owns
+   which files right now.
+3. [`docs/context/pixel-deck.md`](docs/context/pixel-deck.md): the game surface and its art rules.
+4. [`docs/context/branches.md`](docs/context/branches.md): dev and main.
+5. [`docs/context/README.md`](docs/context/README.md): the index for everything else.
 
 ## What Shiptorio is
 
-Shiptorio turns a codebase into a Factorio-style factory. User feedback is the ore,
-AI agents are the machines, and every rocket that launches is a real merged pull
-request. Tagline: "The factory must grow."
+Shiptorio shows your software as a factory. GitHub issues ride a conveyor through seven stations, AI agents do the
+work, and every rocket that launches is a real merged pull request. There's always a bottleneck, and it's usually
+waiting on one of your calls. You swipe a card, the line moves. Approve the same kind of thing a few times and the
+factory starts doing it on its own, so you're free for the next jam. Meta's Muse Spark makes the factory's decisions.
 
-It's being built for the **Meta AI Developer Hackathon** (with Cerebral Valley),
-Mon Oct 26 to Wed Nov 4, 2026. **Submit by noon CT on Wed Nov 4**, not 8 PM.
+Built for the Meta AI Developer Hackathon. Submit **Wed Nov 4 at noon CT**; the event cutoff is 8 PM CT.
 
-- Judging: impact 30%, use of Meta's tools 25%, demo 25% (3-minute video), technical depth 20%.
-- Rules: fresh repo, only work done during the event, real and central use of Meta's models.
-- **Muse Spark (Meta's API) makes every factory decision**: triage, splitting, routing,
-  inspection, starter-factory planning, email-to-Sentry matching. Claude Code, Codex and
-  other agents are only *assemblers* that take orders from Spark. Don't move decisions
-  out of Spark. Baseten is the failover.
-- Other Meta models: Muse Voice Transcribe (voice foreman), Muse Glimmer (local
-  "geothermal" inference on a Mac or a 3090).
+## Current focus (Justin, 2026-10-30)
 
-The full plan (game design, art, items, architecture, day-by-day plan, demo script,
-risks) is Justin's doc: https://claude.ai/artifact/AWJrfEvb9c7BRwvQNcj1XL. That link
-needs a claude.ai login, so the parts that matter for code are summarized below.
+The 2D pixel deck with Shippy is the whole product. Polish and simplify the loop we have; **no new features,
+screens, settings or tour work**. Justin proves one real ship by hand: approve a plan, let his local agent build,
+hold **Ship it** at the Gate, then verify the GitHub merge and rocket. A scripted preview is not that proof.
 
-## Stack: Cloudflare, not Fly/Neon
+**Freeze Oct 31. Record Nov 1. Submit Nov 4 at noon CT.** After the freeze, only fixes needed for the existing
+loop or recording; no new scope. The shaft map, build mode, multi-repo empire and pricing are parked.
+See [the demo plan](docs/context/demo-plan.md). Deleting beats adding.
 
-The plan doc says Bun + Hono on Fly.io with Postgres on Neon. **Ignore that part.**
-Justin chose Cloudflare, since their domain already lives there. The current shape:
+## The deck is the product
 
-- One Cloudflare Worker named `shiptorio`. It serves the web app as static assets and
-  the API on the same origin.
-- Hono on the Worker for routes.
-- **Accounts**: GitHub sign-in through the App's user-to-server OAuth, D1 `users` / `sessions` /
-  `user_repos`, and a factory is only served to players whose GitHub account reaches its repo
-  (`server/src/accounts.ts`, `requireUser`). **API summary: [`docs/context/accounts.md`](docs/context/accounts.md).**
-- A **GitHub App** (not OAuth) for sign-in, installs, webhooks (`pull_request`, `push`,
-  `check_suite`) and opening PRs as `shiptorio[bot]`.
-- A **Factory Durable Object per repo** (`server/src/factory.ts`) is the factory engine:
-  it owns the state, runs the tick loop on an alarm, and talks to browsers over
-  websockets (`snapshot` / `patch` / `log`).
-- D1 database `shiptorio` (installs, repos). Schema in `server/migrations/`.
-- KV namespace `shiptorio-cache` (bound, not used yet).
-- Long agent runs go in the local runner, Cloudflare Workflows or GitHub Actions, never
-  inside one request.
+The 2D pixel deck (`web/deck.html` → `web/src/deck2d/`) is the game and the only web app. The old React app (3D map,
+shaft, old UI, judge replay) was deleted on 2026-10-29: "/" and old demo links 302 to `/deck` on every host
+(`server/src/redirect.ts`), and `/judge` serves the deck's story with no password. The deck's shared code lives in
+`web/src/sim/` (simulator), `web/src/source/` (config, lazy connect, live socket, applyPatch) and `web/src/copy.ts`.
 
-The D1 database and KV namespace **already exist** on Justin's Cloudflare account and
-their ids are in `server/wrangler.jsonc`. The Worker is **not deployed yet**.
+The line, one name per station, everywhere (cards, captions, PR comments, logs, docs):
 
-### Layout
+**Repo → Planner → Builder → Checks → Review → Gate → Launch**
 
-Bun workspaces:
+Source of truth: `STOP_LABEL` in `web/src/deck2d/contract.ts`; `web/test/station-names.test.ts` guards it. No
+synonyms (not inspector, verify bay, AI review, merge gate, assembler, inbox or launch pad). Checks runs CI and the
+proof check. How each station maps to real GitHub events: [`docs/context/github-deck-loop.md`](docs/context/github-deck-loop.md).
 
-| Dir | Owns |
-| --- | --- |
-| `shared/` | zod model (`model.ts`) and the message protocol (`protocol.ts`). The contract between lanes |
-| `server/` | Hono Worker (`src/index.ts`), GitHub App + webhooks (`github.ts`, `auth.ts`), Factory Durable Object (`factory.ts`) with pure rules in `engine.ts`, Spark client (`spark.ts`), repo → districts layout (`map.ts`) |
-| `runner/` | Not started. Local helper on the user's machine: finds `claude`/`codex`/Cursor/Grok CLIs and local model endpoints, runs jobs in git worktrees, pushes branches |
-| `web/` | Vite + React + Three.js. `src/map/` (scene, pixel pass, `itemlab.js` = the Item Lab builders copied as-is, `models.ts` = island/district scenery), `src/sim/` (fake factory), `src/source/` (sim or live), `src/store.ts` (applies snapshot/patch) |
+Colors mean one thing each: **yellow** = waiting on you, **red** = actually stuck, **green** = automatic,
+**cyan** = running.
 
-The Worker serves `web/dist` as static assets, so build `web/` before `wrangler dev` or deploy.
+Words: plain and short. Never "Spark" in player-facing copy (one "powered by Meta Muse Spark" credit is fine).
+Never "you are the bottleneck"; say what's waiting on you.
 
-What the server does today (first cut, the backend lane owns it from here): an `issues`
-webhook becomes ore. The splitter triages it with Spark (kind + district), with a keyword
-heuristic when there's no key. A Spark assembler picks up to 4 files, writes the change,
-commits it to `shiptorio/<item>` through the GitHub API, and opens a PR (`Closes #n`). A
-`check_suite` on the PR passes it to the pad or rejects it into the rework loop (3 tries).
-A merged PR launches the rocket and earns science. Spark may not write outside the repo
-or under `.github/` (`SAFE_PATH` in `engine.ts`).
+## Stack
 
-### Protocol (`shared/src/protocol.ts`)
+- One Cloudflare Worker (`shiptorio`, plus `shiptorio-staging` for shiptorio.dev). Hono routes, serves `web/dist`
+  as static assets on the same origin.
+- A Factory Durable Object per repo (`server/src/factory.ts`) owns state and talks to browsers over websockets.
+- D1 (`server/migrations/`), KV. Ids are in `server/wrangler.jsonc`.
+- A GitHub App for sign-in, installs and webhooks ([`docs/context/github-app.md`](docs/context/github-app.md)).
+- Muse Spark (`muse-spark-1.3` on the Meta Model API, OpenAI-compatible) plans and decides
+  (`server/src/spark.ts`).
+- The local runner (`runner/`) runs Codex or Muse Code on the player's machine, in a git worktree, and pushes
+  branches. Subscription logins only ever run there, never on our servers.
 
-- Server to web: `snapshot`, `patch`, `log`
-- Web to server: `place_machine`, `remove_machine`, `connect_belt`, `set_module`, `launch_pr`,
-  `route_item` (drag ore onto an assembler)
-- Runner to server: `hello {mode, harnesses, powerSources}`, `job_event`, `job_done`
-- Server to runner: `job_assign {jobId, repo, baseSha, token, harness, task}`
-- Item states: ore, queued, working, inspecting, rejected (with failure), passed, on pad, launched
+Bun workspaces: `shared/` (model + protocol, the contract), `server/`, `runner/`, `web/`, `playtest/`.
 
-Per job, the server hands the runner a short-lived GitHub installation token. The runner
-works in a worktree, pushes a branch and streams events back. The server opens the PR.
-The runner dials out to the server, so the user's machine never needs to be reachable.
+## Run and test
 
-## Lanes
-
-| Lane | Who | Owns |
-| --- | --- | --- |
-| Backend | **Codex** | `server/`, `runner/`, Spark, GitHub App, webhooks, harnesses |
-| UI and feel | Justin + Claude Code | `web/`: map, art, interactions, animation, sound |
-| Contract | Both | `shared/`. Changes go in their own PR that both lanes see |
-
-If you're Codex, you're on the backend lane. Don't rewrite `web/`. If you need a
-protocol change, make it a small separate PR to `shared/`.
-
-**The UI never waits for the backend.** `web/src/sim/` is a fake factory that sends the
-same messages as the real server (`?source=sim` vs `?source=live`). Keep the real server
-message-compatible with the sim.
-
-## Game rules that affect code
-
-- Ore: GitHub issues, Sentry errors, feedback emails, lint/complexity findings.
-- Power: solar + battery = subscriptions (Claude, Codex, Cursor, Grok), drains and
-  recharges. Steam = paid APIs (Spark on Meta's API, Baseten), burns credits.
-  Geothermal = local inference, free but capped. A machine is harness × power source.
-- Machines for v1: splitter (Spark triage), assembler (Spark or one subscription CLI),
-  inspector (tests + lint, with a rework loop), launch pad (PRs waiting for merge).
-- Quality tiers are the gates a PR passed: normal (lint), uncommon (types), rare (unit
-  tests), epic (visual QA + e2e), legendary (human review).
-- **Agents only ever open PRs. Never push to `main`.** A human merge launches the rocket.
-- **Subscription logins (Claude, ChatGPT/Codex) only run in the local runner, never on
-  our servers.**
-
-## Version 1 target
-
-One complete line, polished until it feels like a game: GitHub issues and Sentry errors
-as ore, splitter, assembler, inspector, launch pad, one steam plant (Spark) and one
-solar plant (a subscription via the runner), districts from the repo, biters on Sentry
-errors, a rocket on every launched PR.
-
-Day-by-day checkpoints:
-
-| Day | Checkpoint |
-| --- | --- |
-| Mon 10/26 | Contract, GitHub App, Spark check, simulator, first map. Issue to Spark to a real PR |
-| Tue 10/27 | Map v1 with live state. Drag ore onto an assembler, PR lands on the pad live |
-| Wed 10/28 | Build mode, typed belts, Spark splitter, inspector rework loop. Shiptorio ships a PR to itself |
-| Thu 10/29 | Sentry biters, inbox ore, email-to-Sentry matching, local runner with Codex + Claude Code |
-| Fri 10/30 | Quality tiers, launch permits, trust, geothermal, failover. Kill a steam plant, line reroutes |
-| Sat 10/31 | Science, 3 research unlocks, achievements, starter-factory planner |
-| Sun 11/1 | Voice foreman, rocket on merge, eval: 20 planted bugs × machine types |
-| Mon 11/2 | Feature freeze 6 PM, replay mode, record |
-| Tue 11/3 | Edit, fix bugs found while recording |
-| Wed 11/4 | Submit by noon |
-
-The demo's winning beat: break the demo app on camera, Sentry fires, biters swarm
-/checkout, and the factory ships a real fix PR before the video ends.
-
-## Running it
-
-Needs Bun.
+Needs Bun (and Node 22+ for Playwright).
 
 ```sh
 bun install
-bun run dev:web      # UI only, on :5173, with the simulator: http://localhost:5173/?source=sim
-bun run dev          # builds web/, then wrangler dev on :8787 (writes server/.dev.vars, local D1)
-bun test             # all tests
-bun run typecheck    # every workspace
-bun run spark:check  # needs META_API_KEY in the environment
+bun run dev:web        # web on :5173; the deck is /deck.html (?source=sim, ?source=conveyor-demo, ?source=live)
+bun run dev            # build web, then wrangler dev on :8787 with a local D1; /auth/login signs in as DEV_LOGIN
+bun run check          # lint + typecheck + every test + build. Run it before you mark a PR ready
+node scripts/shots/deck.mjs   # phone (390x844) + desktop (1280x720) shots of the deck; CLIP=12 for a clip
+bun run stranger       # a brand-new account from sign-in to first card (docs/context/new-user-path.md)
 ```
 
-Sim scenarios: `?source=sim&scenario=quiet-morning` or `rework-loop`. Add `&autolaunch`
-to have PRs on the pad merge by themselves. Live: `?source=live&repo=owner/name`.
+More suites (E2E, visual, load): [`docs/context/testing.md`](docs/context/testing.md).
+On Justin's Mac the deck runs with one paste (`scripts/deck-local.sh`, see pixel-deck.md).
 
-Local dev needs no GitHub App and no Cloudflare credentials. On localhost, `/auth/login`
-signs you in as `DEV_LOGIN`.
+## Branches and merging
 
-Going live (Justin does this, see `docs/SETUP.md`): `npx wrangler login`, `bun run deploy`,
-then open `/setup` on the deployed URL to create the GitHub App and set its secrets with
-`wrangler secret put`. Spark needs `META_API_KEY` as a Worker secret.
+- **Branch from `origin/dev`, PR into `dev`. Never `main`.** Rebase on `origin/dev` before you start and before every
+  push.
+- Push small commits often. Open a draft PR after your first push.
+- **Merge your own PR into `dev` once check, selfhost and Stranger are green** (squash is fine). Staging then deploys
+  shiptorio.dev in about 3 minutes.
+- `main` is shiptorio.com. It only moves when Justin asks for a `dev → main` promotion, merged with a **merge
+  commit**, never squash.
+- New web behavior goes behind `feature("name")` from `web/src/flags.ts`; it's on by default on shiptorio.dev.
+- D1 migrations: before merging, rebase and renumber yours to the next free number
+  (`server/test/migrations.test.ts` checks).
+- Anything visible: before and after shots at phone and desktop in the PR, and look at them yourself. Big layout
+  changes: show Justin before merging.
+- Add one line to [`docs/context/threads.md`](docs/context/threads.md) when you finish something.
 
-## Hard rules
+## Who owns what
 
-- **Don't deploy, and don't create or change Cloudflare resources, unless Justin says so.**
-- **Never touch any other Worker on the account.** Only the `shiptorio` and `shiptorio-staging`
-  Workers are ours.
-- Never commit secrets. Local secrets go in `.dev.vars` (gitignored); deployed ones via
-  `wrangler secret put`.
-- **Open every PR against `dev`, never `main`** (Justin, 2026-10-28; see `docs/context/branches.md`). `dev` deploys
-  to shiptorio.dev on every merge. `main` is production (shiptorio.com) and only moves when Justin promotes `dev`.
-  Branch from `origin/dev`. Don't push to `dev` or `main` directly.
-- **Commit and push often** (Justin, 2026-10-26). Push WIP to your branch after every meaningful step, and open a
-  draft PR early so the work is visible on GitHub. Never sit on unpushed local work.
-- **Run `bun run check` (typecheck + tests + build) before you mark a PR ready.** CI skips draft PRs, so push WIP
-  as a draft freely; it only runs (and only fails) once you mark it ready. Merge `dev` in first so you test against it.
-- **Merge your own PR into `dev` once CI is green** (Justin, 2026-10-26: "auto merge every thing"). PRs into `dev`
-  run only the quick checks (check, selfhost, Stranger), so this takes minutes. Squash merge (or turn on auto-merge),
-  then check the **Staging** run went green before saying it's on shiptorio.dev. Don't merge stale drafts or a PR
-  another agent is still working on. There are no more release batches.
-- **Promoting to production is Justin's call.** He opens (or asks a thread to open) one `dev → main` PR. That PR runs
-  the full suite (browser shards + load); its `full-suite` job posts `release-validation`. Merge it with a **merge
-  commit**, never squash, so `dev` and `main` stay in sync. Deploy then ships main to shiptorio.com.
-- **D1 migrations:** before you merge, merge `dev` into your branch and renumber your `server/migrations/NNNN_*.sql` to
-  the next free number. `server/test/migrations.test.ts` fails CI on a duplicate or gap. Staging applies them to
-  shiptorio.dev on merge; Deploy applies them to prod when `dev` is promoted.
-- **Never merge a PR the factory built** (runner PRs from `shiptorio[bot]` / `shiptorio/runner-*` branches, or anything
-  in r3dbars/Testing) directly on GitHub. Those go through the in-game gauntlet and the Launch card, or auto-launch
-  via a launch permit. A green CI is not enough: the verify bay and AI review can still flag them (#128 got merged
-  past a verify-bay flag). The auto-merge rule above is for agent PRs only.
-- Only original art. The name leans on Factorio, so don't use any Factorio assets.
+Many agents (Claude threads and Codex) work here at once. **One agent per hot area.** The current ownership table is
+in [`docs/context/demo-plan.md`](docs/context/demo-plan.md). Stay inside your files; if you need a change in someone
+else's, put the exact diff in your PR description. Check open PRs and recent `dev` commits before you start. Codex
+working on the deck: [`docs/context/codex-deck-handoff.md`](docs/context/codex-deck-handoff.md).
 
-## Rules for every agent (from the plan)
+## Art rules (short version)
 
-- Read [PLAN.md](PLAN.md) first. It is the source of truth for scope, lanes and the day-by-day checkpoints.
-  `docs/ARCHITECTURE.md` has the full game design. Both predate the Cloudflare switch, so their Fly/Neon bits are out of date.
-- **Hackathon rule:** only code written during the event (Oct 26 – Nov 4, 2026). Don't copy code from other
-  projects. Libraries from npm are fine.
-- **Stay in your lane** (see Lanes above and `briefs/`). Touching another lane's code needs a note in the PR.
-- **Shared types live in `shared/`.** Changing a type there is a contract change: say so in the PR title.
-- **Small PRs, one checkpoint each.** Every PR says which day's checkpoint it moves forward.
-- **The web app must run against the simulator** (`?source=sim`) at all times, so UI work never waits on the backend.
-- **Spark makes every factory decision.** Don't route triage, splitting, routing or inspection to another model.
+Full rules: [`docs/context/pixel-deck.md`](docs/context/pixel-deck.md).
 
-## Design and art
+- Pixel density is locked: `ART_PX = 5`, whole-number zoom only, no smoothing.
+- Only the 48 `PALETTE` colors in `contract.ts`. Light from the upper right, 1 px dark outlines.
+- Code draws everything that moves; pictures only for static sky, city and clouds.
+- Calm: one thing moves at a time, only the jam pulses, nothing flashes.
+- Shippy the robot is the only character. No humans on the deck. Shippy never floats.
+- Only original art. No Factorio assets.
 
-- Art direction: real 3D rendered as pixel art. Orthographic camera at a 45° turn and
-  30° tilt, render at half resolution (2 px pixels), nearest-neighbor upscale, 32 colors
-  per channel, no dither, outline strength 0.35 / threshold 0.12, saturation and contrast
-  1.05, hard 1024 px shadows (`BasicShadowMap`). Machines are built from primitives in
-  code so their parts move.
-- Palette: stone #c9b48a, cliff slate #3a4268, moss #4f7d3b, steel #8a94a3,
-  amber #f2a93b, green #5bd18b, red #ff5e52, blue #6fb2ff, void #1b2448.
-  Fonts: Silkscreen (pixel UI), JetBrains Mono (small text).
-- The map draws machines with the Item Lab builders (`web/src/map/itemlab.js`). `scene.ts` maps
-  `FactoryState` onto each model's Item Lab state (assembler WORKING/BLOCKED, inspector PASS/REJECT,
-  launch pad COUNTDOWN/LAUNCH, power plants from `state.power`). New machine fields the map should
-  show (power level, online, tier) need to arrive in `FactoryState`; the web lane does the rest.
-- References (claude.ai links): Pixel Prototype https://claude.ai/artifact/KGfEwhDLxxu8LMjGkcqNrK,
-  Item Lab (all 12 items) https://claude.ai/artifact/1LRgfMxAMrZ5gv1r2dkkKy,
-  Feedback Factory canvas, Belts artboard https://claude.ai/artifact/HtWP6pHDcYn9TSByR6UJcn.
-- The plan's own files are in the repo now: `PLAN.md`, `docs/ARCHITECTURE.md`, `docs/ART.md`,
-  `docs/art-prototype.html`, `docs/item-lab.html` and `briefs/` (including `briefs/codex.md`).
-  They win over this summary, except for the stack, which is Cloudflare.
+## Never
+
+- Never push to `dev` or `main` directly, and never open a PR against `main` (promotions are Justin's call).
+- Never merge a PR the factory built (`shiptorio[bot]`, `shiptorio/runner-*` branches, anything in
+  r3dbars/Testing) on GitHub. Those only ship through the deck's Gate (or a launch permit).
+- Never skip, disable or quarantine a test to get green.
+- Never commit secrets. Local ones go in `.dev.vars` (gitignored); deployed ones via `wrangler secret put`, by
+  Justin. The repo is public (MIT).
+- Never commit videos.
+- Never touch the other Cloudflare Workers on the account (transcripted-feedback, stack99-relay, r3dbar-subscribe,
+  redbars). Don't create or change Cloudflare resources unless Justin says so.
+- Never move decisions out of Spark (triage, planning, routing, review). Agents like Codex are the hands, not the
+  brain.
+- Hackathon rule: only code written during the event (Oct 26 to Nov 4, 2026). npm libraries are fine.
 
 ## Accessibility
 
-The game plays with a keyboard and a screen reader (PR "Accessibility pass"). Keep it that way when you add UI:
+Every control is a real `<button>` or `<a>` whose name contains its visible text. Respect
+`prefers-reduced-motion`. Text stays at 4.5:1 contrast or better. `node web/test/a11y/audit.mjs` (dev server up) runs
+axe on the deck's story and sim cards at phone and desktop; `web/test/deck2d-a11y.test.ts` covers the card's keyboard
+and names.
 
-- Every new control is a real `<button>`/`<a>` with a name that contains its visible text. New sheets use
-  `className="card sheet"` and an `<h2>`, so App.tsx moves focus into them and back out on close.
-- The 3D map has a text twin: `web/src/ui/FactoryText.tsx` (T, or the eye button). New things on the map
-  show up there too. The canvas pans with arrows and zooms with + and −; its labels tab like buttons.
-- Sounds that mean something get a line in `CAPTION` in `web/src/ui/SoundCaptions.tsx` (C shows them; screen
-  readers always hear them).
-- Motion: check `prefers-reduced-motion` before shakes, shockwaves, confetti and camera glides (`styles.css`
-  also has a global net). Text colors stay ≥ 4.5:1 on the panel; `--faint` is the lowest allowed.
-- Check: with `bun run dev:web` up, `bun run --filter './web' a11y` runs axe-core on 14 screens (zero
-  serious/critical) and a keyboard-only playthrough from the welcome tour to a launched rocket.
+## Older docs
 
-## Open questions
-
-- Does Muse Spark accept images (for visual QA)?
-- ~~Does Spark expose reasoning-effort levels?~~ Yes: `reasoning_effort` minimal/low/medium/high/xhigh
-  ("none" is a 400). Meta Model API is OpenAI-compatible at `https://api.meta.ai/v1`, model `muse-spark-1.3`.
-- Spark rate limits, credit balance, and whether `codex exec` handles Spark tool calls cleanly.
+`docs/PRODUCT.md`, `docs/LOOP.md`, `docs/ART.md`, `docs/GAMEPLAY*.md`, `docs/ATTENTION.md`, `docs/SIMPLE-UI.md`
+and the HTML art prototypes in `docs/` describe the 3D map era (each carries a banner). The day-one plan,
+architecture, build mode and lane briefs moved to `docs/context/archive/`. Read them for background only; this
+file and the docs above win.
+The public docs site is `docs/site/*.md` (served at /docs); keep it true when you change player-facing behavior.

@@ -1,3 +1,4 @@
+import { quotaEditor } from "./admin-god-page";
 import { configuredAdmin } from "./admin-policy";
 import { currentUser } from './accounts';
 import type { Env } from './index';
@@ -5,6 +6,7 @@ import { isAllowed } from './session';
 import { isLocal } from './auth';
 import { isPublicDocs } from './access';
 import { ironShell } from './iron-page';
+import { escapeHtml as escape } from "./encode";
 
 export interface SignupEnv {
   SIGNUP_GATE_MODE?: string; // waitlist opts in after Turnstile setup; default/password = rollback
@@ -13,7 +15,6 @@ export interface SignupEnv {
   TURNSTILE_SECRET_KEY?: string;
 }
 export const signupMode = (env: SignupEnv) => env.SIGNUP_GATE_MODE === 'waitlist' ? 'waitlist' : 'password';
-export const escape = (s: string) => s.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 export const githubLogin = (s: string) => /^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i.test(s);
 export const isAdmin = configuredAdmin;
 // Only explicitly configured owner/admin identities get quota exemptions, never a wildcard.
@@ -109,14 +110,19 @@ export async function runQuota(env: Env, login: string): Promise<boolean> {
 export async function adminSignup(request: Request, env: Env): Promise<Response> {
   const login = (await currentUser(env,request.headers.get('cookie'),new URL(request.url)))?.login || null;
   if (!login || !isAdmin(env,login) || !await signupAllowed(env,login)) return new Response('Admin only',{status:403});
+  if (request.method === 'POST' && request.headers.get('origin') !== new URL(request.url).origin) return new Response('Invalid origin',{status:403});
+  if (request.method !== 'POST') {
+    const target = new URL(request.url).searchParams.get('login')?.trim().toLowerCase() ?? '';
+    if (githubLogin(target)) return new Response(await quotaEditor(env, target), {headers});
+    return new Response(null,{status:302,headers:{...headers,Location:'/admin'}});
+  }
+  let editedLogin: string | undefined;
   // Bounded retention work on admin visits rather than a sweep on every public request.
   await env.DB.batch([
     env.DB.prepare('DELETE FROM signup_counters WHERE rowid IN (SELECT rowid FROM signup_counters WHERE expires_at < ? LIMIT 100)').bind(Date.now()),
     env.DB.prepare('DELETE FROM signup_abuse WHERE scope IN (SELECT scope FROM signup_abuse WHERE updated_at < ? LIMIT 100)').bind(Date.now()-30*86400000),
     env.DB.prepare('DELETE FROM signup_invites WHERE digest IN (SELECT digest FROM signup_invites WHERE expires_at < ? LIMIT 100)').bind(Date.now()),
   ]);
-  let message = '';
-  const selectedLogin = new URL(request.url).searchParams.get('login')?.toLowerCase() ?? '';
   if (request.method === 'POST') {
     if (request.headers.get('origin') !== new URL(request.url).origin) return new Response('Invalid origin',{status:403});
     const raw = await request.text();
@@ -125,7 +131,7 @@ export async function adminSignup(request: Request, env: Env): Promise<Response>
     if (action === 'invite') {
       const code = crypto.randomUUID()+crypto.randomUUID();
       await env.DB.prepare('INSERT INTO signup_invites(digest,expires_at,created_by) VALUES (?,?,?)').bind(await hash(code),Date.now()+7*86400000,login).run();
-      message = `One-use invite (expires in 7 days; copy now): ${code}`;
+
     } else if (['approve','deny','limits'].includes(action || '') && githubLogin(target)) {
       const count = (field:string,fallback:number) => /^\d{1,5}$/.test(form.get(field) || '') ? Number(form.get(field)) : fallback;
       const sparkCount = (field: string) => !form.has(field) || !form.get(field)?.trim() ? null : /^\d{1,9}$/.test(form.get(field)!) ? Number(form.get(field)) : NaN;
@@ -135,16 +141,15 @@ export async function adminSignup(request: Request, env: Env): Promise<Response>
         env.DB.prepare(`INSERT INTO signup_allowlist(login,enabled,approved_by,updated_at,factories,repos,runs_daily) VALUES (?,?,?,?,?,?,?) ON CONFLICT(login) DO UPDATE SET enabled=excluded.enabled,approved_by=excluded.approved_by,updated_at=excluded.updated_at,factories=excluded.factories,repos=excluded.repos,runs_daily=excluded.runs_daily`).bind(target,action==='deny'?0:1,login,Date.now(),count('factories',3),count('repos',3),count('runs',20)),
         env.DB.prepare('UPDATE signup_waitlist SET status=?,updated_at=? WHERE identity=?').bind(action==='deny'?'denied':'approved',Date.now(),identity),
         ...(form.has('spark_calls') && form.has('spark_tokens') ? [env.DB.prepare('UPDATE signup_allowlist SET spark_calls_daily=?,spark_tokens_daily=? WHERE login=?').bind(calls,tokens,target)] : []),
+        ...(action === 'limits' ? [env.DB.prepare(`UPDATE admin_user_limits SET
+          runs=CASE WHEN runs IS NOT NULL THEN ? ELSE NULL END,
+          spark_calls=CASE WHEN ? AND spark_calls IS NOT NULL THEN ? ELSE spark_calls END,
+          spark_tokens=CASE WHEN ? AND spark_tokens IS NOT NULL THEN ? ELSE spark_tokens END
+          WHERE user_id=(SELECT id FROM users WHERE lower(login)=?)`).bind(count('runs',20),form.has('spark_calls') && form.has('spark_tokens') ? 1 : 0,calls,form.has('spark_calls') && form.has('spark_tokens') ? 1 : 0,tokens,target)] : []),
       ]);
-      message = `${target}: ${action==='deny'?'access revoked':'access approved'}`;
+
+      if (action === 'limits') editedLogin = target;
     } else return new Response('Choose a valid GitHub login',{status:400});
   }
-  const [waitlist,allowlist,abuse] = await Promise.all([
-    env.DB.prepare('SELECT * FROM signup_waitlist ORDER BY created_at DESC LIMIT 200').all<Record<string,unknown>>(),
-    env.DB.prepare('SELECT * FROM signup_allowlist ORDER BY login LIMIT 200').all<Record<string,unknown>>(),
-    env.DB.prepare('SELECT * FROM signup_abuse ORDER BY updated_at DESC LIMIT 100').all<Record<string,unknown>>(),
-  ]);
-  const selected = allowlist.results.find(r => r.login === selectedLogin);
-  const rows = waitlist.results.map(row=>`<li>${escape(String(row.identity))} (${escape(String(row.kind))}, ${escape(String(row.status))})<form method="post"><input type="hidden" name="identity" value="${escape(String(row.identity))}"><input name="login" aria-label="Verified GitHub login" placeholder="Verified GitHub login" value="${row.kind==='github'?escape(String(row.identity)):''}" required><button name="action" value="approve">Approve</button><button name="action" value="deny">Deny / revoke</button></form></li>`).join('');
-  return new Response(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Shiptorio admin — access</title><h1>Signup and abuse</h1><p>${escape(message)}</p><a href="/admin">Admin</a><p>Email approval requires Justin to verify the GitHub identity first.</p><h2>Waitlist</h2><ul>${rows}</ul><h2>Allowlist and quotas</h2><pre>${escape(JSON.stringify(allowlist.results,null,2))}</pre><form method="post"><input name="login" placeholder="GitHub login" value="${escape(selectedLogin)}" required><label>Factories<input name="factories" type="number" min="0" max="99999" value="${selected?.factories ?? 3}"></label><label>Repos<input name="repos" type="number" min="0" max="99999" value="${selected?.repos ?? 3}"></label><label>Runs/day (UTC)<input name="runs" type="number" min="0" max="99999" value="${selected?.runs_daily ?? 20}"></label><label>Spark calls/day (UTC; blank = Worker default)<input name="spark_calls" type="number" min="0" max="999999999" value="${selected?.spark_calls_daily ?? ''}"></label><label>Spark tokens/day (UTC; blank = Worker default)<input name="spark_tokens" type="number" min="0" max="999999999" value="${selected?.spark_tokens_daily ?? ''}"></label><button name="action" value="limits">Save access and quotas</button><button name="action" value="deny">Revoke</button></form><form method="post"><button name="action" value="invite">Create one-use invite</button></form><h2>Abuse flags</h2><pre>${escape(JSON.stringify(abuse.results,null,2))}</pre>`,{headers});
+  return new Response(null,{status:editedLogin ? 303 : 302,headers:{...headers,Location:editedLogin ? `/admin/signup?login=${encodeURIComponent(editedLogin)}` : '/admin'}});
 }

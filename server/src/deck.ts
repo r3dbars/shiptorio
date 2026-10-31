@@ -1,14 +1,14 @@
 // The live check-in deck is a projection, never an executor. The DO supplies all open
 // proposals and stores resolutions separately. A new proposal joins the set; it does
 // not overwrite the previous card. All times/ids below are deterministic for replay.
-import { attentionOf, type FactoryState, type Item, type Move, type MoveKind } from "@shiptorio/shared";
+import { attentionOf, type FactoryState, type Move, type MoveKind } from "@shiptorio/shared";
 
 // A modest, fixed bonus (weighted item-minutes) favors growing the loop without
 // letting a new connection card bury an old, valuable shipping decision forever.
 // A customer waiting on a reply gets the same nudge: answering people is a real result.
 export const GROW_BONUS: Partial<Record<MoveKind, number>> = { verify: 10, input: 10, automate: 10, reply: 10 };
 const FALLBACK_VALUE = { bug: 5, feature: 3, tests: 2, cleanup: 1 };
-const REQUIRED = [{ gate: "ci", name: "CI inspector" }, { gate: "verify", name: "Verify bay" }, { gate: "ai", name: "AI review" }] as const;
+const REQUIRED = [{ gate: "ci", name: "CI check" }, { gate: "verify", name: "Proof check" }, { gate: "ai", name: "Review" }] as const;
 export interface DeckRule { kind: MoveKind; scope: string }
 export interface DeckOptions {
   now?: number;
@@ -16,7 +16,7 @@ export interface DeckOptions {
   rules?: readonly DeckRule[];
   /** The caller may supply a model-authored bottleneck proposal instead of the safe default. */
   impliedMove?: Move;
-  /** A local agent is already planning or building: a build-stage jam is the line moving, not a call for the player. */
+  /** A local agent is already planning or building: a Planner or Builder jam is the line moving, not a call for the player. */
   buildMoving?: boolean;
   /** docs/ATTENTION.md: the player's Continues in a row per `kind|scope`; each one lifts that class a little. */
   yes?: Readonly<Record<string, number>>;
@@ -97,7 +97,7 @@ function impliedBottleneckMove(state: FactoryState, now: number): Move | null {
   return {
     id: `bottleneck:${jam.stationId ?? jam.stage}`,
     title: resources ? "Your computer writes the code. Plug it in to start building." : jam.summary,
-    why: resources ? "Claude Code or Codex on your computer builds the changes. Paste one line, once." : `${jam.wip} ${jam.wip === 1 ? "item is" : "items are"} waiting here. Review what will move the line forward.`,
+    why: resources ? "Codex or Meta Muse Code on your computer builds the changes. Paste one line, once." : `${jam.wip} ${jam.wip === 1 ? "item is" : "items are"} waiting here. Review what will move the line forward.`,
     stage: jam.stage, focus: jam.stationId ?? jam.stage, kind: "unblock", createdAt: now,
     // Read-only fallback: the planner/DO must turn this review into an actual proposal.
     // Never fabricate a build, permit or merge decision from deterministic ranking.
@@ -118,7 +118,8 @@ export function buildDeck(state: FactoryState, candidates: readonly Move[] = [..
     const move = enrichMove(candidate, state);
     if (allowed(move)) byId.set(move.id, move);
   }
-  const moving = options.buildMoving && state.bottleneck?.stage === "build";
+  // A planning job puts its item at Planner ("triage"), so that jam is Shippy writing the plan, not a no-op "Continue" card.
+  const moving = options.buildMoving && (state.bottleneck?.stage === "build" || state.bottleneck?.stage === "triage");
   if (state.bottleneck && !moving && ![...byId.values()].some(m => coversBottleneck(m, state))) {
     // Keep a carried card's identity and age, but always say what the queue holds now, not when the card was first raised.
     const fresh = impliedBottleneckMove(state, now)!;

@@ -14,7 +14,7 @@ const head = "a".repeat(40), merge = "b".repeat(40);
 const item = (): Item => ({ id: "gh-1", kind: "bug", source: "github_issue", title: "Fix checkout", district: "checkout", lane: "checkout", state: "on_pad", attempts: 1, prNumber: 41, prUrl: "https://github.com/r3dbars/demo/pull/41", branch: "shiptorio/runner-original", inspection: freshInspection(head), updatedAt: 1 });
 function fixture(items = [item()]) {
   const state = FactoryState.parse({ repo: "r3dbars/demo", baseBranch: "main", districts: [], ...starterLine(), items, science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 });
-  const data = new Map<string, unknown>([["state", state], ["meta", { repo: state.repo, installationId: 1 }], ["runnerJob:original", { id: "original", itemId: "gh-1", repo: state.repo, status: "completed", harness: "codex", allowedPaths: ["checkout/total.ts"], branch: "shiptorio/runner-original", prUrl: "https://github.com/r3dbars/demo/pull/41" }]]);
+  const data = new Map<string, unknown>([["githubAccessCheckedAt", Date.now()], ["state", state], ["meta", { repo: state.repo, installationId: 1 }], ["runnerJob:original", { id: "original", itemId: "gh-1", repo: state.repo, status: "completed", harness: "codex", allowedPaths: ["checkout/total.ts"], branch: "shiptorio/runner-original", prUrl: "https://github.com/r3dbars/demo/pull/41" }]]);
   let alarm: number | null = null, failAt: string | undefined;
   const storage = {
     async get(key: string) { return structuredClone(data.get(key)); },
@@ -37,7 +37,7 @@ function fixture(items = [item()]) {
   return { data, reload, saved: () => data.get("state") as FactoryState, credits: () => [...data.keys()].filter(k => k.startsWith("launchCredit:")), alarm: () => alarm, consumeAlarm: () => { alarm = null; }, setAlarm: (at: number) => { alarm = at; }, failAt: (key?: string) => { failAt = key; } };
 }
 async function revert(f: ReturnType<typeof fixture>, factory: InstanceType<typeof Factory>) {
-  await factory.enqueueGitHub("revert-delivery", "pull_request", { action: "opened", repository: { full_name: "r3dbars/demo" }, installation: { id: 1 }, pull_request: { number: 50, title: 'Revert "Fix checkout"', body: "Reverts r3dbars/demo#41" } });
+  await factory.enqueueGitHub("revert-delivery", "pull_request", { action: "closed", repository: { full_name: "r3dbars/demo" }, installation: { id: 1 }, pull_request: { number: 50, title: 'Revert "Fix checkout"', body: "Reverts r3dbars/demo#41", merged: true, base: { ref: "main" } } });
   f.consumeAlarm(); await factory.alarm();
 }
 

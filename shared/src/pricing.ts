@@ -59,7 +59,7 @@ export const SPARK_PRICE = { input: 1.25, output: 4.25 };
 export const SPARK_CALLS: { call: string; per: number; input: number; output: number }[] = [
   { call: "triage", per: 1, input: 1500, output: 600 },
   { call: "plan (≈3.5 of 5 turns)", per: 1, input: 21000, output: 4500 },
-  { call: "AI review", per: 1, input: 8000, output: 1500 },
+  { call: "Review", per: 1, input: 8000, output: 1500 },
   { call: "deck ranking", per: 4, input: 4000, output: 800 },
   { call: "orbit verdict", per: 0.5, input: 2000, output: 500 },
   { call: "re-plan + re-review on rework (30%)", per: 0.3, input: 29000, output: 6000 },
