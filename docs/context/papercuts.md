@@ -7,7 +7,6 @@ Do not delete externally reachable routes or persisted state merely because the 
 
 | Candidate | Why it stays | What would justify removal |
 | --- | --- | --- |
-| `web/src/telemetry.ts:initTelemetry` and `@sentry/browser` | The initializer has no current caller, while the live socket still imports `socketDisconnected` from the module. Removing the whole module would change that live path. | Decide whether to initialize telemetry on the deck or retire the old initialization/SDK deliberately; retain redaction. |
 | `feature` / `previewOn` in `web/src/flags.ts` | Covered by preview-policy tests and still required by contributor policy. | An explicit policy change, not a blind unused-export deletion. |
 | `/api/empire`, `/settings`, `/connect/*`, `/art/*` | Still registered or emitted and externally addressable; account and self-host docs use some of them. | Audit external and compatibility consumers before changing route behavior. |
 | `server/src/{permits,levels,growth,unlocks}.ts` and server feature flags | Imports, stored state, fixtures or explicit operator opt-ins still reference them. Parked does not mean unreachable. | A separate migration/retirement decision with state compatibility verified. |
@@ -52,4 +51,6 @@ Found and deliberately left for after the freeze (each is a refactor, not a remo
 - `web/src/sound/` (old app) and React deleted; `@sentry/react` became `@sentry/browser`.
 - One copy each: `server/src/encode.ts` (`escapeHtml` x10, `toHex`/`sha256Hex` x12, `plural` x3) and
   `web/src/deck2d/engine/math.ts` (`clamp01`, `span`, `easeOut`). Signal `clamp`s stay: each rounds differently.
+- Browser Sentry is on: `live.ts` calls `startTelemetry()` on connect (idle-deferred, signed-in only, no-op without
+  `SHIPTORIO_SENTRY_DSN`). The anonymous tutorial never loads it.
 - Still waiting (pixels could move): hex-to-RGB and nearest-48 palette snap copies.

@@ -2,7 +2,16 @@ import * as Sentry from '@sentry/browser';
 import { redact } from '../../server/src/redact';
 
 let requestId: string | undefined;
-export async function initTelemetry() {
+let started = false;
+/** Turns on browser error reporting once, when a signed-in factory connects (live.ts). Deferred to idle time so it
+ *  never competes with the first frame; the anonymous tutorial never loads this module. No DSN configured = no-op. */
+export function startTelemetry(): void {
+  if (started || typeof window === "undefined") return;
+  started = true;
+  const later = window.requestIdleCallback ?? ((cb: () => void) => window.setTimeout(cb, 2000));
+  later(() => void initTelemetry());
+}
+async function initTelemetry() {
   // Runtime config keeps the DSN in one Worker secret and release identical to /api/version.
   try {
     const response = await fetch('/api/telemetry/config', { signal: AbortSignal.timeout(3000) });
