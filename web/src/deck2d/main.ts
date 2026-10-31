@@ -109,10 +109,11 @@ export async function freshStart(loc: Pick<Location, "search" | "hostname" | "pa
  *  URL (web/test/deck2d-first-paint.test.ts keeps the two lists equal). sky/clouds come pre-dimmed (engine dimArt). */
 export const FIRST_FRAME_ART = ["sky-dim", "clouds-dim", ...SPRITES.rocket, "plate"] as const;
 
-/** A requested live URL is not proof that this browser is signed in. */
-export async function deckSignedIn(request: typeof fetch = fetch): Promise<boolean> {
+/** A requested live URL is not proof that this browser is signed in. The wait is generous: a guest's "no" is quick,
+ *  but a signed-in player on a slow phone network or a cold server must not be dropped into the guest tour after 2s. */
+export async function deckSignedIn(request: typeof fetch = fetch, waitMs = 6000): Promise<boolean> {
   try {
-    const response = await request("/api/me", { cache: "no-store", signal: AbortSignal.timeout(2000) });
+    const response = await request("/api/me", { cache: "no-store", signal: AbortSignal.timeout(waitMs) });
     loadMark("me-response");
     if (!response.ok) return false;
     const account = await response.json();

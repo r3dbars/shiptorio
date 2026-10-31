@@ -10,12 +10,25 @@ const CONNECT_MS = 15_000;
 const DEAD_MS = 5_000;
 const NOTICE_MS = 3_000;
 
-export function connectLive(repo: string, onMessage: Listener, onStatus: StatusListener): Source {
+/** Signed out (expired or cleared session): the factory socket's upgrade is refused, so it never opens. */
+export async function sessionGone(request: typeof fetch = fetch): Promise<boolean> {
+  try {
+    const response = await request("/api/me", { cache: "no-store" });
+    if (response.status === 401) return true;
+    if (!response.ok) return false;
+    const account = await response.json() as { guest?: boolean; login?: unknown };
+    return account.guest === true || typeof account.login !== "string" || !account.login;
+  } catch { return false; } // offline or a server hiccup is not a sign-out: keep reconnecting
+}
+
+export function connectLive(repo: string, onMessage: Listener, onStatus: StatusListener, signedOut: () => Promise<boolean> = sessionGone): Source {
   const recorder = typeof location !== "undefined" && typeof location.href === "string" && recordingAllowed(new URL(location.href)) ? createRecorder() : null;
   const removeRecorder = recorder ? mountRecorder(recorder) : () => {};
   let ws: WebSocket | null = null;
   let closed = false, synced = false, attempt = 0, lastSeq = -1;
   let openedAt = 0, openedOnline = true;
+  // Upgrades refused in a row. Two means "ask who is here": a signed-out player gets a sign-in link, not an endless "Reconnecting…".
+  let refused = 0, out = false;
   let sleeping = typeof document !== "undefined" && document.visibilityState === "hidden";
   let heartbeat: ReturnType<typeof setTimeout> | undefined;
   let deadline: ReturnType<typeof setTimeout> | undefined;
@@ -56,6 +69,23 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
       document.body.appendChild(notice);
     }, NOTICE_MS);
   };
+  const showSignedOut = () => {
+    if (closed || typeof document === "undefined") return;
+    out = true;
+    detach(); clearTimeout(retry); retry = undefined; clearNotice();
+    const link = document.createElement("a") as HTMLAnchorElement;
+    link.setAttribute("role", "status");
+    link.href = `/auth/login?next=${encodeURIComponent(location.pathname + location.search)}`;
+    link.textContent = "You're signed out. Sign in again →";
+    link.style.cssText = "position:fixed;bottom:12px;left:12px;z-index:1000;padding:8px 12px;border-radius:6px;background:#1b2448;color:#f3d27a;font:13px monospace;text-decoration:underline";
+    notice = link;
+    document.body.appendChild(link);
+    onStatus("offline");
+  };
+  const refusedUpgrade = () => {
+    if (++refused % 2 !== 0) return;
+    void signedOut().then(gone => { if (gone && !closed && !synced && !out) showSignedOut(); }, () => undefined);
+  };
   const clearNotice = () => {
     clearTimeout(noticeTimer); noticeTimer = undefined;
     notice?.remove(); notice = undefined;
@@ -74,7 +104,7 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
     }
   };
   const lost = () => {
-    if (closed) return;
+    if (closed || out) return;
     detach(); waiting();
     clearTimeout(retry);
     // Equal jitter, capped at 10s; a network/visibility recovery bypasses this delay.
@@ -88,7 +118,7 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
     try { socket.send("ping"); } catch { lost(); }
   };
   const open = () => {
-    if (closed) return;
+    if (closed || out) return;
     clearTimeout(retry); retry = undefined;
     detach(); waiting();
     const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -100,10 +130,12 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
     openedAt = Date.now();
     openedOnline = typeof navigator === "undefined" || navigator.onLine !== false;
     const current = () => !closed && ws === socket;
+    let opened = false;
     // Bound connection establishment separately from an opened socket missing its snapshot.
     deadline = setTimeout(lost, CONNECT_MS);
     socket.onopen = () => {
       if (!current() || synced) return;
+      opened = true; refused = 0;
       loadMark("socket-open");
       clearTimeout(deadline);
       deadline = setTimeout(lost, DEAD_MS);
@@ -152,9 +184,10 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
     socket.onclose = (event) => {
       if (!current()) return;
       socketDisconnected(repo, event?.code ?? 1006, event?.wasClean ?? false);
+      if (!opened) refusedUpgrade();
       lost();
     };
-    socket.onerror = () => { if (current()) lost(); };
+    socket.onerror = () => { if (!current()) return; if (!opened) refusedUpgrade(); lost(); };
   };
   const resume = () => {
     if (closed || (typeof document !== "undefined" && document.visibilityState === "hidden")) return;
@@ -163,7 +196,7 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
     // Mobile browsers can leave readyState OPEN on a dead socket. Replacing it
     // also discards frames buffered while asleep before they can replay sounds.
     // Count the three-second grace from the player's return, not time asleep.
-    sleeping = false;
+    sleeping = false; out = false; refused = 0;
     clearNotice();
     open();
   };
