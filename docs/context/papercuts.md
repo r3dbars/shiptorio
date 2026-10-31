@@ -38,9 +38,7 @@ Found and deliberately left for after the freeze (each is a refactor, not a remo
 
 | Candidate | Where | Why it waits |
 | --- | --- | --- |
-| `clamp01`, `span`, cubic `easeOut` copied 4 to 6 times | `deck2d/{story/reveal,grow/index,shippy/shippy,build/build,build/pixel,launch/timeline}.ts` | Identical bodies; one `engine/math.ts` would do. Touches six animation files the day before the freeze. |
 | Hex-to-RGB (6 copies) and nearest-48 palette snap (3 copies) | `stations/palette`, `city/{connector,draw}`, `engine/{dim,pixel}`, `shippy/sheet` | Snap copies differ by a divisor; consolidating changes pixels unless done with the screenshot tests open. |
-| `clamp` (4), `plural` (4), HTML escape (8), SHA-256 hex (6), base64url (3) | `server/src/signals/*`, `server/src/{account-pages,ironPage,ops,access,connect,auth,signup,admin-god-page,accounts,admin-view,rate-limit,guests,account-lifecycle}.ts` | Pure duplication. `signup.hash`, `ironPage` and `sources/types.verifyHmac` look canonical. |
 | `spark.ts:93` inline Retry-After parsing | duplicates `rate-limit.retryAfterMs` | Small; verify the two agree on seconds vs HTTP-date first. |
 | About 260 `export` keywords on symbols only used in their own file | server signals, spark.ts types, deck2d juice/city/engine | Cosmetic. A knip run after the freeze. |
 | Test-only exports: `removePairing`, `sparkShare`, `recentLogs`, `funnelDays`, `priorityChoices`, `mergeProgress`, `liveStreak`, achievements `parseEarned`/`mergeEarned`/`markDay`, pricing `PLANS`/`FUEL_PACK`/`planMargin`, protocol `RunnerToServer`/`ServerToRunner` | shared, server, runner | Parked features (progression, pricing, empire) or test seams. Removing them removes their tests; a retirement decision, not cleanup. |
@@ -48,3 +46,10 @@ Found and deliberately left for after the freeze (each is a refactor, not a remo
 | `web/deck-ui-review.html` (820 KB) ships in the deck build | `web/vite.deck.config.ts` | A review tool in prod. Drop it from the inputs if nobody reviews there anymore. |
 | `/art/*` pages (black-iron, cogworks, dioramas, style-lab, item-lab, art-prototype) and `docs/{loop,onboarding-mockup}.html` | `web/vite.config.ts`, `docs/` | Three.js and island-era art history, still served. Keep as history or retire together. |
 | `scripts/art/cut-build.py` still cuts the spark frames | `scripts/art/cut-build.py:95` | Re-running it recreates `fx-spark-*`; drop the spark entry when the script is next touched. |
+
+## Cleanup pass, 2026-10-31 (Claude, thread "Remove redundant code from the repo")
+
+- `web/src/sound/` (old app) and React deleted; `@sentry/react` became `@sentry/browser`.
+- One copy each: `server/src/encode.ts` (`escapeHtml` x10, `toHex`/`sha256Hex` x12, `plural` x3) and
+  `web/src/deck2d/engine/math.ts` (`clamp01`, `span`, `easeOut`). Signal `clamp`s stay: each rounds differently.
+- Still waiting (pixels could move): hex-to-RGB and nearest-48 palette snap copies.
