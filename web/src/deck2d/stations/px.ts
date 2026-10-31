@@ -104,11 +104,9 @@ export class Px {
     }
     for (const i of out) d[i] = IDX[c];
   }
-  /** Bake to a canvas exactly w x h: palette pixels opaque, glows blended on top of them. */
-  bake(): HTMLCanvasElement {
-    const cv = document.createElement("canvas");
-    cv.width = this.w; cv.height = this.h;
-    const cx = cv.getContext("2d")!, im = cx.createImageData(this.w, this.h), p = im.data;
+  /** The baked RGBA pixels, w x h: palette pixels opaque, glows blended on top of them. No DOM, so a worker can run it. */
+  rgba(): Uint8ClampedArray {
+    const p = new Uint8ClampedArray(this.w * this.h * 4);
     for (let i = 0; i < this.d.length; i++) {
       const k = this.d[i];
       if (k === EMPTY) continue;
@@ -132,9 +130,22 @@ export class Px {
         p[o + 2] = b * gl.a + p[o + 2] * (1 - gl.a);
       }
     }
-    cx.putImageData(im, 0, 0);
-    return cv;
+    return p;
   }
+  /** Bake to a canvas exactly w x h (rgba()). */
+  bake(): HTMLCanvasElement {
+    return toCanvas(this.rgba(), this.w, this.h);
+  }
+}
+
+/** RGBA pixels (Px.rgba) on a canvas of their own. */
+export function toCanvas(p: Uint8ClampedArray, w: number, h: number): HTMLCanvasElement {
+  const cv = document.createElement("canvas");
+  cv.width = w; cv.height = h;
+  const cx = cv.getContext("2d")!, im = cx.createImageData(w, h);
+  im.data.set(p);
+  cx.putImageData(im, 0, 0);
+  return cv;
 }
 
 /** A view of a grid with its origin moved, so a station can be laid out in the coordinates it was traced in. */

@@ -30,24 +30,35 @@ export function createPixelCanvas(screen: HTMLCanvasElement, artPx: number, pale
   const word = new Uint32Array(rgb?.length ?? 0);
   rgb?.forEach(([r, g, b], n) => new Uint8Array(word.buffer, n * 4, 4).set([r, g, b, 255]));
   const near = new Map<number, number>();
+  // A small direct-mapped table in front of near: a moving picture changes color most pixels, and a typed-array probe
+  // is much cheaper than a Map lookup. Same answers (it only remembers what near says).
+  const hitKey = new Int32Array(1 << 16).fill(-1), hitIdx = new Uint8Array(1 << 16);
 
   function quantize() {
     if (!rgb) return;
     const img = cx.getImageData(0, 0, buf.width, buf.height), d = img.data, out = new Uint32Array(d.buffer, d.byteOffset, d.length >> 2);
-    // Neighbouring pixels are usually the same color, so the last answer is reused before asking the map.
-    let lastKey = -1, lastWord = 0;
-    for (let p = 0, i = 0; p < out.length; p++, i += 4) {
+    // Neighbouring pixels are usually the same color, so the last answer is reused before asking the map. The test is
+    // on the whole 32-bit pixel (one read, not four), so a run costs one compare a pixel; alpha only matters when 0.
+    let lastRaw = -1, lastWord = 0;
+    for (let p = 0; p < out.length; p++) {
+      const raw = out[p];
+      if (raw === lastRaw) { out[p] = lastWord; continue; }
+      const i = p << 2;
       if (d[i + 3] === 0) continue;
       const key = (d[i] << 16) | (d[i + 1] << 8) | d[i + 2];
-      if (key !== lastKey) {
-        let j = near.get(key);
+      const h = Math.imul(key, 0x9e3779b1) >>> 16;
+      let j: number | undefined;
+      if (hitKey[h] === key) j = hitIdx[h];
+      else {
+        j = near.get(key);
         if (j === undefined) {
           let best = Infinity; j = 0;
           for (let n = 0; n < rgb.length; n++) { const [r, g, b] = rgb[n], e = (r - d[i]) ** 2 + (g - d[i + 1]) ** 2 + (b - d[i + 2]) ** 2; if (e < best) { best = e; j = n; } }
           near.set(key, j);
         }
-        lastKey = key; lastWord = word[j];
+        hitKey[h] = key; hitIdx[h] = j;
       }
+      lastRaw = raw; lastWord = word[j];
       out[p] = lastWord;
     }
     cx.putImageData(img, 0, 0);

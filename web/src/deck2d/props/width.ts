@@ -17,3 +17,12 @@ export function hullCols(size: Size, growing: number): number {
   return Math.floor(((a + (b - a) * k) / ART_PX) / COL) * COL || a / ART_PX;
 }
 
+
+/** Every width the hull passes through growing from `size` to the next size, in order (the last is the next size's own). */
+export function growCols(size: Size): number[] {
+  const out: number[] = [];
+  for (let i = 1; i <= 400; i++) { const w = hullCols(size, i / 400); if (!out.includes(w)) out.push(w); }
+  const end = hullCols(NEXT[size], 0);
+  if (!out.includes(end)) out.push(end);
+  return out;
+}
