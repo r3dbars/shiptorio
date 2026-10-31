@@ -15,6 +15,7 @@
 // island is framed and still dark while its two lines are held CITY_TIMING.reducedIsland (3.0 s); then all five light at once
 // ("The factory must grow.") and dim at once.
 import { CITY_COPY, CITY_ISLANDS, CITY_TIMING as T, type CityBeat, type CityIsland, type CityView, type CityZoom } from "../contract";
+import { clamp01 } from "../engine/math";
 
 export interface Reveal {
   /** What the engine and the city layer draw. Omitted in beat 0: station zoom, exactly as before the city existed. */
@@ -30,7 +31,6 @@ export interface Reveal {
 const EPS = 1e-6;
 // CITY_TIMING is in whole milliseconds; rounding keeps sums like 29.1 from printing as 29.100000000000001.
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
-const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
 const fill = <V>(v: V): Record<CityIsland, V> => ({ errors: v, traffic: v, inbox: v, customers: v, marketing: v });
 
 const N = CITY_ISLANDS.length;

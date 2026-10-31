@@ -123,8 +123,6 @@ export function voicesFor(cue: Cue, semitones = 0): Voice[] {
   const k = 2 ** (semitones / 12);
   return voices.map((v) => (v.k === "tone" ? { ...v, f: v.f * k, ...(v.to === undefined ? {} : { to: v.to * k }) } : v));
 }
-export const ROUTINE_PEAK = 0.25;
-export const ROUTINE_CUES: readonly Cue[] = ["chalk", "ratchet", "rivet", "puff"];
 
 // ---------- the player ----------
 

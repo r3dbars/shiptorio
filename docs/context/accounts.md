@@ -23,7 +23,7 @@ Older tables `installations` / `repos` are still the App-wide list (webhooks wri
 - `createSession(env, user, userAgent)` → Set-Cookie string. `endSession(env, cookieHeader)`.
 - `upsertUser(env, githubUser)`, `fetchReach(userToken)` + `saveReach(env, userId, reach)`:
   what `/auth/callback` runs on every sign-in, so signing in again refreshes the repo list.
-- `canSeeRepo(env, user, repo)`, `reposFor(env, user)`.
+- `reposFor(env, user)`.
 - `readPrefs` / `writePrefs`.
 
 ## Routes (`server/src/index.ts`)

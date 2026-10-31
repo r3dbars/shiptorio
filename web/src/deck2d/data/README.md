@@ -26,7 +26,7 @@ only produces them.
 - **A jam** is red: a source error, rejected job, or a blocked machine without a pending human setup decision.
   A busy queue by itself is not a fault. Its affected conveyor bay stops; other bays keep moving.
 - **The card** is setup first, then stuck, then parked, then ideas (same order as the task tray). `line` is the
-  learning line ("Approve 2 more like this and then it's automatic.") or "Approve it and it moves." before the first yes.
+  learning line ("Approve 2 more like this and it's automatic.") or "Approve it and it moves." before the first yes.
 - **Shippy**: running build/rework jobs produce `weld`, active inspection produces `inspect`, and the animation
   module walks him to that station before acting. The Foreman's target wins when work is still active there;
   stale idle targets do not keep him away from home. Rejected jobs and human-review gates wait in `alarmed`

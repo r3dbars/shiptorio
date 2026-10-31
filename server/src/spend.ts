@@ -21,7 +21,7 @@ export const siteDailyBudget = (env: { SPARK_SITE_DAILY_USD?: string }) => {
   return env.SPARK_SITE_DAILY_USD !== undefined && Number.isFinite(usd) && usd >= 0 ? Math.round(usd * NANO_USD) : SITE_DAILY_BUDGET;
 };
 export const SITE_CAP_LINE = "Shippy is done thinking for today: Shiptorio hit its daily AI limit for everyone. He's back at 00:00 UTC. The deck, checks and shipping keep working; Review waits for him.";
-export const ACCOUNT_CAP_LINE = "Shippy is done thinking for today: this account used its $5 of AI for the day. He's back at 00:00 UTC. The deck, checks and shipping keep working; Review waits for him.";
+export const ACCOUNT_CAP_LINE = "Shippy is done thinking for today: this account used its five dollars of AI for the day. He's back at 00:00 UTC. The deck, checks and shipping keep working; Review waits for him.";
 const accountUserId = (account?: string) => account && /^user:-?\d+$/.test(account) ? Number(account.slice(5)) : null;
 export async function accountDailyBudget(db: D1Database, account?: string) {
   const id = accountUserId(account);
@@ -89,7 +89,7 @@ export async function factorySpend(db: D1Database, repo: string, now = Date.now(
   return { repo: repo.toLowerCase(), day, model: "muse-spark-1.3", account: own, calls: row?.calls ?? 0, inputTokens: row?.input_tokens ?? 0,
     outputTokens: row?.output_tokens ?? 0, cachedTokens: row?.cached_tokens ?? 0, unmeasuredCalls: row?.unmeasured_calls ?? 0,
     estimatedUsd: cost / NANO_USD, dailyBudgetUsd: daily / NANO_USD, status,
-    explanation: accountLimited ? (status === "stopped" ? ACCOUNT_CAP_LINE : "This account has used at least 80% of today's $5 of AI. Shippy pauses before another call could go over.") : status === "stopped" ? "I paused paid thinking because this factory reached its daily budget. Raise it or wait until 00:00 UTC. Existing PR checks and human merges can continue."
+    explanation: accountLimited ? (status === "stopped" ? ACCOUNT_CAP_LINE : "This account has used at least 80% of today's five dollars of AI. Shippy pauses before another call could go over.") : status === "stopped" ? "I paused paid thinking because this factory reached its daily budget. Raise it or wait until 00:00 UTC. Existing PR checks and human merges can continue."
       : status === "warning" ? "This factory has used at least 80% of today's planner budget. I will pause paid thinking before another call could exceed it."
       : "Paid thinking pauses before a call could exceed the daily budget. Budgets reset at 00:00 UTC.",
     pricing: "Estimated at $1.25/M input, $0.15/M cached input, $4.25/M output for Spark; other models at 4x until priced. Unmeasured calls retain their reservation." };

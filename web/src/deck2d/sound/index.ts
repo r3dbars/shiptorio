@@ -20,7 +20,6 @@ const SPEAKER = '<svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="tr
 const TAP: Record<StopId, Sfx> = {
   repo: "tap_mine", planner: "tap_planner", builder: "tap_assembler", checks: "tap_checks", review: "tap_checks", gate: "tap_gate", launch: "tap_pad",
 };
-export const tapSound = (stop: StopId): Sfx => TAP[stop];
 export function playTap(stop: StopId) { sound.play(TAP[stop]); }
 
 let installed = false;

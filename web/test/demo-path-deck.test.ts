@@ -535,7 +535,7 @@ describe("the live loop from a scripted socket feed", () => {
     const live = await liveDeck();
     live.deck(deck);
     const view = live.settle();
-    const why = who === "account" ? "This account used today's $5 of AI. He's back at 00:00 UTC. You can keep shipping what's ready."
+    const why = who === "account" ? "This account used today's five dollars of AI. He's back at 00:00 UTC. You can keep shipping what's ready."
       : "Shiptorio used today's AI for everyone. He's back at 00:00 UTC. You can keep shipping what's ready.";
     expect(view.card).toMatchObject({ id: "planner-rest", title: "Shippy is done thinking for today", line: `Shippy: ${why}`, dots: null, hold: false, setup: false, guide: undefined });
     expect(view.jam).toBeNull();

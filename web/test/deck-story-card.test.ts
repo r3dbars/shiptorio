@@ -47,6 +47,19 @@ test("Shippy stands inside the card, Next only, the whole line goes to screen re
   t.h.destroy();
 });
 
+test("the same card shown again keeps its text nodes, so a press under the frame loop still clicks in Safari and Firefox", async () => {
+  const t = await mount();
+  const card = { id: "plain", title: "Want to build yours?", line: "Sign in with GitHub.", stop: "repo" as const, dots: null, yes: "Build mine", no: "Replay" };
+  t.h.show(card);
+  const parts = [".ic-btn.approve b", ".ic-btn.later b", ".ic-title", ".ic-line"].map(s => t.live().querySelector(s)!);
+  const nodes = parts.map(e => e.firstChild);
+  t.h.show({ ...card });
+  expect(parts.map(e => e.firstChild)).toEqual(nodes);
+  t.h.show({ ...card, yes: "Sign in" });
+  expect(parts[0]!.textContent).toBe("Sign in");
+  t.h.destroy();
+});
+
 test("the first tap finishes a typing line, the second goes on; ← does nothing without a no", async () => {
   const t = await mount();
   t.h.show(story("hi"));
@@ -108,4 +121,21 @@ test("every pose moves while talking and lands on real frames", async () => {
   }
   expect(typedChars("abc", 0)).toBe(0);
   expect(typedChars("abc", 10_000)).toBe(3);
+});
+
+test("a double tap's second half doesn't skip the next story card (QA 2026-10-31: Reduce Motion skipped Powered by Meta)", async () => {
+  const { STORY_TAP_GUARD_MS } = await import("../src/deck2d/card/card");
+  const t = await mount();
+  t.h.show(story("hi"));
+  t.live().click(); // finishes the line
+  t.live().click(); // goes on
+  expect(t.got).toEqual(["approve:hi"]);
+  t.h.show(story("meta"));
+  t.live().click(); // finishes the line (with Reduce Motion it is already whole)
+  t.live().click(); // the tail of the double tap: too soon after the last answer, ignored
+  expect(t.got).toEqual(["approve:hi"]);
+  await new Promise((r) => setTimeout(r, STORY_TAP_GUARD_MS + 20));
+  t.live().click();
+  expect(t.got).toEqual(["approve:hi", "approve:meta"]);
+  t.h.destroy();
 });

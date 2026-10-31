@@ -74,7 +74,7 @@ export function plannerRestDeck(deck: Move[], retry: PlanningRetry | undefined, 
   const spent = hold.kind === "cap" && /(?:account|site) daily dollar budget/i.test(hold.reason);
   const everyone = /site daily dollar budget/i.test(hold.reason);
   return [...cards.slice(0, 11), { id: "planner-rest", title: busy ? PLANNER_BUSY_LINE : spent ? "Shippy is done thinking for today" : `Planner is resting until ${until} UTC`,
-    why: busy ? "It picks up on its own. You can keep reviewing existing work." : spent ? `${everyone ? "Shiptorio used today's AI for everyone" : "This account used today's $5 of AI"}. He's back at ${until} UTC. You can keep shipping what's ready.` : "Planning resumes automatically. You can keep reviewing existing work.", kind: "unblock", createdAt: now,
+    why: busy ? "It picks up on its own. You can keep reviewing existing work." : spent ? `${everyone ? "Shiptorio used today's AI for everyone" : "This account used today's five dollars of AI"}. He's back at ${until} UTC. You can keep shipping what's ready.` : "Planning resumes automatically. You can keep reviewing existing work.", kind: "unblock", createdAt: now,
     options: [{ id: "later", label: "Continue", recommended: true, actions: [] }],
     plan: [new Date(hold.retryAt).toISOString()] }];
 }

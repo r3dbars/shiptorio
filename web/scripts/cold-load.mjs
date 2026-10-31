@@ -25,7 +25,7 @@ const profile=PROFILE;
 const median=values=>[...values].sort((a,b)=>a-b)[Math.floor(values.length/2)];
 try {
   host=await coldLoadHost(root,`http://127.0.0.1:${staticServer.address().port}`);
-  browser=await chromium.launch();
+  browser=await chromium.launch(process.env.PW_CHROMIUM?{executablePath:process.env.PW_CHROMIUM}:{});
   async function run(path,round) {
     const name=`${path}-${round}`,live=path==='live';
     const context=await browser.newContext({...devices['iPhone 13'],defaultBrowserType:'chromium',serviceWorkers:'block',recordHar:{path:join(out,`${name}.har`),content:'omit'}});
@@ -42,7 +42,7 @@ try {
     await cdp.send('Tracing.start',{categories:'devtools.timeline,blink.user_timing,loading,v8',transferMode:'ReturnAsStream'});
     const before=host.samples.length;
     try {
-      await page.goto(host.origin+(live?'/deck?source=live&repo=test-fixture/test-newbie':'/deck?fresh=1'),{waitUntil:'commit'});
+      await page.goto(host.origin+(live?'/deck?source=live&repo=test-fixture/test-newbie':(process.env.COLD_LOAD_STRANGER_PATH??'/deck?fresh=1')),{waitUntil:'commit'});
       await page.waitForFunction(name=>performance.getEntriesByName(name).length>0,'shiptorio:playable',{timeout:45000});
       await collectCurrentMarks(page,marks);
       await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));

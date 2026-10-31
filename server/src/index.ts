@@ -55,7 +55,8 @@ import { pairToken, readRunnerToken, expiredRunnerGrant, runnerGrantExpiry, type
 import { EnqueueRunner, RunnerHarness, RunnerReceipt } from "./runner-job";
 import { AUTH_HARNESSES, type AuthHarness } from "./runner-health";
 import { installationToken } from "./github";
-import { CODE_RE, DEVICE_TTL, JOIN_RE, newJoinCode, normalizeCode, secretHash, htmlEscape, runnerPage } from "./device-pairing";
+import { CODE_RE, DEVICE_TTL, JOIN_RE, newJoinCode, normalizeCode, secretHash, runnerPage } from "./device-pairing";
+import { escapeHtml as htmlEscape } from "./encode";
 import { validProgress, emptyIsland, type Empire, type IslandSummary } from "@shiptorio/shared";
 import { browserCacheControl, browserMutationAllowed, securityHeaders } from "./security";
 

@@ -7,9 +7,9 @@
 import { ART_PX, DECK_DX, HULL, PALETTE, snap, type CreateLayer, type DeckLayer, type DeckView, type LayerSlot } from "../contract";
 import { pixelOn } from "../../flags";
 import { BOILER_H, BOILER_W, boilerFrame } from "./boiler2d";
-import { A, CORE, PAD, TOP, coreAt, coreLight, hullCanvas, hullHighlights, rockBottom } from "./hull";
+import { A, CORE, PAD, TOP, coreAt, coreLight, hullCanvas, hullHighlights, hullKey, hullWarm, rockBottom, takeHull, warmHull, type HullPixels } from "./hull";
 import { stone } from "./underside";
-import { COL, hullCols, type Size } from "./width";
+import { COL, growCols, hullCols, type Size } from "./width";
 export { hullCols } from "./width";
 
 /** The twin boiler stands on the back of the floor behind Repo and Planner (same spot as engine's BOILER). */
@@ -26,6 +26,33 @@ const playBuild = (cue: (typeof BUILD_CUES)[number]) => {
   if (kit) kit.play(cue);
   else void import("../sound/kit").then((m) => { kit = m; m.play(cue); }).catch(() => undefined);
 };
+
+// Each column the deck grows is a fresh hull build (~50ms on a laptop, several hundred on a mid phone), and a grow lands
+// ten or so in a row, which froze the build-in. A few seconds after the deck settles, a worker builds every width of the
+// grows still to come, so a grow only draws. Same pictures, built earlier and off the main thread. Without a worker,
+// the same widths are built one per idle moment here instead.
+const idle = (fn: () => void) => {
+  const ric = (globalThis as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
+  if (ric) ric(fn, { timeout: 400 }); else setTimeout(fn, 200);
+};
+const NEXT: Partial<Record<Size, Size>> = { small: "medium", medium: "large" };
+const warming = new Set<Size>();
+function warmNext(size: Size) {
+  if (size === "large" || warming.has(size)) return;
+  const todo: number[] = [];
+  for (let s: Size | undefined = size; s && s !== "large"; s = NEXT[s]) { warming.add(s); todo.push(...growCols(s).map(hullKey)); }
+  setTimeout(() => {
+    const left = todo.filter((w) => !hullWarm(w));
+    if (!left.length) return;
+    const onMain = () => { const step = () => { const w = left.shift(); if (w === undefined) return; warmHull(w); idle(step); }; idle(step); };
+    let worker: Worker;
+    try { worker = new Worker(new URL("./hull.worker.ts", import.meta.url), { type: "module" }); } catch { onMain(); return; }
+    let got = 0;
+    worker.onmessage = (e: MessageEvent<HullPixels>) => { takeHull(e.data); if (++got === left.length) worker.terminate(); };
+    worker.onerror = () => { worker.terminate(); left.splice(0, got); onMain(); };
+    for (const w of left) worker.postMessage(w);
+  }, 3000); // after the first card has settled in
+}
 
 export const createLayer: CreateLayer = () => {
   if (!pixelOn()) return { update() {}, draw() {} };
@@ -62,6 +89,7 @@ export const createLayer: CreateLayer = () => {
       const cols = width();
       if (growing > 0 && cols !== lastCols && lastCols && t - lastCue > 0.16) { playBuild(BUILD_CUES[cue++ % BUILD_CUES.length]); lastCue = t; }
       lastCols = cols;
+      if (!growing) warmNext(size);
       boiler = v.deck?.boiler ?? 1;
       blocked = v.jam !== null || v.stops.some((stop) => stop.built && stop.state === "jammed");
     },

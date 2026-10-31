@@ -132,6 +132,9 @@ const LOST_CLAIM_MS = 45_000;
 // Local runner planning/publication currently requires a real GitHub issue.
 const runnerIssue = (item: Item) => item.source === "github_issue" && /^gh-\d+$/.test(item.id);
 const proposesPlan = (move: Move) => move.options.some(o => o.actions.some(a => a.tool === "plan_runner_job"));
+/** The one plan slot belongs to new work. A send-back's "Try again" re-plans an item already at Gate; leaving it
+ * undecided (a dead "#57 failed twice") must not stop every other issue from getting its Plan card. */
+const holdsPlanSlot = (move: Move) => proposesPlan(move) && !move.options.some(o => o.id.startsWith("rework-"));
 const MINE_KIND: Record<Signal["source"], SourceKind | undefined> = { github_issue: "github", sentry: "sentry", posthog: "posthog", inbox: undefined, lint: undefined };
 // Where each mine's ore deposit sits on the live map, left of the splitter.
 const DEPOSIT_Y: Record<MineKind, number> = { sentry: -3, posthog: 3 };
@@ -437,7 +440,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     });
     // One plan card at a time, the oldest first (older factories dealt one per queued issue).
     let planCard = false;
-    this.openMoves = this.openMoves.filter(m => !proposesPlan(m) || suppressed(this.deckBook!, m) || (planCard ? false : (planCard = true)));
+    this.openMoves = this.openMoves.filter(m => !holdsPlanSlot(m) || suppressed(this.deckBook!, m) || (planCard ? false : (planCard = true)));
     this.openMoves = this.openMoves.filter(m => !m.id.startsWith("bottleneck:") || m.id === `bottleneck:${s.bottleneck?.stationId ?? s.bottleneck?.stage}`);
     const impliedMove = this.openMoves.find(m => m.id.startsWith("bottleneck:"));
     // docs/ATTENTION.md: behind the flag, the player's Continues in a row lift that class of card a little.
@@ -445,7 +448,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const learning = await flagEnabled(this.env, "learn");
     this.kickBrain(derived, now);
     const brainCard = await this.brainCard(derived);
-    const ranked = buildDeck(s, [...this.openMoves!.filter(m => !m.id.startsWith("bottleneck:") && !suppressed(this.deckBook!, m)), ...(brainCard && !suppressed(this.deckBook!, brainCard) ? [brainCard] : [])], { now, impliedMove, yes, buildMoving: jobs.some(j => ["planning", "ready", "running"].includes(j.status)), rules: this.deckRules!.map(r => ({ ...r, kind: r.kind as NonNullable<Move["kind"]> })) });
+    // With your machine online a Builder jam is a queued issue waiting on its plan card (dealt next), so no "Review the
+    // bottleneck" card flashes in between; offline, the jam is "resources" and its Connect card still shows.
+    const ranked = buildDeck(s, [...this.openMoves!.filter(m => !m.id.startsWith("bottleneck:") && !suppressed(this.deckBook!, m)), ...(brainCard && !suppressed(this.deckBook!, brainCard) ? [brainCard] : [])], { now, impliedMove, yes, buildMoving: presenceFresh || jobs.some(j => ["planning", "ready", "running"].includes(j.status)), rules: this.deckRules!.map(r => ({ ...r, kind: r.kind as NonNullable<Move["kind"]> })) });
     const offered = plannerRestDeck(resting ? ranked : this.applyGameMaster(ranked), resting ?? undefined);
     this.askGameMaster(ranked, metrics);
     for (const implied of offered.filter(m => m.id.startsWith("bottleneck:"))) {
@@ -1014,7 +1019,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const presence = await this.ctx.storage.get<{ harnesses: RunnerJob["harness"][]; seenAt: number }>("runnerPresence");
     if (!presence || Date.now() - presence.seenAt > 20000) return;
     // One plan card at a time: the next issue is dealt once this one is planned, built or set aside.
-    if (s.deck?.some(proposesPlan)) return;
+    if (s.deck?.some(holdsPlanSlot)) return;
     await this.decisionData();
     const parked = new Set(this.openMoves!.filter(m => proposesPlan(m) && suppressed(this.deckBook!, m)).map(m => m.itemId));
     // A base update is a separate explicit plan, never an automatic rework or a Launch shortcut.
@@ -1743,7 +1748,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           await this.accountPut(`failed:${key}`, { ...delivery, attempts });
           await this.ctx.storage.delete(key);
           this.log("error", "Webhook retries exhausted; payload retained for operator replay.");
-          if (this.state) await this.publishDecision({ id: `failed:${key}`, title: "A source delivery needs attention", why: "Five processing attempts failed. The payload is retained for operator replay.", stage: "intake", kind: "unblock", createdAt: Date.now(), options: [{ id: "later", label: "Look later", recommended: true, actions: [] }] });
+          if (this.state) await this.publishDecision({ id: `failed:${key}`, title: "An incoming update didn't go through", why: "It failed five times in a row. It's saved so it can be replayed.", stage: "intake", kind: "unblock", createdAt: Date.now(), options: [{ id: "later", label: "Look later", recommended: true, actions: [] }] });
           continue;
         }
         await this.accountPut(key, { ...delivery, attempts, nextAt: Date.now() + Math.min(600000, 5000 * 2 ** Math.min(attempts, 7)) * (0.5 + Math.random()) });
@@ -3825,7 +3830,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   private async reliabilityFailure(operation: string, error: unknown, itemId?: string): Promise<void> {
     this.log("error", `${operation}: ${String(error)}`, itemId);
     await this.accountPut(`reliabilityFailure:${operation}`, { at: Date.now(), error: String(error).slice(0, 500), itemId });
-    if (this.state && this.meta) await this.publishDecision({ id: `reliability:${operation}`, itemId, title: "Factory work needs attention", why: `${RELIABILITY_WORDS[operation.split(":")[0] as keyof typeof RELIABILITY_WORDS] ?? "Background work"} failed. Check the connection or worker before trying again.`, stage: "inspect", kind: "unblock", createdAt: Date.now(), options: [{ id: "later", label: "Look later", recommended: true, actions: [] }] });
+    if (this.state && this.meta) await this.publishDecision({ id: `reliability:${operation}`, itemId, title: "Factory work needs attention", why: `${RELIABILITY_WORDS[operation.split(":")[0] as keyof typeof RELIABILITY_WORDS] ?? "Background work"} failed. Check your connections and engine, then try again.`, stage: "inspect", kind: "unblock", createdAt: Date.now(), options: [{ id: "later", label: "Look later", recommended: true, actions: [] }] });
   }
 
   private async watchdog(): Promise<void> {

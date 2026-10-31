@@ -1,6 +1,6 @@
 import { HULL, ART_PX } from "../contract";
 import { IDX, type Color } from "../stations/palette";
-import { Px, shift } from "../stations/px";
+import { Px, shift, toCanvas } from "../stations/px";
 import { BRASS, blotch, cylH, cylV, noise, tone, type Ramp } from "../stations/shade";
 import { CU } from "./boiler2d";
 import { dressFloor } from "./clutter";
@@ -152,9 +152,8 @@ export function coreLight(blocked: boolean, phase: number): HTMLCanvasElement {
 }
 export const CORE = 28;
 
-function build(w: number) {
-  let hit = cache.get(w);
-  if (hit) return hit;
+/** The hull's pixels at w, with no DOM: hull.worker.ts runs this off the main thread (props/index.ts warms the grow). */
+export function hullPixels(w: number): HullPixels {
   const raw = new Px(w + 2 * PAD, H), g = shift(raw, PAD, TOP), u = under(w);
   const bottom = rocks(g, u);
   const eng = enginePos(u);
@@ -173,10 +172,22 @@ function build(w: number) {
     const x = i % raw.w - PAD, y = Math.floor(i / raw.w) - TOP;
     if (Math.abs(x - eng.cx) > 12 || y < eng.top) seams.push({ x, y }); // the nozzle's throat stays steady
   }
-  hit = { cv: raw.bake(), seams, bottom };
-  cache.set(w, hit);
-  return hit;
+  return { w, cw: raw.w, ch: raw.h, rgba: raw.rgba(), seams, bottom };
 }
+export interface HullPixels { w: number; cw: number; ch: number; rgba: Uint8ClampedArray; seams: { x: number; y: number }[]; bottom: Int16Array }
+const adopt = (p: HullPixels) => { const hit = { cv: toCanvas(p.rgba, p.cw, p.ch), seams: p.seams, bottom: p.bottom }; cache.set(p.w, hit); return hit; };
+function build(w: number) {
+  const hit = cache.get(w);
+  if (hit) return hit;
+  return adopt(hullPixels(w));
+}
+/** Build the hull at w ahead of time (props/index.ts, while a card is being read), so growing never stalls a frame. */
+export const warmHull = (w: number) => { build(Math.max(60, Math.round(w))); };
+/** Keep a hull built elsewhere (the worker), unless this width was already drawn. */
+export const takeHull = (p: HullPixels) => { if (!cache.has(p.w)) adopt(p); };
+/** The cache key for width w (the worker is sent keys, so its answers land where draw() looks). */
+export const hullKey = (w: number) => Math.max(60, Math.round(w));
+export const hullWarm = (w: number) => cache.has(Math.max(60, Math.round(w)));
 /** The whole static hull, w art px wide: a canvas (w + 2*PAD) x H, art (0, 0) at (PAD, TOP). */
 export const hullCanvas = (w: number) => build(Math.max(60, Math.round(w))).cv;
 /** The bright crystal pixels, so index.ts can run slow light through them. */

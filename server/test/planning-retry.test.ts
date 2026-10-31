@@ -126,7 +126,7 @@ test("the $5/day account cap rests Shippy until UTC midnight with a plain card, 
   const retry = planningFailure(undefined, new BudgetError("Account daily dollar budget reached. Shippy is done thinking for today"), now);
   expect(retry).toMatchObject({ kind: "cap", retryAt: Date.parse("2026-10-28T00:00:00Z") });
   const [card] = plannerRestDeck([], retry, now);
-  expect(card).toMatchObject({ title: "Shippy is done thinking for today", why: expect.stringContaining("$5 of AI. He's back at 00:00 UTC") });
+  expect(card).toMatchObject({ title: "Shippy is done thinking for today", why: expect.stringContaining("five dollars of AI. He's back at 00:00 UTC") });
 });
 
 test("the $50/day site cap reads as everyone's limit, not this player's, using the real thrown line", () => {
@@ -135,5 +135,5 @@ test("the $50/day site cap reads as everyone's limit, not this player's, using t
   const [card] = plannerRestDeck([], retry, now);
   expect(card).toMatchObject({ title: "Shippy is done thinking for today", why: "Shiptorio used today's AI for everyone. He's back at 00:00 UTC. You can keep shipping what's ready." });
   const [own] = plannerRestDeck([], planningFailure(undefined, new BudgetError(`Account daily dollar budget reached. ${ACCOUNT_CAP_LINE}`), now), now);
-  expect(own.why).toBe("This account used today's $5 of AI. He's back at 00:00 UTC. You can keep shipping what's ready.");
+  expect(own.why).toBe("This account used today's five dollars of AI. He's back at 00:00 UTC. You can keep shipping what's ready.");
 });
