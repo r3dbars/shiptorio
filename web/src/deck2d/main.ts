@@ -67,7 +67,8 @@ export function wireDeckAccessibility(canvas: HTMLCanvasElement, host: HTMLEleme
           face.tabIndex = -1; face.setAttribute("role", "group");
           if (title) { title.id = `${id}-title`; face.setAttribute("aria-labelledby", title.id); }
           if (line) { line.id = `${id}-description`; face.setAttribute("aria-describedby", line.id); }
-          face.focus({preventScroll:true});
+          // a modal over the deck (the password popup) keeps its focus: the card behind it must not take the typing
+          if (!doc.querySelector('[aria-modal="true"]')) face.focus({preventScroll:true});
         }
       } else if (last) {
         const back = previous?.isConnected && !host.contains(previous) && previous !== doc.body ? previous : canvas;
