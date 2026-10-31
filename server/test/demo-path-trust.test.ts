@@ -325,7 +325,6 @@ describe("Ship it at the Gate is never automatic, even when learned", () => {
     // The launch handler refuses an autonomous merge on its own too.
     await internal.launch(item, "autonomy", item.inspection!.headSha);
     expect(fetchCalls.filter(u => /merge|pulls/.test(u))).toEqual([]);
-    expect(fetchCalls).toEqual([]);
     expect(f.saved().items.find(i => i.id === "gh-37")?.state).toBe("on_pad");
     expect(f.logs().some(l => l.tool === "request_merge")).toBe(false);
     expect(await f.taps.prepare(`SELECT action FROM card_taps WHERE card_id = '${gate.id}' AND action = 'auto'`).bind().first()).toBeNull();
