@@ -117,6 +117,9 @@ body[data-city-beat]:not([data-city-beat=""]) .toast { width: max-content; max-w
 @media (max-width: 899px) { body[data-deck-zoom="city"] .toast { font-size: 12px; } }
 /* No caption, no chip: an empty caption is not left as an empty soot box while it fades out (the card beat, the manual city). */
 body[data-deck-zoom="city"] .toast:empty { visibility: hidden; }
+/* A card coming up takes the bottom of the screen at once: the caption under it cuts out instead of fading through the
+   translucent plate for .4s (calm rule, one thing moves at a time). It still fades back in once the card has gone. */
+.toast.under-card { transition: none; }
 /* Reduced motion: a caption cuts in and out, it does not fade. */
 @media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
 .zoom { z-index: 6; }

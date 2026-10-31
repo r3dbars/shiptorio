@@ -419,6 +419,7 @@ const seed = Number(params.get("seed")) || 0;
     accessibility.update(view.card, view.caption);
     if (view.caption !== caption) caption = view.caption;
     toast.classList.toggle("on", !!caption && !view.card); // the card owns the bottom of the screen
+    toast.classList.toggle("under-card", !!view.card); // ...so a caption cuts out under an arriving card, never fades through it
     if (!document.body.dataset.deckReady) document.body.dataset.deckReady = "1";
     loadMark("deck-frame");
     if (view.card) loadMark("first-card");

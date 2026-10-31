@@ -72,3 +72,14 @@ test("a Meta pick on a busy station focuses the call waiting on the player, not 
   s.holdingBack = selected(["factory:queue_jam:build"]);
   expect(projectLiveBottleneck(s, [], now)).toMatchObject({ stop: "builder", itemId: "gh-16", source: "spark" });
 });
+
+test("a queued issue nobody has started is never 'the coding engine is working on' it", async () => {
+  const { liveBottleneckCandidates } = await import("../src/bottleneck");
+  const s = base(); s.deck = []; s.items = [item("gh-2", "queued", 10), item("gh-1", "working", 20)];
+  const byItem = Object.fromEntries(liveBottleneckCandidates(s, []).map(c => [c.itemId, c]));
+  expect(byItem["gh-2"]).toMatchObject({ stop: "repo", reason: "An issue is ready to start: #2." });
+  expect(byItem["gh-1"]).toMatchObject({ stop: "builder", reason: "The coding engine is working on #1." });
+  // once its plan job runs, a queued issue is real Builder work again
+  const running = liveBottleneckCandidates(s, [{ itemId: "gh-2", status: "running" }]).find(c => c.itemId === "gh-2");
+  expect(running).toMatchObject({ stop: "builder", reason: "The coding engine is working on #2." });
+});

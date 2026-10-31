@@ -53,3 +53,21 @@ test("pulling back to the whole line never zooms past the fit", () => {
   }
   expect(wholeScale(0.05, scr, true)).toBe(1 / 10); // never below one device px per art px
 });
+
+test("a station shot on a short screen moves above the story card, and a screen where it already clears is untouched", () => {
+  const station = { x: 1000, y: 400, width: 900, tall: 220 };
+  for (const v of [{ w: 844, h: 390, dpr: 3 }, { w: 640, h: 360, dpr: 1 }]) {
+    const scr = { ...v, artPx: 5, pixel: true }, cardTop = v.h * 0.45;
+    const f = frameShot(station, scr, cardTop);
+    const k = f.s * 5 * v.dpr;
+    expect(Math.abs(k - Math.round(k))).toBeLessThan(1e-9);
+    // the station's bottom edge is on screen above the card
+    const bottom = v.h / 2 + (station.y + station.tall / 2 - f.y) * f.s;
+    expect(bottom).toBeLessThanOrEqual(cardTop);
+    expect(v.h / 2 + (station.y - station.tall / 2 - f.y) * f.s).toBeGreaterThanOrEqual(0);
+  }
+  // a tall desktop window: the card sits low, so the shot is exactly what it was without a card
+  const desk = { w: 1280, h: 720, dpr: 1, artPx: 5, pixel: true };
+  expect(frameShot(station, desk, 470)).toEqual(frameShot(station, desk));
+  expect(frameShot(station, desk, null)).toEqual(frameShot(station, desk));
+});
