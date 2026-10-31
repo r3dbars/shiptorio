@@ -11,8 +11,8 @@ const base = (): DeckView => ({
 const memory = () => { const m = new Map<string, string>(); return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v) }; };
 const builtOf = (v: DeckView) => v.stops.filter(s => s.built).map(s => s.id);
 
-function play(stage: () => FirstRunStage, store = memory()) {
-  const fr = createFirstRun({ stage, store, key: "me/repo" });
+function play(stage: () => FirstRunStage, store = memory(), toured = false) {
+  const fr = createFirstRun({ stage, store, key: "me/repo", toured });
   const seen: { caption: string | null; built: StopId[]; card: boolean; focus?: StopId }[] = [];
   const run = (limit = 80) => { for (let t = 0; t < limit && (t === 0 || fr.playing()); t += 0.1) { fr.step(0.1); const v = fr.view(base()); seen.push({ caption: v.caption, built: builtOf(v), card: !!v.card, focus: (v as DeckView & { focus?: StopId }).focus }); } };
   return { fr, seen, run, store };
@@ -90,4 +90,20 @@ test("an established factory is never torn down for a first run", () => {
   fr.step(0.1);
   expect(fr.done()).toBe(true);
   expect(fr.view(base())).toEqual(base());
+});
+
+test("after the tour: the same stations, one at a time, with no repeated lines, well under two thirds of the time", () => {
+  const time = (toured: boolean) => {
+    let stage: FirstRunStage = "repo";
+    const { fr, seen, run } = play(() => stage, memory(), toured);
+    run(); stage = "engine"; const at = seen.length; run();
+    expect(fr.done()).toBe(true);
+    expect(builtOf(fr.view(base()))).toEqual([...STOPS]);
+    return { seconds: (seen.length - at) / 10, lines: [...new Set(seen.map(s => s.caption).filter(Boolean))] };
+  };
+  const full = time(false), quick = time(true);
+  expect(quick.lines).toEqual([FIRST_RUN_LINES.ready]);
+  expect(full.lines).toContain(FIRST_RUN_LINES.builder);
+  expect(quick.seconds).toBeLessThan(full.seconds * 0.65);
+  expect(quick.seconds).toBeLessThan(20);
 });
