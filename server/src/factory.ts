@@ -631,7 +631,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const memory = await this.ctx.storage.get<BrainMemory>("brainMemory");
     if (!memory) return;
     const signal = (await this.ctx.storage.get<SignalCache>("brainSignals"))?.signals.find(x => x.id === bottleneckId);
-    await this.accountPut("brainMemory", tapBrain(memory, bottleneckId, choice, signal ? signalWeight(signal, Date.now()) : 0, Date.now(), signal && brainNamed(signal)));
+    // Parked at the weight the brain ranks it by (tilted by the player's goals), so "clearly worse" compares like with like.
+    await this.accountPut("brainMemory", tapBrain(memory, bottleneckId, choice, signal ? signalWeight(tiltByGoals([signal], this.state?.goals)[0], Date.now()) : 0, Date.now(), signal && brainNamed(signal)));
     this.brainKickedAt = 0; // the slot is free: look again on the next tick
   }
 

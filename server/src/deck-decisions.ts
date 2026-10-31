@@ -1,9 +1,11 @@
 import type { Move } from '@shiptorio/shared';
 
 /** Stable across repeated offers; a new approved job or PR head is a new decision. Support cards add their
- * ticket, so two customers' replies stay two cards (keys without one are unchanged). */
+ * ticket, so two customers' replies stay two cards (keys without one are unchanged). Shippy's unlock cards add
+ * their bottleneck: they carry no item, so two different problems of one kind would otherwise share a key, and a
+ * Later on one would hide the other and count toward its third-defer card. */
 export function moveKey(move: Move): string {
-  return JSON.stringify([move.itemId ?? '', move.kind ?? move.stage ?? 'unblock', move.options.flatMap(o => o.actions.map(a => [a.tool, a.args.jobId ?? '', a.args.headSha ?? '', a.args.scarCount ?? '', ...(a.args.ticketId ? [a.args.ticketId] : []), ...(a.args.level ? [a.args.level] : [])]))]);
+  return JSON.stringify([move.itemId ?? '', move.kind ?? move.stage ?? 'unblock', move.options.flatMap(o => o.actions.map(a => [a.tool, a.args.jobId ?? '', a.args.headSha ?? '', a.args.scarCount ?? '', ...(a.args.ticketId ? [a.args.ticketId] : []), ...(a.args.level ? [a.args.level] : [])])), ...(move.id.startsWith('unlock:') ? [move.id] : [])]);
 }
 export interface DeckRule { kind: string; scope: string; actionId: string }
 export interface DeckDecision { key: string; move: Move; count: number; deferred?: boolean; dismissed?: boolean }
