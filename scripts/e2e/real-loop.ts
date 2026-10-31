@@ -270,6 +270,7 @@ async function ship() {
   await note("github_issue", { issue, title: started?.title, state: started?.state });
   await startIssue();
   let lastState = "", lastStage = "", tapped = new Set<string>(), reloaded = false, failedBuilds = 0;
+  const tappedAt = new Map<string, number>();
   while (Date.now() < deadline) {
     await page.waitForTimeout(2000);
     const it = item();
@@ -295,9 +296,11 @@ async function ship() {
       return;
     }
     for (const move of openCards()) {
-      if (move.itemId !== itemId || tapped.has(move.id)) continue;
+      // A refused tap ("Factory job budget reached") leaves the card open: try it again after 30s instead of idling to the timeout.
+      if (move.itemId !== itemId) continue;
       const option = continueOption(move);
       const tools = option.actions.map(a => a.tool);
+      if (tapped.has(move.id) && (tools.includes("request_merge") || Date.now() - (tappedAt.get(move.id) ?? 0) < 30_000)) continue; // never re-press Launch
       if (!tools.length || !tools.every(t => TAP.has(t))) { if (!tapped.has(`skip:${move.id}`)) { tapped.add(`skip:${move.id}`); await note("left_for_human", { card: move.title, tools }); await shot("needs-human"); } continue; }
       if (move.locked) continue;
       const hold = tools.includes("request_merge");
@@ -314,7 +317,7 @@ async function ship() {
         await page.waitForTimeout(1000);
       }
       if (!onScreen) { await note("card_not_on_screen", { card: move.title, showing: await cardOnScreen() }); await shot("card-missing"); continue; }
-      tapped.add(move.id);
+      tapped.add(move.id); tappedAt.set(move.id, Date.now());
       await shot(`card-${tools[0]}`);
       await press("approve", hold);
       await note("tapped", { card: move.title, tools, option: option.label, hold, learn: move.learn });
