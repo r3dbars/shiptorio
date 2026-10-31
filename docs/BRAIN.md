@@ -36,7 +36,9 @@ collectors ──► BrainSignal[] ──► diagnose ──► BrainBottleneck 
    ranking, the deck book, swipe memory and the game master all still apply. Same bottleneck, same card id.
 5. **Close.** After every read, `unlockDone()` checks `doneWhen` against the newest signal. A cleared
    unlock counts on the scorecard ("unlocks that worked") and the brain moves to the next bottleneck.
-   Later parks the card (the deck book remembers); Never with a reason goes back into the next diagnose.
+   Later parks the card for a day (the deck book remembers); it comes back early only if it got clearly
+   heavier, or, for a break (red check on a PR or main), if it now names a PR it didn't before. Never with
+   a reason goes back into the next diagnose.
 
 Every `Diagnosis` (signals in, bottleneck, unlock, reason) is stored so the eval harness can replay it.
 
@@ -44,7 +46,8 @@ Every `Diagnosis` (signals in, bottleneck, unlock, reason) is stored so the eval
 
 - **Model calls go through `Factory.think()`** so they land in the decision log. One new decision:
   `diagnose`. Budget: the shared 400 calls / 1M tokens per day. Diagnose runs at most every 30 min, or
-  sooner when the main signal changes, and at most 24 times a day. It obeys the same half-budget stop as
+  sooner when the main signal changes or a new break shows up anywhere in the picture (even under a heavier
+  card), and at most 24 times a day. It obeys the same half-budget stop as
   ranking, so it can never starve planning and review. Past that stop, a new main signal still gets a
   free rule pick, so a red PR doesn't wait until tomorrow behind an old card. Budget code belongs to Codex prompt #12 (spark,
   budget, spend, planning-retry); don't edit those files, call their helpers.
