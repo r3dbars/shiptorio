@@ -91,6 +91,14 @@ export async function recordTap(db: D1Database, row: TapRow, tap: { action: Excl
   const done = await db.prepare("UPDATE card_taps SET decided_at = ?, action = ?, option_id = ?, reason = ? WHERE repo = ? AND card_id = ? AND decided_at IS NULL")
     .bind(now, tap.action, tap.optionId ?? null, tap.reason ?? null, row.repo, row.card_id).run();
   if ((done.meta?.changes ?? 0) > 0) return;
+  // A learned card is answered through the same handler a tap uses, and that handler takes the card off the deck
+  // (closing its row as "gone") before the factory knows the work went through. That showing was answered, not
+  // missed: mark it auto instead of logging the same card twice (once gone, once auto).
+  if (tap.action === "auto") {
+    const answered = await db.prepare("UPDATE card_taps SET action = ?, option_id = ?, reason = ? WHERE id = (SELECT id FROM card_taps WHERE repo = ? AND card_id = ? ORDER BY id DESC LIMIT 1) AND action = 'gone'")
+      .bind(tap.action, tap.optionId ?? null, tap.reason ?? null, row.repo, row.card_id).run();
+    if ((answered.meta?.changes ?? 0) > 0) return;
+  }
   await db.prepare(`INSERT INTO card_taps (${COLUMNS.join(", ")}, decided_at, action, option_id, reason) VALUES (${[...COLUMNS, 1, 2, 3, 4].map(() => "?").join(", ")})`)
     .bind(...COLUMNS.map(c => c === "shown_at" ? now : row[c]), now, tap.action, tap.optionId ?? null, tap.reason ?? null).run();
 }

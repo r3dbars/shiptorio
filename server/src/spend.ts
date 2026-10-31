@@ -94,6 +94,13 @@ export async function factorySpend(db: D1Database, repo: string, now = Date.now(
       : "Paid thinking pauses before a call could exceed the daily budget. Budgets reset at 00:00 UTC.",
     pricing: "Estimated at $1.25/M input, $0.15/M cached input, $4.25/M output for Spark; other models at 4x until priced. Unmeasured calls retain their reservation." };
 }
+/** How far into today's dollars this factory is, 0..1+, by the tighter of its own ceiling and its paying account's $5.
+ * The brain and the game master stop at half of this too, so ranking and diagnosing never spend planning's dollars. */
+export async function dollarShare(db: D1Database, repo: string, account: string, now = Date.now()) {
+  const spend = await factorySpend(db, repo, now, account);
+  const share = (used: number, cap: number) => cap > 0 ? used / cap : 1;
+  return Math.max(share(spend.estimatedUsd, spend.dailyBudgetUsd), spend.account ? share(spend.account.estimatedUsd, spend.account.dailyBudgetUsd) : 0);
+}
 export async function spendReport(db: D1Database, day = utcDay()) {
   return (await db.prepare("SELECT d.*, COALESCE(b.daily_nano_usd, 5000000000) AS daily_budget_nano_usd FROM spark_factory_daily d LEFT JOIN spark_factory_budgets b ON b.repo = d.repo WHERE day = ? ORDER BY nano_usd DESC, d.repo").bind(day).all()).results;
 }

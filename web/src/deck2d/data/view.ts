@@ -228,7 +228,8 @@ export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckV
       title: ship?.title ?? move.title,
       stop: flow && continueOption(move).actions.some(a => a.tool === "plan_runner_job") ? "repo" : cardStop(s, move),
       dots: learn ? { have: learn.have, need: learn.need } : null,
-      line: ship ? ship.line : !flow ? (learn ? LEARN.line(Math.max(1, learn.need - learn.have)) : move.why || FIRST_LINE) : `Shippy: ${move.why || FIRST_LINE}${move.plan?.find(p => p.startsWith('Files:')) ? ` ${move.plan.find(p => p.startsWith('Files:'))}` : ''}${learn ? ` ${LEARN.line(Math.max(1, learn.need - learn.have))}` : ''}`,
+      // live lines are Shippy talking; a server line that already names him ("Shippy checked again: ...") isn't prefixed twice
+      line: ship ? ship.line : !flow ? (learn ? LEARN.line(Math.max(1, learn.need - learn.have)) : move.why || FIRST_LINE) : `${/^Shippy\b/.test(move.why) ? "" : "Shippy: "}${move.why || FIRST_LINE}${move.plan?.find(p => p.startsWith('Files:')) ? ` ${move.plan.find(p => p.startsWith('Files:'))}` : ''}${learn ? ` ${LEARN.line(Math.max(1, learn.need - learn.have))}` : ''}`,
       yes: isLaunchCard(move) ? "Ship it" : !flow ? undefined : continueOption(move).actions.some(a => a.tool === "plan_runner_job") ? "Start issue" : continueOption(move).actions.some(a => a.tool === "approve_runner_job") ? "Start build" : "Continue",
       no: flow ? "Later" : undefined,
       hold: isLaunchCard(move),

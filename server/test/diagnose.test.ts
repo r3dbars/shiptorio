@@ -192,7 +192,8 @@ describe("the model diagnose", () => {
   });
 
   it("player copy never says Spark", () => {
-    expect(playerCopy("Muse Spark thinks CI is slow", 60)).toBe("the factory thinks CI is slow");
+    expect(playerCopy("Muse Spark thinks CI is slow", 60)).toBe("The factory thinks CI is slow");
+    expect(playerCopy("Let Spark fix it", 60)).toBe("Let the factory fix it");
   });
 });
 
