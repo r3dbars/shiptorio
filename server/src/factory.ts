@@ -454,7 +454,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     this.openMoves = this.openMoves!.filter(m => !m.id.startsWith("bottleneck:") || offered.some(card => card.id === m.id));
     const deck = offered.filter(m => !suppressed(this.deckBook!, m)).map(m => {
       const decision = this.deckBook!.decisions[moveKey(m)];
-      if (decision && decision.count >= 3) return thirdDefer(m);
+      // A "That's fixed" card is news, not a decision: past Hides on other wins (they share a key) don't wrap it.
+      if (decision && decision.count >= 3 && !m.id.startsWith("win:")) return thirdDefer(m);
       // Say out loud when the player's own taps put a card here, unless the game master already explained it.
       const streak = yes?.[yesKey(m.kind ?? "unblock", moveScope(m, s))] ?? 0;
       const card = streak >= 2 && !m.because ? { ...m, because: `You said yes to the last ${streak} like this.` } : m;
@@ -513,8 +514,11 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
   /** Shippy's follow-up: the last unlock that worked, once, until the player taps it. */
   private async winCard(memory: BrainMemory | undefined): Promise<Move | null> {
-    const win = memory?.cleared[0];
-    if (!win || Date.now() - win.clearedAt > 6 * 3_600_000 || await this.ctx.storage.get<number>("brainWinSeen") === win.clearedAt) return null;
+    const seen = await this.ctx.storage.get<number>("brainWinSeen") ?? 0;
+    const open = (memory?.cleared ?? []).filter(c => c.clearedAt > seen && Date.now() - c.clearedAt <= 6 * 3_600_000);
+    // "#39 passes its checks now, with the fix from #43" says more than the plain CI clear that lands beside it.
+    const win = open.find(c => c.bottleneckId.startsWith("fix:")) ?? open[0];
+    if (!win) return null;
     return {
       id: `win:${win.bottleneckId}`, title: "That's fixed",
       why: win.bottleneckId.startsWith("fix:") ? `Shippy checked again: ${win.title}.` : `Shippy checked again: "${win.title.replace(/\.$/, "")}" is clear now.`,
@@ -524,8 +528,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   private async seeWin(card: Move) {
-    const win = (await this.ctx.storage.get<BrainMemory>("brainMemory"))?.cleared[0];
-    if (win && card.id === `win:${win.bottleneckId}`) await this.accountPut("brainWinSeen", win.clearedAt);
+    const cleared = (await this.ctx.storage.get<BrainMemory>("brainMemory"))?.cleared ?? [];
+    const win = cleared.find(c => card.id === `win:${c.bottleneckId}`);
+    // One follow-up per fix: seeing it also covers the clears that came with it.
+    if (win) await this.accountPut("brainWinSeen", Math.max(...cleared.filter(c => Math.abs(c.clearedAt - win.clearedAt) < 10 * 60_000).map(c => c.clearedAt)));
     await this.refreshDecisions();
   }
 

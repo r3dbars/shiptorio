@@ -166,6 +166,14 @@ describe("the bottleneck brain in the real factory", () => {
     const win = f.saved().deck?.find(m => m.id === "win:fix:39");
     expect(win?.why).toBe("Shippy checked again: #39 passes its checks now, with the fix from #51.");
     expect((f.data.get("fixesPr:50") as { confirmed?: boolean }).confirmed).toBe(true);
+
+    // The plain CI clear that lands right after doesn't push the fix's follow-up off the deck, and seeing one covers both.
+    const mem = f.data.get("brainMemory") as BrainMemory;
+    f.data.set("brainMemory", { ...mem, cleared: [{ bottleneckId: red.id, title: red.title, clearedAt: Date.now() + 5, how: "signal" }, ...mem.cleared] });
+    await f.factory.refreshDecisions();
+    expect(f.saved().deck?.some(m => m.id === "win:fix:39")).toBe(true);
+    await f.send({ type: "choose_move", moveId: "win:fix:39", optionId: "continue" });
+    expect(f.saved().deck?.some(m => m.id.startsWith("win:"))).toBe(false);
   });
 
   it("after a problem clears, Shippy follows up once with a card that says so", async () => {
