@@ -25,6 +25,9 @@ const CAUGHT_UP_MS = 2200; // how long "All caught up" stays before the caption 
 const AFTER_ANSWER_MS = 900; // a show(null) this soon after an answer is the deck running dry, not a hide
 const HOLD_SWIPE_SHARE = 0.6; // a hold card's swipe has to cross most of the card, and a flick never counts
 export const HOLD_MS = 800; // how long a hold card's Approve has to be held
+// A story card's Next right after the last answer is the tail of a double tap, not a read (QA 2026-10-31: with Reduce
+// Motion there is no typing to soak it up, so a double tap on "Hi, I'm Shippy!" skipped the Powered by Meta card).
+export const STORY_TAP_GUARD_MS = 450;
 
 // yes/no labels and hold are newer CardView fields (hub thread); read them so this works before and after they land
 type View = CardView & { yes?: string; no?: string; hold?: boolean };
@@ -214,6 +217,7 @@ export const mountCard: MountCard = (host, handlers) => {
   const next = (f: Face) => {
     if (live !== f) return;
     if (f.story?.typing()) return f.story.finish();
+    if (f.story && performance.now() - answeredAt < STORY_TAP_GUARD_MS) return;
     answer("approve");
   };
 

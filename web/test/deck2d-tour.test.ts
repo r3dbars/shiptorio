@@ -110,3 +110,32 @@ test("the fix rides the whole line from Repo to the Gate, and the camera goes wi
   expect(seen).toEqual(["repo", "planner", "builder", "checks", "review", "gate"]);
   expect(t.view().card?.hold).toBe(true);
 });
+
+test("a reload comes back on the same card with everything before it built, not at Hi I'm Shippy (QA 2026-10-31)", () => {
+  let saved: number | null = null;
+  const memo = { load: () => saved, save: (b: number) => { saved = b; } };
+  const a = createTour(memo);
+  for (let i = 0; i < 3000 && a.view().card?.title !== "Ship this fix?"; i++) { const c = a.view().card; if (c) a.approve(c.id); else a.step(0.1); }
+  const before = a.view();
+  const b = createTour(memo), after = b.view();
+  expect(after.card?.title).toBe("Ship this fix?");
+  expect(after.deck).toEqual(before.deck);
+  expect(after.stops.map((s) => [s.id, s.built, s.items.length])).toEqual(before.stops.map((s) => [s.id, s.built, s.items.length]));
+  expect(after.shipped).toBe(0);
+  // Back, Replay and the end card are remembered too
+  b.later(after.card!.id);
+  expect(createTour(memo).view().card?.title).toBe("Launch");
+  for (let i = 0; i < 3000 && b.phase() !== "end"; i++) { const c = b.view().card; if (c) b.approve(c.id); else b.step(0.1); }
+  const end = createTour(memo);
+  expect(end.phase()).toBe("end");
+  expect(end.view().card?.id).toBe(STORY_CARD.connect);
+  end.later(STORY_CARD.connect); // Replay
+  expect(createTour(memo).view().card?.title).toBe(TOUR[0].title);
+});
+
+test("no memory, a broken one, or a junk value all start at the first card", () => {
+  expect(createTour().view().card?.title).toBe(TOUR[0].title);
+  expect(createTour({ load: () => { throw new Error("blocked"); }, save: () => { throw new Error("blocked"); } }).view().card?.title).toBe(TOUR[0].title);
+  expect(createTour({ load: () => -4, save: () => {} }).view().card?.title).toBe(TOUR[0].title);
+  expect(createTour({ load: () => 99, save: () => {} }).phase()).toBe("end");
+});
