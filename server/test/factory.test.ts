@@ -1003,6 +1003,18 @@ describe("Rush and Park from a cart's callout", () => {
     const plans = (f.saved().deck ?? []).filter((m) => m.options.some((o) => o.actions.some((a) => a.tool === "plan_runner_job")));
     expect(plans).toHaveLength(1);
   });
+
+  it("an undecided send-back retry doesn't hog the plan slot from the next issue", async () => {
+    const f = fixture([waiting("gh-1"), item({ id: "gh-9", state: "rejected", prNumber: 57 })], { SPARK_DISABLED: "1" });
+    f.data.set("runnerPresence", { harnesses: ["codex"], seenAt: Date.now() });
+    // Testing #57 on 2026-10-31: "#57 failed twice" sat on the deck and #58 never got its Plan card.
+    const retry = { id: "retry-gh-9", title: "#57 failed twice", why: "Proof: no test", itemId: "gh-9", stage: "inspect", kind: "review", createdAt: 1, options: [{ id: "rework-codex", label: "Try again", recommended: true, actions: [{ tool: "plan_runner_job", args: { harness: "codex" }, reason: "Re-plan" }] }, { id: "later", label: "Look later", recommended: false, actions: [] }] };
+    f.data.set("openMoves", [retry]);
+    await (f.factory as unknown as { offerRunnerPlan(): Promise<void> }).offerRunnerPlan();
+    const deck = f.saved().deck ?? [];
+    expect(deck.map((m) => m.id)).toContain("retry-gh-9");
+    expect(deck.filter((m) => m.itemId === "gh-1" && m.options.some((o) => o.actions.some((a) => a.tool === "plan_runner_job")))).toHaveLength(1);
+  });
 });
 
 
