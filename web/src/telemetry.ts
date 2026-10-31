@@ -1,4 +1,4 @@
-import * as Sentry from '@sentry/react';
+import * as Sentry from '@sentry/browser';
 import { redact } from '../../server/src/redact';
 
 let requestId: string | undefined;

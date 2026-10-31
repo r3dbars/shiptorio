@@ -3,9 +3,7 @@ import { fileURLToPath } from 'node:url';
 import {
   arpNotes, bottleneckTension, CADENCE, CALM, catchTension, CATCH_FADE_MS, chordFor, ease, intensityFor,
   layerCount, layersFor, padCutoff, STEPS_PER_BAR, TENSE, tensionFor, type MusicInput,
-} from '../src/sound/music';
-import { musicInput } from '../src/sound/useFactorySound';
-import type { FactoryState } from '@shiptorio/shared';
+} from '../src/deck2d/sound/music';
 
 const idle: MusicInput = { moving: 0, working: 0, stationsBusy: 0, rejected: 0, bottleneck: null };
 const busy = (moving: number): MusicInput => ({ ...idle, moving, working: Math.ceil(moving / 3), stationsBusy: Math.min(5, Math.ceil(moving / 2)) });
@@ -101,24 +99,9 @@ describe('harmony', () => {
   });
 });
 
-describe('musicInput', () => {
-  const state = {
-    items: [{ state: 'working' }, { state: 'inspecting' }, { state: 'rejected' }, { state: 'launched' }],
-    machines: [{ state: 'working' }, { state: 'idle' }],
-    stations: [{ wip: 0 }, { wip: 3 }],
-  } as unknown as FactoryState;
-  test('reads the factory state', () => {
-    expect(musicInput(state)).toEqual({ moving: 3, working: 1, stationsBusy: 1, rejected: 1, bottleneck: { stage: 'inspect', wip: 3, ageMs: 0 } });
-  });
-  test('prefers the real bottleneck when the engine has one', () => {
-    const b = { stage: 'pad', wip: 2, ageMs: 5, throughputPerHour: 0, valueAtRisk: 0, summary: '' };
-    expect(musicInput({ ...state, bottleneck: b } as FactoryState).bottleneck).toBe(b);
-  });
-});
-
 // v2's arrangement and score are pure; browser integration tests exercise the actual graph.
-import { arrangementFor, BAR_SECONDS, crossfadeGains, FADE_SECONDS, MUSIC_BUDGET, nextBarTime, stateFor, transportAt, EIGHTH } from '../src/sound/music';
-import { notesFor } from '../src/sound/foundryScore';
+import { arrangementFor, BAR_SECONDS, crossfadeGains, FADE_SECONDS, MUSIC_BUDGET, nextBarTime, stateFor, transportAt, EIGHTH } from '../src/deck2d/sound/music';
+import { notesFor } from '../src/deck2d/sound/foundryScore';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 

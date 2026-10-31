@@ -3,7 +3,7 @@ import type { FactoryState, Item, ItemState, Machine } from '@shiptorio/shared';
 import {
   ACCENT_BUDGET, ACCENT_GAP_MS, ACCENT_RECIPE, ACCENT_WINDOW_MS, accentsFor, floorOf, freshAccentMemory,
   LAUNCH_IRON_DELAY_S, limitAccents, recipePeak, type Accent, type AccentMemory,
-} from '../src/sound/accents';
+} from '../src/deck2d/sound/accents';
 
 const item = (id: string, state: ItemState) => ({ id, state, title: id }) as unknown as Item;
 const machine = (id: string, state: Machine['state']) => ({ id, state, type: 'assembler' }) as unknown as Machine;
