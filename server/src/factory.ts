@@ -97,7 +97,7 @@ import { deriveBottleneck, stageForItem, type StageHistory, type StageMetrics } 
 import { eligible as brainEligible, emptyMemory as emptyBrainMemory, named as brainNamed, modelDiagnose, runDiagnose, tapBrain, type BrainMemory } from "./diagnose";
 import { collect, emptyCache as emptySignalCache, type SignalCache } from "./signals";
 import { dismissNote, resetLearn, forget, forgetAll, forgetOnComeback, freshWork, isLearned, learnedList, learnFromYes, learnKey, learnMeter, learnOption, learnScope, noteAutoRun } from "./learn";
-import { hasDeferReceipt, beginCheckin, deferCard, emptyDeckBook, moveKey, noteYes, plannerFeedback, resetYes, suppressed, thirdDefer, yesKey, type DeckBook, type DeckRule } from "./deck-decisions";
+import { CHECKIN_GAP_MS, hasDeferReceipt, beginCheckin, deferCard, emptyDeckBook, moveKey, noteYes, plannerFeedback, resetYes, suppressed, thirdDefer, yesKey, type DeckBook, type DeckRule } from "./deck-decisions";
 import { normalizeSentry, sentryStatus, type SentryPayload } from "./sources/sentry";
 import { recordSentryPulse, SENTRY_PULSES_KEY, type SentryPulse } from "./signals/sentry";
 import { analyze, fakePostHogRows, fetchRouteDays, POLL_MS, postHogStatus, type RouteDay } from "./sources/posthog";
@@ -481,6 +481,16 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       delete this.decisionPublications.move;
       if (previous) this.broadcast({ type: "move_resolved", moveId: previous.id, actor: "player" });
     }
+  }
+
+  /**
+   * A new check-in (Later'd cards come back) only after the player was away a while. A reload, a second tab
+   * or the phone joining mid-visit is the same visit, so Later still means later.
+   */
+  private async playerBack(now = Date.now()): Promise<boolean> {
+    const seen = await this.ctx.storage.get<number>("deckSeenAt");
+    await this.accountPut("deckSeenAt", now);
+    return seen === undefined || now - seen >= CHECKIN_GAP_MS;
   }
 
   // ---------- the bottleneck brain (docs/BRAIN.md): collect signals, diagnose ONE bottleneck, deal ONE unlock ----------
@@ -3576,7 +3586,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     else server.send(JSON.stringify({ type: "log", level: "warn", text: "No factory yet. Is the GitHub App installed on this repo?", at: Date.now() }));
     // Restoring the map must not wait for a new planner turn (or provider latency).
     if (!adminView && state) this.ctx.waitUntil((async () => {
-      if (!(await this.githubStopped())) { await this.decisionData(); beginCheckin(this.deckBook!); await this.refreshDecisions(); }
+      if (!(await this.githubStopped())) { await this.decisionData(); if (await this.playerBack()) beginCheckin(this.deckBook!); await this.refreshDecisions(); }
     })());
     // The initial snapshot was authorized above. Other sockets may still be
     // revalidating queued frames; they must not hold this handshake open.
@@ -3631,6 +3641,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (msg.type === "brain_look") { await this.brainLook(); return; }
     if (msg.type === "choose_move" || msg.type === "defer_move" || msg.type === "dismiss_move") {
       await this.decisionData();
+      await this.accountPut("deckSeenAt", Date.now());
       const card = (s.deck ?? (s.move ? [s.move] : [])).find(m => m.id === msg.moveId);
       if (!card) return; // stale or forged card ids never execute
       const original = card.id.endsWith(":deferred") ? this.openMoves!.find(m => `${m.id}:deferred` === card.id) ?? Object.values(this.deckBook!.decisions).find(d => `${d.move.id}:deferred` === card.id)?.move : card;

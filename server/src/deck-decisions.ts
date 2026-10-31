@@ -61,6 +61,8 @@ export function noteYes(book: DeckBook, kind: string, scope: string): number {
 export function resetYes(book: DeckBook, kind: string, scope: string): void {
   if (book.yes) delete book.yes[yesKey(kind, scope)];
 }
+/** Away this long, and the next visit is a new check-in: what the player put off comes back. */
+export const CHECKIN_GAP_MS = 30 * 60_000;
 export function beginCheckin(book: DeckBook): void {
   for (const decision of Object.values(book.decisions)) decision.deferred = false;
 }
