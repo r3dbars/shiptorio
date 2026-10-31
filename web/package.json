@@ -10,12 +10,10 @@
     "a11y": "node test/a11y/audit.mjs"
   },
   "dependencies": {
-    "@sentry/react": "^11.9.0",
-    "@shiptorio/shared": "workspace:*",
-    "react": "^19.1.0"
+    "@sentry/browser": "^11.9.0",
+    "@shiptorio/shared": "workspace:*"
   },
   "devDependencies": {
-    "@types/react": "^19.1.0",
     "axe-core": "^4.14.0",
     "happy-dom": "21.0.4",
     "marked": "14.1.4",

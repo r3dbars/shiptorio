@@ -14,36 +14,10 @@
 //       Ore     = incoming work (issues, errors, emails). Biters = live errors.
 //   - Keep the intro's story: verify, then automate, then it runs itself.
 
-import type { AutonomyLevel, Bottleneck, Harness, Item, Machine, Move, StationKind, Tech, ThoughtDecision } from "@shiptorio/shared";
+import type { AutonomyLevel, Machine, Move } from "@shiptorio/shared";
 
 /** The only place the planner model is credited (VISION principle 8). */
 export const CREDIT = "powered by Meta Muse Spark";
-
-// ---------- shared words ----------
-
-export const WORDS = {
-  suggested: "Suggested",
-  close: "Close",
-  yourRepo: "your repo",
-  openPr: "Open PR",
-  onGithub: "Open on GitHub ↗",
-  prLink: "PR ↗",
-  on: "On",
-  off: "Off",
-};
-
-export const LEVEL_LABEL: Record<AutonomyLevel, string> = { advisor: "Advisor", floor: "Floor", build: "Build", lights_out: "Lights out" };
-
-export const STATE_WORD: Record<Item["state"], string> = {
-  ore: "waiting in the mine",
-  queued: "next up",
-  working: "building",
-  inspecting: "in checks",
-  rejected: "riding the rework belt",
-  passed: "passed",
-  on_pad: "waiting on you",
-  launched: "shipped",
-};
 
 // ---------- the map ----------
 
@@ -160,86 +134,6 @@ export const POWER = {
   ] as const,
 };
 
-export const SETTINGS = {
-  howItThinks: "How it thinks",
-  labels: "Labels on every machine (L)",
-  scenarios: "Scenarios",
-  art: "art",
-  sound: "SOUND",
-  mute: "Mute (M)",
-  soundOn: "ON",
-  soundOff: "OFF",
-  music: "Music",
-  musicVolume: "Music volume",
-  musicOn: "MUSIC ON",
-  musicOff: "MUSIC OFF",
-  volume: "Volume",
-};
-
-export const PANEL = {
-  closeLabel: "Close and zoom back out",
-  bottleneck: "bottleneck",
-  rightNow: "Right now",
-  idle: "Nothing on it right now.",
-  more: (n: number) => `+${n} more`,
-  in: "IN",
-  out: "OUT",
-  lately: "Lately",
-  // a quiet machine says what it's waiting on, never "idle" (map/shaft/waiting.ts)
-  machine: { IDLE: "Ready", WORKING: "Working", BLOCKED: "Needs you" },
-  quiet: { next: "Next up", you: "Waiting on you" },
-  stats: {
-    onBelt: "On the belt",
-    topScar: "Top scar",
-    noScar: "none yet",
-    strikes: "Strikes",
-    watching: "Watching",
-    held: "Held 24h",
-    caught: "Caught this week",
-    inLine: "In line",
-    longestWait: "Longest wait",
-    passRate: "Pass rate",
-    planner: "Planner",
-    left: (name: string) => `${name} left`,
-    powers: "Powers",
-    state: "State",
-    oreWaiting: "Ore waiting",
-    weight: "Total weight",
-    upNext: "Up next",
-    tier: "Tier",
-    power: "Power",
-    noPower: "none, sign in",
-    waitingOnYou: "Waiting on you",
-    rockets: "Rockets",
-    guards: "Guards",
-    everywhere: "every folder",
-    offline: "offline",
-  },
-  orbit: { reverted: "reverted", redOnMain: "red on main", cameBack: "came back", hoursLeft: (h: number) => `${h}h left`, minutesLeft: (m: number) => `${m}m left` },
-  reworkLast: (ref: string, check: string, reason: string) => `${ref} came back from the ${check}: ${reason}`,
-  rework: "Rework",
-  check: "check",
-  power: "Power",
-  lowPower: (name: string) => `${name} is under 40%. Low-value work waits until it refills.`,
-  plant: (type: string) => `${type} plant`,
-  assembler: (who?: string) => (who ? `${who} assembler` : "assembler"),
-  launchNext: "Launch the next one",
-  factory: "Factory",
-  // a cart: one piece of work riding the shaft (docs/GAMEPLAY-PICKS.md r3-rush)
-  cart: {
-    zone: "Cart",
-    folder: "Folder",
-    tries: "Tries",
-    rushed: "rushed",
-    parked: "parked",
-    waiting: "Rush moves it to the front of the line. Park sets it aside until you unpark it.",
-    isRushed: "Rushed. It goes to the next free builder.",
-    isParked: "Parked. It stays off the line until you unpark it.",
-    onLine: "Already on the line. Rush and Park are for work still waiting.",
-    choice: { rush: "Rush", park: "Park", none: "Unpark" },
-  },
-};
-
 export interface PanelCopy {
   zone: string;
   name: string;
@@ -247,12 +141,6 @@ export interface PanelCopy {
   what: string;
   actions?: { id: string; label: string; recommended: boolean }[]; // for panels with no Station behind them
 }
-
-export const RESEARCHED = {
-  zone: "3 · Gauntlet · researched",
-  tag: "runs after CI",
-  what: (what: string, catches: string) => `${what} Catches ${catches}.`,
-};
 
 export const REWORK_COPY: PanelCopy = {
   zone: "The loop back",
@@ -314,39 +202,6 @@ export const MACHINE_COPY: Partial<Record<Machine["type"], PanelCopy>> = {
     name: "Test turret",
     tag: ["red", "guards a folder"],
     what: "Tests guarding one folder. Every PR into that folder has to get past it, and it fires while Sentry errors attack the folder.",
-  },
-};
-
-export const GUIDE = {
-  title: "Field guide",
-  locked: "???",
-  chapters: {
-    first: "First rocket",
-    bottlenecks: "Bottlenecks",
-    ore: "More ore",
-    automate: "Verify, then automate",
-  },
-  /** How to find each entry while it's still ??? */
-  hint: {
-    island: "Pick a repo",
-    machines: "Set up your starter line",
-    power: "Plug in Claude or ChatGPT",
-    ore: "Wait for work to arrive",
-    inspect: "Build your first PR",
-    pad: "Pass every check",
-    rocket: "Launch a PR",
-    bottleneck: "Ship once",
-    checkin: "Let a few things wait on you",
-    autonomy: "Take suggestions as-is",
-  } as Record<string, string>,
-  /** Entries no lesson teaches yet. */
-  extra: {
-    sentry: { title: "Biters", text: "Sentry errors attack the folder they hit. Fixes that kill biters score big.", hint: "Connect Sentry" },
-    feedback: { title: "Feedback", text: "Customer emails arrive as ore, linked to the errors they describe.", hint: "Connect your support inbox" },
-    users: { title: "Users", text: "PostHog shows how many real users each fix reached.", hint: "Connect PostHog" },
-    station: { title: "Checks", text: "Add checks to the gauntlet. Every check makes a yes safer.", hint: "Ship a few PRs" },
-    permit: { title: "Launch permits", text: "A folder that keeps shipping clean earns the right to ship on its own.", hint: "Earn trust in one folder" },
-    lights: { title: "Lights out", text: "The factory runs overnight inside your budget. You get a morning review.", hint: "Earn permits on most folders" },
   },
 };
 
@@ -437,27 +292,6 @@ export const TOUR = {
 
 // ---------- sign in and pick a repo ----------
 
-/** Play first, sign in later: the sandbox is the front door, and your own repo is an unlock you reach in play. */
-export const PLAY = {
-  chip: "Demo shop",
-  chipCta: "Use your repo ›",
-  chipLabel: "You're playing a demo shop. Sign in with GitHub to run your own repo",
-  kicker: "Unlocked · your repo",
-  title: "That was a demo shop. Run your own repo next",
-  why: "Sign in with GitHub and your real issues come up the shaft, built by your own agents.",
-  cta: "Sign in with GitHub",
-};
-
-export const CRASH = {
-  eyebrow: "Boiler room · fault",
-  state: "Blocked",
-  title: "Boiler blew",
-  body: "Something in this screen overheated and the gauges went dark. Your repo, its PRs and every card you answered are untouched.",
-  hint: "Restart relights the furnace and puts you back on the map.",
-  restart: "Restart",
-  ref: (id: string) => `Fault ${id.slice(0, 8)}`,
-};
-
 export const LEARN = {
   line: (left: number) => `Approve ${left} more like this and then it's automatic.`,
   aria: (have: number, need: number, left: number) => `${have} of ${need} approved. Approve ${left} more like this and then it's automatic.`,
@@ -469,32 +303,3 @@ export const LEARN = {
   ranItself: (badge: string) => `Shippy's got these now. ${badge} started with no card.`,
 };
 
-export const ATTENTION = {
-  kind: { approve: "Approve", steer: "Steer", suggest: "Suggested" } as const,
-  continue: "Continue",
-  later: "Later",
-  details: "Details",
-  hide: "Hide",
-  /** Tap to see the planner's one plain reason for this card. */
-  whyAsk: "Why?",
-  others: "Other options",
-  swipeHint: "Swipe right to continue, left for later",
-  laterAsk: "Why later? (optional)",
-  teach: "OR TELL THE PLANNER",
-  why: [
-    { why: "defer", label: "Not now" },
-    { why: "kind", label: "Stop showing these" },
-    { why: "spark", label: "You decide these" },
-    { why: "wrong", label: "Wrong call" },
-  ] as const,
-  parked: "Parked for a day.",
-  more: (approve: number, steer: number, suggest: number) => [steer && `${steer} steer`, approve && `${approve} approve`, suggest && `${suggest} suggested`].filter(Boolean).join(" · "),
-  checkin: "Check in ›",
-  go: "Go",
-  hold: "Hold",
-  holdLaunch: "Hold to launch",
-  confirmLaunch: "Activate again to launch",
-  again: "Again",
-  moreWaiting: (n: number) => `${n} more waiting`,
-  pushTitle: (approve: number, steer: number) => [steer && `${steer} to steer`, approve && `${approve} to approve`].filter(Boolean).join(", ") + " in Shiptorio",
-};

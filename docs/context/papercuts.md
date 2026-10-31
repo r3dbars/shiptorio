@@ -7,8 +7,7 @@ Do not delete externally reachable routes or persisted state merely because the 
 
 | Candidate | Why it stays | What would justify removal |
 | --- | --- | --- |
-| `web/src/sound/` | The deck has its own sound directory, but legacy sound modules still have tests, and sound has a separate owner. | Owner confirms the shared tests and music references can migrate without losing coverage. |
-| `web/src/telemetry.ts:initTelemetry` and `@sentry/react` | The initializer has no current caller, while the live socket still imports `socketDisconnected` from the module. Removing the whole module would change that live path. | Decide whether to initialize telemetry on the deck or retire the old initialization/SDK deliberately; retain redaction. |
+| `web/src/telemetry.ts:initTelemetry` and `@sentry/browser` | The initializer has no current caller, while the live socket still imports `socketDisconnected` from the module. Removing the whole module would change that live path. | Decide whether to initialize telemetry on the deck or retire the old initialization/SDK deliberately; retain redaction. |
 | `feature` / `previewOn` in `web/src/flags.ts` | Covered by preview-policy tests and still required by contributor policy. | An explicit policy change, not a blind unused-export deletion. |
 | `/api/empire`, `/settings`, `/connect/*`, `/art/*` | Still registered or emitted and externally addressable; account and self-host docs use some of them. | Audit external and compatibility consumers before changing route behavior. |
 | `server/src/{permits,levels,growth,unlocks}.ts` and server feature flags | Imports, stored state, fixtures or explicit operator opt-ins still reference them. Parked does not mean unreachable. | A separate migration/retirement decision with state compatibility verified. |
@@ -47,6 +46,5 @@ Found and deliberately left for after the freeze (each is a refactor, not a remo
 | Test-only exports: `removePairing`, `sparkShare`, `recentLogs`, `funnelDays`, `priorityChoices`, `mergeProgress`, `liveStreak`, achievements `parseEarned`/`mergeEarned`/`markDay`, pricing `PLANS`/`FUEL_PACK`/`planMargin`, protocol `RunnerToServer`/`ServerToRunner` | shared, server, runner | Parked features (progression, pricing, empire) or test seams. Removing them removes their tests; a retirement decision, not cleanup. |
 | Routes with only test callers: `review/retry`, `starter-issue`, `runner/jobs`, `limits`, `admin/budget` | `server/src/index.ts` | Externally addressable; audit consumers first (same rule as the table above). |
 | `web/deck-ui-review.html` (820 KB) ships in the deck build | `web/vite.deck.config.ts` | A review tool in prod. Drop it from the inputs if nobody reviews there anymore. |
-| `react` + `@types/react` | `web/package.json`, only `sound/useFactorySound.ts` (test-only) and `@sentry/react` | Goes with the `web/src/sound/` decision above. |
 | `/art/*` pages (black-iron, cogworks, dioramas, style-lab, item-lab, art-prototype) and `docs/{loop,onboarding-mockup}.html` | `web/vite.config.ts`, `docs/` | Three.js and island-era art history, still served. Keep as history or retire together. |
 | `scripts/art/cut-build.py` still cuts the spark frames | `scripts/art/cut-build.py:95` | Re-running it recreates `fx-spark-*`; drop the spark entry when the script is next touched. |

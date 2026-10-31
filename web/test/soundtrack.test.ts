@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { layersFor, MIN_HOLD_BARS, nextRole, PICKS, roleFor, TRACKS, trackById, type Bar, type LayerId } from "../src/sound/soundtrack";
-import { musicFocus } from "../src/sound/music";
+import { layersFor, MIN_HOLD_BARS, nextRole, PICKS, roleFor, TRACKS, trackById, type Bar, type LayerId } from "../src/deck2d/sound/soundtrack";
+import { musicFocus } from "../src/deck2d/sound/music";
 
 describe("Justin's soundtrack picks", () => {
   test("each moment plays the track and knobs he saved (2026-10-28)", () => {
