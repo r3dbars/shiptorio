@@ -115,6 +115,12 @@ function fitYes(f: Face) {
 /** A story card with no second answer: only Next, and a left swipe or ← does nothing. */
 const solo = (card: View | null) => !!card?.shippy && !card.no;
 
+// The deck refills the shown card every frame. Swapping a label's text node under a press loses its click in Safari and
+// Firefox (Chrome keeps it), so unchanged words stay the same node.
+function setText(e: HTMLElement, text: string) {
+  if (e.textContent !== text) e.textContent = text;
+}
+
 function fill(f: Face, card: View) {
   f.root.dataset.card = card.id;
   if (card.shippy) return fillStory(f, card as View & { shippy: NonNullable<View["shippy"]> });
@@ -130,15 +136,15 @@ function fill(f: Face, card: View) {
   }
   if (card.guide === "shippy" && !f.guide) f.guide = mountShippyGuide(f.root);
   if (card.guide !== "shippy" && f.guide) { f.guide.destroy(); f.guide = undefined; }
-  f.no.textContent = card.no || "Later";
-  f.yes.textContent = card.yes || "Approve";
+  setText(f.no, card.no || "Later");
+  setText(f.yes, card.yes || "Approve");
   fitYes(f);
   f.root.classList.toggle("hold", !!card.hold);
   if (card.hold) f.approve.setAttribute("aria-label", /^hold\b/i.test(f.yes.textContent!) ? f.yes.textContent! : `Hold to ${f.yes.textContent}`);
   else f.approve.removeAttribute("aria-label");
   f.root.setAttribute("aria-label", card.title);
-  f.title.textContent = card.title;
-  f.line.textContent = card.line;
+  setText(f.title, card.title);
+  setText(f.line, card.line);
   f.line.hidden = !card.line;
   setDots(f, card.dots);
 }
@@ -150,10 +156,10 @@ function fillStory(f: Face, card: View & { shippy: NonNullable<View["shippy"]> }
   f.root.classList.toggle("solo", !card.no);
   f.root.classList.remove("hold");
   f.approve.removeAttribute("aria-label");
-  f.no.textContent = card.no || "Later";
-  f.yes.textContent = card.yes || "Next";
+  setText(f.no, card.no || "Later");
+  setText(f.yes, card.yes || "Next");
   f.later.hidden = !card.no;
-  f.title.textContent = card.title;
+  setText(f.title, card.title);
   f.title.hidden = !card.title;
   f.dots.hidden = true;
   // screen readers get the whole line at once; the typed-out text is for the eyes
