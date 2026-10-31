@@ -56,6 +56,7 @@ body.deck-page {
 @media (min-width: 900px) and (min-height: 560px) {
   .toast { font-size: 24px; text-shadow: 0 3px 0 #000; }
   .toast { max-width: 960px; }
+  .zoom { font-size: 16px; height: 40px; padding: 0 14px; } /* 13px Silkscreen falls between its 8px grid steps and smears; 16px is a clean 2x */
 }
 
 /* The live first run: Shippy's one line reads like a line, not a footnote, and nothing else competes with it. */
