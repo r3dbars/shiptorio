@@ -62,5 +62,6 @@ describe("one front door: the deck", () => {
   it("every redirect stays same-origin", () => {
     for (const [path, target] of routes) if (target) expect(sameOriginPath(target, "https://shiptorio.dev")).toBe(target);
     expect(deckFrontDoor(new URL("https://shiptorio.dev/?source=live&repo=//evil.example"))).toBe(`${DECK}&repo=%2F%2Fevil.example`);
+    expect(deckFrontDoor(new URL("https://shiptorio.dev/?fresh=1"))).toBe(`${DECK}&fresh=1`);
   });
 });

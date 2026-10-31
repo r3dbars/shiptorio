@@ -180,13 +180,13 @@ describe("the $5/day account cap, hit mid-loop", () => {
     // The deck: one calm card, last, that says $5, 00:00 UTC, and that reviewing and shipping still work.
     const card = f.deck().find(m => m.id === "planner-rest")!;
     expect(card.title).toBe("Shippy is done thinking for today");
-    expect(card.why).toBe("This account used today's $5 of AI. He's back at 00:00 UTC. You can keep reviewing and shipping.");
+    expect(card.why).toBe("This account used today's five dollars of AI. He's back at 00:00 UTC. You can keep reviewing and shipping.");
     expect(card.plan).toEqual([new Date(nextMidnight()).toISOString()]);
     expect(f.deck().at(-1)?.id).toBe("planner-rest");
     expect(f.deck().filter(m => m.id === "planner-rest")).toHaveLength(1);
     // The planner's own note (the brain panel) carries the exact account line: $5, 00:00 UTC, reviews and merges.
     expect(f.saved().brain?.thoughts.some(t => t.by === "fallback" && t.itemId === "gh-1" && t.reason.includes(ACCOUNT_CAP_LINE))).toBe(true);
-    expect(ACCOUNT_CAP_LINE).toBe("Shippy is done thinking for today: this account used its $5 of AI for the day. He's back at 00:00 UTC. The deck, reviews and merges keep working.");
+    expect(ACCOUNT_CAP_LINE).toBe("Shippy is done thinking for today: this account used its five dollars of AI for the day. He's back at 00:00 UTC. The deck, reviews and merges keep working.");
     for (const text of [card.title, card.why, ...f.logs().map(l => l.text)]) plain(text);
 
     // Ticks, deck refreshes, a resumed plan pass and another Plan tap: still no model call.

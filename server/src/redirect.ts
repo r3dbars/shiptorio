@@ -8,7 +8,8 @@ export function sameOriginPath(next: string | null | undefined, origin: string):
 
 // One front door: the 2D deck. The old React app is gone, so "/" always 302s there (after the access gate; on
 // shiptorio.com a visitor without access still gets the landing page first). Explicit demos (?source=sim,
-// ?source=replay, ?scenario=) keep their query on /deck; everything else lands on the live deck. ?px=0 is dropped.
+// ?source=replay, ?scenario=) keep their query on /deck; everything else lands on the live deck, keeping ?repo= and
+// ?fresh=1. ?px=0 is dropped.
 // DECK_HOSTS is where the deck is public without the password (access.ts isPublicDeck).
 export const DECK_HOSTS = new Set(["shiptorio.dev", "www.shiptorio.dev"]);
 // The old app's own switches; they mean nothing to the deck.
@@ -27,5 +28,5 @@ export function deckFrontDoor(url: URL): string | null {
     return `/deck?${q}`;
   }
   const repo = q.get("repo");
-  return `/deck?source=live${repo ? `&repo=${encodeURIComponent(repo)}` : ""}`;
+  return `/deck?source=live${repo ? `&repo=${encodeURIComponent(repo)}` : ""}${q.get("fresh") === "1" ? "&fresh=1" : ""}`;
 }
