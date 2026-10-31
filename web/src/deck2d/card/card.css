@@ -46,6 +46,9 @@
 .ic-line[hidden], .ic-dots[hidden] { display: none; }
 
 .ic-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; margin: 0 -26px -26px; }
+.ic-actions.wide-yes { grid-template-columns: auto minmax(0, 1fr); } /* card.ts fitYes: a long yes takes the room it needs */
+/* ...and on the narrowest phones (320 px) the arrows go too, so "Connect GitHub" still reads whole */
+@media (max-width: 359px) { .ic-actions.wide-yes .ic-btn span[aria-hidden] { display: none; } }
 .ic-btn {
   --lean: 0;
   font: inherit; font-weight: 700; font-size: clamp(18px, 5vw, 22px); color: var(--ic-ink); text-shadow: 0 2px 0 #000;

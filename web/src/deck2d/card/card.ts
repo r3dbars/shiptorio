@@ -100,6 +100,18 @@ function face(): Face {
   return f;
 }
 
+/** A yes too long for half the row ("Connect GitHub" on a 390 px phone read "Connect Git…"): the no button shrinks to
+ *  its own label and the yes takes the rest. Measured once per fill, after layout; an even split everywhere else. */
+function fitYes(f: Face) {
+  if (typeof requestAnimationFrame !== "function") return; // no layout to measure (headless tests)
+  requestAnimationFrame(() => {
+    const row = f.approve.parentElement;
+    if (!row || !f.root.isConnected) return;
+    row.classList.remove("wide-yes");
+    if (f.yes.scrollWidth > f.yes.clientWidth + 1) row.classList.add("wide-yes");
+  });
+}
+
 /** A story card with no second answer: only Next, and a left swipe or ← does nothing. */
 const solo = (card: View | null) => !!card?.shippy && !card.no;
 
@@ -120,6 +132,7 @@ function fill(f: Face, card: View) {
   if (card.guide !== "shippy" && f.guide) { f.guide.destroy(); f.guide = undefined; }
   f.no.textContent = card.no || "Later";
   f.yes.textContent = card.yes || "Approve";
+  fitYes(f);
   f.root.classList.toggle("hold", !!card.hold);
   if (card.hold) f.approve.setAttribute("aria-label", /^hold\b/i.test(f.yes.textContent!) ? f.yes.textContent! : `Hold to ${f.yes.textContent}`);
   else f.approve.removeAttribute("aria-label");
