@@ -6,10 +6,11 @@ let started = false;
 /** Turns on browser error reporting once, when a signed-in factory connects (live.ts). Deferred to idle time so it
  *  never competes with the first frame; the anonymous tutorial never loads this module. No DSN configured = no-op. */
 export function startTelemetry(): void {
-  if (started || typeof window === "undefined") return;
+  if (started || typeof document === "undefined" || typeof window?.fetch !== "function") return;
   started = true;
-  const later = window.requestIdleCallback ?? ((cb: () => void) => window.setTimeout(cb, 2000));
-  later(() => void initTelemetry());
+  const run = () => void initTelemetry();
+  if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(run);
+  else setTimeout(run, 2000);
 }
 async function initTelemetry() {
   // Runtime config keeps the DSN in one Worker secret and release identical to /api/version.
