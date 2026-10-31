@@ -104,6 +104,15 @@ export async function freshStart(loc: Pick<Location, "search" | "hostname" | "pa
   return true;
 }
 
+/** The guest tour's card survives a reload in this tab (?fresh=1 clears it with the rest of sessionStorage). */
+const TOUR_KEY = "shiptorio:tour";
+function tourMemo() {
+  return {
+    load: () => { const v = Number(sessionStorage.getItem(TOUR_KEY)); return Number.isFinite(v) ? v : null; },
+    save: (beat: number) => sessionStorage.setItem(TOUR_KEY, String(beat)),
+  };
+}
+
 /** What the pixel deck's first frame draws from pictures; everything else is code. web/deck.html preloads these by
  *  URL (web/test/deck2d-first-paint.test.ts keeps the two lists equal). sky/clouds come pre-dimmed (engine dimArt). */
 export const FIRST_FRAME_ART = ["sky-dim", "clouds-dim", ...SPRITES.rocket, "plate"] as const;
@@ -252,7 +261,7 @@ const seed = Number(params.get("seed")) || 0;
     // A guest at the live front door meets Shippy: a small deck, the story told in the card at their pace, each
     // station built and named, then one fix shipped. /deck.html keeps the jam-and-swipe story for the video, which ends
     // on the city reveal (?reveal=1 starts there, for shots and recording takes), then the same sign-in card.
-    if (want === "live") source = storyBeforeSignIn(shipFeel(createTour(), bus), connections, { ask: true });
+    if (want === "live") source = storyBeforeSignIn(shipFeel(createTour(tourMemo()), bus), connections, { ask: true });
     else {
       const run = (story.createStory as (o: { seed: number; speed: number; reducedMotion?: boolean; startAt?: "reveal" }) => DeckSource & { phase(): string })({
         seed, speed, reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches, startAt: params.get("reveal") === "1" ? "reveal" : undefined });

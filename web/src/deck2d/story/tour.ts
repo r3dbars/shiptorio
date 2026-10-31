@@ -100,7 +100,10 @@ export interface Tour {
   arrive(id: string, stop: StopId): void;
 }
 
-export function createTour(): Tour {
+/** Where a reload picks the tour back up: the card you were on (sessionStorage in main.ts, so a new tab starts over). */
+export interface TourMemo { load(): number | null; save(beat: number): void }
+
+export function createTour(memo?: TourMemo): Tour {
   let S = fresh(), round = 0;
   function fresh() {
     return {
@@ -158,7 +161,8 @@ export function createTour(): Tour {
     if (S.t >= growFor + BUILD_SEC) done();
   }
   function done() { S.playing = null; next(); }
-  function next() { S.cardT = 0; if (++S.beat >= TOUR.length) { S.beat = TOUR.length - 1; S.end = true; } }
+  function next() { S.cardT = 0; if (++S.beat >= TOUR.length) { S.beat = TOUR.length - 1; S.end = true; } remember(); }
+  function remember() { try { memo?.save(S.end ? TOUR.length : S.beat); } catch { /* storage off */ } }
 
   function arrive(id: string, stop: StopId) {
     if (id === CRATE && S.playing && "roll" in S.playing && stop === S.crate && !S.landed) { S.landed = true; S.hopT = 0; }
@@ -184,13 +188,23 @@ export function createTour(): Tour {
     if (S.end) { reset(); return; } // Replay
     if (S.beat === 0) return; // no Skip: the first card only goes forward
     round++; // fresh ids, so the card shows the earlier beat again
-    S.beat--; S.cardT = 0; // Back re-reads the last beat; what's built stays built
+    S.beat--; S.cardT = 0; remember(); // Back re-reads the last beat; what's built stays built
     // Back onto the fix's own cards puts the fix back where that card found it
     if (S.beat === SHIP_BEAT) S.crate = "gate";
     else if (S.beat < SHIP_BEAT) S.crate = null;
   }
 
-  function reset() { S = fresh(); round++; }
+  function reset() { S = fresh(); round++; remember(); }
+
+  // A reload mid-tour (pull to refresh, a rotate that reloads, a mistap) comes back on the same card with everything
+  // before it already built, instead of starting the whole story over (QA 2026-10-31). Pure sim: each earlier beat
+  // is answered and played out at once.
+  let target = 0;
+  try { target = Math.max(0, Math.min(TOUR.length, Math.floor(memo?.load() ?? 0))); } catch { /* storage off */ }
+  for (let guard = 0; S.beat < target && !S.end && guard < 5000; guard++) {
+    if (!S.playing) start(TOUR[S.beat]);
+    else step(1);
+  }
 
   /** The islands story's picture for the card that is up: what was lit on earlier cards stays lit, this card's light in turn. */
   function cityView(): CityView | undefined {
