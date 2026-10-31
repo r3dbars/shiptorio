@@ -358,8 +358,8 @@ describe("Later means later: no re-nag", () => {
     expect(f.shippy()).toEqual([]);
   }, 60_000);
 
-  it("a parked card comes back early only when it gets clearly worse", async () => {
-    // A goal that doesn't lift CI, so the red PR's weight has room to get clearly worse.
+  it("a parked break comes back early when another PR goes red on it, and only then", async () => {
+    // A goal that doesn't lift CI, so the weights below are the signal's own.
     const f = fixture({ goal: "first_users", world: { prs: [{ number: 39, workflow: "check", red: true }] } });
     await f.tick();
     await f.tick(5 * MIN); // the player looks at it a few minutes after Shippy read CI
@@ -367,20 +367,20 @@ describe("Later means later: no re-nag", () => {
     const parked = f.memory()!.later["ci:ci_blocking:check"];
     expect(parked.weight).toBeGreaterThan(0.6);
     expect(parked.weight).toBeLessThan(0.7);
+    expect(parked.what).toEqual(["Failing on #39"]);
 
-    // A second PR fails the same check: a little worse, not clearly. Still parked.
-    f.world.prs.push({ number: 41, workflow: "check", red: true });
+    // Same red PR, hours of re-reads: still parked.
     await run(f, HOUR, 10 * MIN);
     await f.checkin();
     expect(f.shippy()).toEqual([]);
 
-    // Four PRs fail it now: clearly worse than when it was parked. It comes back the next time the player looks.
-    f.world.prs.push({ number: 43, workflow: "check", red: true }, { number: 45, workflow: "check", red: true });
+    // A second PR fails the same check: the break names something new, so it's back the next time the player looks.
+    f.world.prs.push({ number: 41, workflow: "check", red: true });
     await f.tick(10 * MIN);
     await f.checkin();
     const back = f.shippy();
     expect(back.map(m => m.id)).toEqual([RED_CHECK]);
-    expect(back[0].why).toContain("#39");
+    expect(back[0].because).toContain("#41");
     checkCopy(f);
   }, 60_000);
 
