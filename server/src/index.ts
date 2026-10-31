@@ -708,7 +708,14 @@ app.post("/api/repos/:owner/:repo/issues/:number/start", async c => {
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
   const f = await factory(c.env, repo);
   await f.ensure(repo, await installationFor(c.env, repo));
-  const result = await f.startInboxIssue(number, c.get("user").login);
+  let result: Awaited<ReturnType<typeof f.startInboxIssue>>;
+  try { result = await f.startInboxIssue(number, c.get("user").login); }
+  catch (error) {
+    // A spent daily cap or run quota is a normal end of the day, not a crash: the inbox shows a 409's own words.
+    const message = error instanceof Error ? error.message : "";
+    if (/^Planning paused\. Shippy is done thinking for today|^Daily run quota reached\./.test(message)) return c.json({ error: message }, 409);
+    throw error;
+  }
   return 'waitingFor' in result ? c.json({ error: `Finish PR #${result.waitingFor} before starting another issue.` }, 409) : c.json(result, 202);
 });
 app.get("/api/repos/:owner/:repo/issues", async c => {

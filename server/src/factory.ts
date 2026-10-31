@@ -9,7 +9,7 @@ import { planningFailure, planningHold, planningCapacity, planningCapacityRaised
 import { availableJobHarness, syncRunnerPower } from "./runner-power";
 import { factoryDeleted } from "./account-data";
 import { pollDelay, RateLimitError } from "./rate-limit";
-import { factorySpend } from "./spend";
+import { dollarShare, factorySpend } from "./spend";
 import { BudgetError, budgetAccount, budgetLimits, budgetUsage } from "./budget";
 import { runQuotaStatus, runQuota } from "./signup";
 import * as Sentry from "@sentry/cloudflare";
@@ -622,8 +622,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const env = this.sparkEnv();
     if (!env.DB || !env.budgetAccount) return null;
     try {
-      const u = await budgetUsage(env, await env.budgetAccount());
-      return { used: Math.max(u.calls / Math.max(1, u.limits.calls), u.tokens / Math.max(1, u.limits.tokens)), limit: 1 };
+      const account = await env.budgetAccount();
+      const u = await budgetUsage(env, account);
+      // Dollars count too: a few big calls can spend half the $5 long before half the day's calls.
+      return { used: Math.max(u.calls / Math.max(1, u.limits.calls), u.tokens / Math.max(1, u.limits.tokens), await dollarShare(env.DB, this.meta!.repo, account)), limit: 1 };
     } catch { return null; }
   }
 
@@ -802,8 +804,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const env = this.sparkEnv();
     if (!env.DB || !env.budgetAccount) return true;
     try {
-      const u = await budgetUsage(env, await env.budgetAccount());
-      return u.calls < u.limits.calls / 2 && u.tokens < u.limits.tokens / 2;
+      const account = await env.budgetAccount();
+      const u = await budgetUsage(env, account);
+      return u.calls < u.limits.calls / 2 && u.tokens < u.limits.tokens / 2 && await dollarShare(env.DB, this.meta!.repo, account) < 0.5;
     } catch { return true; }
   }
 
@@ -1344,11 +1347,14 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) return new Error("This issue already has an active runner job; finish its plan or build first");
       if (this.env.SPARK_DISABLED === "1" || this.running.size + jobs.filter(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status)).length >= budgetLimits(this.env).jobs) return new Error("Factory job budget reached; finish the active runner job first");
       const hold = await this.plannerRest() ?? planningHold(await this.ctx.storage.get<PlanningRetry>(`planningRetry:${item.id}`));
-      if (hold) return new Error(`Planning paused after ${hold.failures} failed tries; retry at ${new Date(hold.retryAt).toISOString()}. ${hold.reason}`);
+      // A spent daily dollar cap is not a failed try: say the cap's own plain line (spend.ts), which the inbox shows.
+      const capLine = hold?.kind === "cap" ? /Shippy is done thinking for today.*$/.exec(hold.reason)?.[0] : undefined;
+      if (hold) return new Error(capLine ? `Planning paused. ${capLine}` : `Planning paused after ${hold.failures} failed tries; retry at ${new Date(hold.retryAt).toISOString()}. ${hold.reason}`);
       const account = await this.runAccount(requestedBy);
       if (!account) return new Error("Run quota owner unavailable");
       const quota = await runQuotaStatus(this.env, account);
-      if (quota.used >= quota.limit) return new Error(`Daily run quota reached; resumes at ${new Date(quota.resetsAt).toISOString()}`);
+      // Player copy (logged on the Plan tap): plain words, no raw timestamp. resetsAt is always the next 00:00 UTC.
+      if (quota.used >= quota.limit) return new Error("Daily run quota reached. Builds start again at 00:00 UTC.");
       const usage = await this.usage().catch(error => { if (error instanceof BudgetError) return error; throw error; });
       if (usage instanceof BudgetError) return usage;
       if (usage.limits.disabled || usage.calls >= usage.limits.calls || usage.tokens >= usage.limits.tokens) {
