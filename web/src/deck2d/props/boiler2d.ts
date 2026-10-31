@@ -54,8 +54,13 @@ export function tube(g: Px, pts: [number, number][], r: number, ramp: Ramp, o: {
   const x0 = Math.floor(Math.min(...xs) - r - 1), x1 = Math.max(...xs) + r + 1;
   // Only samples within r of a column can be a drawn pixel's nearest, so each column checks just those (same order,
   // so ties pick the same sample). A long pipe used to compare every pixel with every sample and stall the first frame.
-  const near: [number, number][][] = [];
-  for (let x = x0; x <= x1; x++) near.push(S.filter(([sx]) => Math.abs(x + 0.5 - sx) <= r + 1e-6));
+  // Each sample is dealt to the columns it reaches, in path order (filtering every sample per column was most of the
+  // cost of a long pipe, and the hull redraws its long copper main each time the deck grows a column).
+  const near: [number, number][][] = Array.from({ length: x1 - x0 + 1 }, () => []);
+  for (const p of S) {
+    const lo = Math.max(0, Math.ceil(p[0] - 0.5 - r - 1e-6 - x0) - 1), hi = Math.min(x1 - x0, Math.floor(p[0] - 0.5 + r + 1e-6 - x0) + 1);
+    for (let i = lo; i <= hi; i++) if (Math.abs(x0 + i + 0.5 - p[0]) <= r + 1e-6) near[i].push(p);
+  }
   for (let y = Math.floor(Math.min(...ys) - r - 1); y <= Math.max(...ys) + r + 1; y++)
     for (let x = x0; x <= x1; x++) {
       const px = x + 0.5, py = y + 0.5;

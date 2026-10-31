@@ -56,7 +56,7 @@ test('repository selection explicitly enters live mode and never starts a job', 
 });
 test('access errors do not imply an empty inbox or a ready engine', async () => {
   const f = setup([new Response('', { status: 403 })]); f.ui.open('power'); await settle();
-  expect(f.ui.card()?.title).toBe('Connection needs attention'); expect(f.ui.card()?.line).toContain('permission');
+  expect(f.ui.card()?.title).toBe('Connection needs attention'); expect(f.ui.card()?.line).toContain('GitHub App');
 });
 test('login preserves the return path', async () => {
   const f = setup([new Response('', { status: 401 })]); f.ui.open('repo'); await settle(); await f.yes();

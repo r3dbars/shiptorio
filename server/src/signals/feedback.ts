@@ -9,6 +9,7 @@
 import { signalId, type BrainSignal, type SignalCollector, type SupportTicket } from "@shiptorio/shared";
 import { gh } from "../github";
 import { isOutsideAuthor, isTeamAuthor, type GitHubIssue } from "../sources/github";
+import { plural } from "../encode";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -51,7 +52,6 @@ export const waitingOnReply = (t: FeedbackThread, now: number) =>
   t.open && (t.lastTeamAt === undefined || t.lastTeamAt < t.lastOutsideAt) && now - t.lastOutsideAt >= GRACE_MS;
 
 const ago = (ms: number) => ms < DAY ? `${Math.max(1, Math.round(ms / HOUR))}h` : `${Math.round(ms / DAY)}d`;
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 export function feedbackSignals({ threads, now, repo, shipped = 0, complete = true }: FeedbackInput): BrainSignal[] {
   const out: BrainSignal[] = [];

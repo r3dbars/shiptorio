@@ -21,7 +21,7 @@ the model is named once through `CREDIT` ("powered by Meta Muse Spark"). Guard: 
 | 6 | Repo (mid) | weld | Repo | This is Repo. / Your GitHub issues land here. | Next |
 | 7 | Planner (mid) | weld | Planner | Planner. / I read an issue and write a short plan. | Next |
 | 8 | Engine (mid) | carry | steam engine | This steam engine powers the whole line. / You'll power it with your own Codex or Muse Code. | Next |
-| 9 | Builder (mid) | weld | Builder, deck grows to medium | Builder. / Codex writes the code, on your computer. | Next |
+| 9 | Builder (mid) | weld | Builder, deck grows to medium | Builder. / Codex or Muse Code writes the code on your computer. | Next |
 | 10 | Checks (mid) | weld | Checks | Checks. / Your tests run here. Broken code stops. | Next |
 | 11 | Review (mid) | weld | Review, deck grows to large | Review. / A second look before anything ships. | Next |
 | 12 | Gate (mid) | weld | Gate | Gate. / Nothing merges until you say yes. | Next |

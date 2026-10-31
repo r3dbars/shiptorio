@@ -54,6 +54,8 @@ export default {async fetch(r,e,c){
       const path = req.url ?? '/';
       if (req.method !== 'GET') {res.writeHead(405).end();return;}
       const api = /^\/(api|auth)\//.test(path);
+      // Browser telemetry config (live.ts asks once a factory connects): this local host has no Sentry DSN.
+      if (path === '/api/telemetry/config') {res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify({dsn:null,release:'local',userId:null,requestId:'cold-load'}));return;}
       const response = api ? await call(path, /cold_load_persona=1/.test(req.headers.cookie ?? '')) : await fetch(staticOrigin+(path.split('?')[0]==='/deck'?path.replace('/deck','/deck.html'):path));
       const headers = Object.fromEntries(response.headers);
       delete headers['content-length']; delete headers['transfer-encoding']; delete headers['content-encoding'];

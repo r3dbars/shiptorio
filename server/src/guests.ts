@@ -1,5 +1,6 @@
 import { validProgress, type Progress } from "@shiptorio/shared";
 import { isPrefKey, MAX_PROGRESS_BYTES, validPrefs, type AccountsEnv, type PrefKey, type User } from "./accounts";
+import { toHex as hex } from "./encode";
 
 /** A guest owns only a sample save. It is deliberately not a User/session or repository principal. */
 export const GUEST_COOKIE = "shiptorio_guest";
@@ -13,7 +14,6 @@ const emptySave = (): GuestSave => ({ progress: null, prefs: {} });
 async function key(secret: string) {
   return crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
 }
-const hex = (bytes: ArrayBuffer) => [...new Uint8Array(bytes)].map(b => b.toString(16).padStart(2, "0")).join("");
 async function signature(secret: string, id: string) {
   return hex(await crypto.subtle.sign("HMAC", await key(secret), encoder.encode(`guest:${id}`)));
 }

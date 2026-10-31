@@ -9,6 +9,7 @@ import { testIdentityAllowed } from "./test-users-policy";
 
 import { authorizationRevoked, isAllowed, makeSessionCookie, readSessionDetails } from "./session";
 import { parseProgress, validProgress, type Progress } from "@shiptorio/shared";
+import { sha256Hex as sha256 } from "./encode";
 
 
 export interface AccountsEnv {
@@ -28,10 +29,6 @@ const isLocal = (url: URL) => url.hostname === "localhost" || url.hostname === "
 const MAX_AGE_MS = 14 * 86400_000;
 
 const b64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
-async function sha256(text: string): Promise<string> {
-  const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
-  return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
 
 /** Local dev (DEV_LOGIN on localhost) skips GitHub and sees every installed repo. */
 function devUser(env: AccountsEnv, url: URL | null): User | null {
@@ -144,12 +141,6 @@ export async function saveReach(env: AccountsEnv, userId: number, reach: Reach):
     ]),
   ]);
   for (const i of reach.installations) await rememberInstallationOwner(db, i.id, {id: i.accountId, login: i.account, type: i.accountType});
-}
-
-export async function canSeeRepo(env: AccountsEnv, user: User, repo: string): Promise<boolean> {
-  if (user.dev) return true;
-  const row = await env.DB.prepare("SELECT 1 AS ok FROM user_repos WHERE user_id = ? AND repo = ?").bind(user.id, repo.toLowerCase()).first<{ ok: number }>();
-  return !!row;
 }
 
 export interface RepoRow { full_name: string; installation_id: number; default_branch: string | null }

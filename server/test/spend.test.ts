@@ -66,7 +66,7 @@ it("caps each paying account at $5/day across all its factories, overridable per
   const big = () => [1_600_000, 0] as const;
   await reserveFactorySpend(db, "owner/a", ...big(), "muse-spark-1.3", now, "user:1");
   await reserveFactorySpend(db, "owner/b", ...big(), "muse-spark-1.3", now, "user:1");
-  await expect(reserveFactorySpend(db, "owner/c", ...big(), "muse-spark-1.3", now, "user:1")).rejects.toThrow("$5 of AI");
+  await expect(reserveFactorySpend(db, "owner/c", ...big(), "muse-spark-1.3", now, "user:1")).rejects.toThrow("five dollars of AI");
   expect(await accountSpend(db, "user:1", now)).toMatchObject({ calls: 2, estimatedUsd: 4, dailyBudgetUsd: 5, status: "warning" });
   expect(await factorySpend(db, "owner/c", now, "user:1")).toMatchObject({ status: "warning", estimatedUsd: 0 });
   // Another account is untouched, and tomorrow starts fresh.

@@ -13,11 +13,16 @@ test('live URL requires a real session, not a guest, missing login or failed che
   expect(await deckSignedIn(async () => { throw new Error('offline'); })).toBe(false);
 });
 
+test('a signed-in player whose session check is slow (not stalled) still gets their factory, not the guest tour', async () => {
+  const slow = () => new Promise<Response>(resolve => setTimeout(() => resolve(Response.json({ login: 'player' })), 30));
+  expect(await deckSignedIn(slow, 1000)).toBe(true);
+});
+
 test('a stalled session check falls back to the story instead of blocking the first frame', async () => {
   let aborted = false;
   const signedIn = await deckSignedIn((_url, options) => new Promise((_resolve, reject) => {
     options!.signal!.addEventListener('abort', () => { aborted = true; reject(options!.signal!.reason); });
-  }));
+  }), 50);
   expect(aborted).toBe(true);
   expect(signedIn).toBe(false);
 });

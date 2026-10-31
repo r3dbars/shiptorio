@@ -22,6 +22,7 @@ import { pixelOn } from "../../flags";
 import { BELT_Y, LOOK, STOP_X, type ArtLoader, type DeckBus, type DeckView, type Stop, type StopId } from "../contract";
 import { drawBuildPx, drawLockedPx } from "./pixel";
 import { STAGE_AT } from "./timeline";
+import { clamp01, span } from "../engine/math";
 
 export { STAGE_AT };
 
@@ -56,8 +57,6 @@ export interface BuildOptions {
 interface Job { stop: StopId; t: number; fired: Set<string> }
 interface Puff { name: "dust"; x: number; y: number; size: number; t: number; dur: number; flip: boolean }
 
-const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
-const span = (t: number, a: number, b: number) => clamp01((t - a) / (b - a));
 const ease = {
   out: (t: number) => 1 - (1 - t) ** 3,
   in: (t: number) => t * t * t,

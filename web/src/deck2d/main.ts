@@ -105,14 +105,24 @@ export async function freshStart(loc: Pick<Location, "search" | "hostname" | "pa
   return true;
 }
 
+/** The guest tour's card survives a reload in this tab (?fresh=1 clears it with the rest of sessionStorage). */
+const TOUR_KEY = "shiptorio:tour";
+function tourMemo() {
+  return {
+    load: () => { const v = Number(sessionStorage.getItem(TOUR_KEY)); return Number.isFinite(v) ? v : null; },
+    save: (beat: number) => sessionStorage.setItem(TOUR_KEY, String(beat)),
+  };
+}
+
 /** What the pixel deck's first frame draws from pictures; everything else is code. web/deck.html preloads these by
  *  URL (web/test/deck2d-first-paint.test.ts keeps the two lists equal). sky/clouds come pre-dimmed (engine dimArt). */
 export const FIRST_FRAME_ART = ["sky-dim", "clouds-dim", ...SPRITES.rocket, "plate"] as const;
 
-/** A requested live URL is not proof that this browser is signed in. */
-export async function deckSignedIn(request: typeof fetch = fetch): Promise<boolean> {
+/** A requested live URL is not proof that this browser is signed in. The wait is generous: a guest's "no" is quick,
+ *  but a signed-in player on a slow phone network or a cold server must not be dropped into the guest tour after 2s. */
+export async function deckSignedIn(request: typeof fetch = fetch, waitMs = 6000): Promise<boolean> {
   try {
-    const response = await request("/api/me", { cache: "no-store", signal: AbortSignal.timeout(2000) });
+    const response = await request("/api/me", { cache: "no-store", signal: AbortSignal.timeout(waitMs) });
     loadMark("me-response");
     if (!response.ok) return false;
     const account = await response.json();
@@ -253,7 +263,7 @@ const seed = Number(params.get("seed")) || 0;
     // A guest at the live front door meets Shippy: a small deck, the story told in the card at their pace, each
     // station built and named, then one fix shipped. /deck.html keeps the jam-and-swipe story for the video, which ends
     // on the city reveal (?reveal=1 starts there, for shots and recording takes), then the same sign-in card.
-    if (want === "live") source = storyBeforeSignIn(shipFeel(createTour(), bus), connections, { ask: true,
+    if (want === "live") source = storyBeforeSignIn(shipFeel(createTour(tourMemo()), bus), connections, { ask: true,
       onAsk: () => { try { localStorage.setItem(TOURED_KEY, "1"); } catch { /* private mode: the full first run plays */ } } });
     else {
       const run = (story.createStory as (o: { seed: number; speed: number; reducedMotion?: boolean; startAt?: "reveal" }) => DeckSource & { phase(): string })({

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { sha256Hex } from "./encode";
 // Internal HTTP transport; shared browser/runner websocket contracts remain compatible.
 export const RunnerHarness = z.enum(["codex", "claude_code", "muse_code", "local"]);
 export const EnqueueRunner = z.object({ itemId: z.string().regex(/^gh-\d+$/), harness: RunnerHarness, allowedPaths: z.array(z.string().min(1).max(200)).min(1).max(10) }).strict();
@@ -34,6 +35,5 @@ export function validLease(job: RunnerJob, pairId: string, lease: string, now = 
   return job.status === "running" && job.pairId === pairId && job.lease === lease && !!job.deadline && job.deadline > now;
 }
 export async function issueRevision(title: string, body = ""): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify([title, body])));
-  return [...new Uint8Array(digest)].map(n => n.toString(16).padStart(2, "0")).join("");
+  return sha256Hex(JSON.stringify([title, body]));
 }

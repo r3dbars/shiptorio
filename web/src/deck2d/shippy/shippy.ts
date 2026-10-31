@@ -13,6 +13,7 @@ import { pixelOn } from "../../flags";
 import { ANCHOR, STRIP_H, UNFOLD, type ShippyFrame } from "./frames";
 import { PX_INK, drawPx, pxFrame, type PxFrame } from "./pixel";
 import { chargeLevel, DOCK_HOME_X, drawChargingDock } from "./dock";
+import { clamp01 } from "../engine/math";
 
 /** The contract's poses plus the build poses: weld (torch + sparks) and carry (a steel beam, also while walking). */
 export type ShippyActPose = ShippyPose | "weld" | "carry";
@@ -57,7 +58,6 @@ const easeIn = (t: number) => t * t;
 const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
 /** Damped spring: 1 at t=0 wobbling down to 0 by t~0.8. */
 const wobble = (t: number, hz = 2.5) => Math.exp(-6 * t) * Math.cos(t * hz * Math.PI * 2);
-const clamp01 = (t: number) => Math.max(0, Math.min(1, t));
 
 export function createShippy(art: ArtLoader, options: ShippyOptions = {}): ShippyModule & {
   /** Same as the contract's update, also taking the build poses. */
