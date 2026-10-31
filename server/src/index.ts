@@ -715,10 +715,23 @@ app.post("/api/repos/:owner/:repo/issues/:number/start", async c => {
     // A spent daily cap or run quota is a normal end of the day, not a crash: the inbox shows a 409's own words.
     const message = error instanceof Error ? error.message : "";
     if (/^Planning paused\. Shippy is done thinking for today|^Daily run quota reached\./.test(message)) return c.json({ error: message }, 409);
+    // So is a second Plan tap, or an issue closed on GitHub while its card was up: plain words, not "Something broke".
+    const denial = planDenial(message);
+    if (denial) return c.json({ error: denial }, 409);
     throw error;
   }
   return 'waitingFor' in result ? c.json({ error: `Finish PR #${result.waitingFor} before starting another issue.` }, 409) : c.json(result, 202);
 });
+// Errors cross the Factory RPC as plain Errors, so these match on the message.
+function planDenial(message: string): string | null {
+  if (/^GitHub issue is no longer open|^GitHub GET \/repos\/[^ ]+\/issues\/\d+ failed \((?:404|410)\)/.test(message)) return "That issue was closed on GitHub.";
+  if (/^This issue already has an active runner job|^Item is not available to build/.test(message)) return "Shippy is already on this one.";
+  if (/^Issue changed while reading feedback/.test(message)) return "That issue just changed on GitHub. Try again.";
+  if (/^Planning paused after \d+ failed tries/.test(message)) return "Shippy couldn't plan this one a few times in a row. He'll try again later.";
+  if (/^GitHub factory is archived or paused/.test(message)) return "This repo is archived or paused on GitHub.";
+  if (/^Issue author isn't a collaborator|^Issue feedback exceeds the bounded planning window/.test(message)) return message;
+  return null;
+}
 app.get("/api/repos/:owner/:repo/issues", async c => {
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
   const page = Number(c.req.query("page") ?? 1);

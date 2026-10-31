@@ -278,7 +278,15 @@ describe("the $5/day account cap, hit mid-loop", () => {
   it("the inbox route turns the cap and the run quota into the 409 the deck shows word for word, not 'Could not reach the factory'", async () => {
     const { testApp } = await import("./app-fixture");
     const { privateKey: key } = generateKeyPairSync("rsa", { modulusLength: 2048 });
-    for (const message of [`Planning paused. ${ACCOUNT_CAP_LINE}`, `Planning paused. ${SITE_CAP_LINE}`, "Daily run quota reached. Builds start again at 00:00 UTC.", "Something else broke"]) {
+    // A second Plan tap or an issue closed on GitHub meanwhile is a plain 409 too, in the deck's words.
+    const said: Record<string, string> = {
+      "This issue already has an active runner job; finish its plan or build first": "Shippy is already on this one.",
+      "Item is not available to build": "Shippy is already on this one.",
+      "GitHub issue is no longer open": "That issue was closed on GitHub.",
+      "GitHub GET /repos/owner/repo/issues/9 failed (404)": "That issue was closed on GitHub.",
+      "Issue changed while reading feedback": "That issue just changed on GitHub. Try again.",
+    };
+    for (const message of [`Planning paused. ${ACCOUNT_CAP_LINE}`, `Planning paused. ${SITE_CAP_LINE}`, "Daily run quota reached. Builds start again at 00:00 UTC.", ...Object.keys(said), "Something else broke"]) {
       const grants = new Map<string, unknown>();
       const env = { SESSION_SECRET: "caps-route", APP_PASSWORD: "caps-route-preview", ALLOWED_LOGINS: "writer", DB: freeSlots(testD1()), GITHUB_APP_ID: "123", GITHUB_APP_PRIVATE_KEY: key.export({ type: "pkcs8", format: "pem" }).toString(),
         CACHE: { get: async (k: string) => grants.get(k) ?? null, put: async (k: string, v: string) => { if (k.startsWith("access:")) grants.set(k, JSON.parse(v)); } },
@@ -295,7 +303,7 @@ describe("the $5/day account cap, hit mid-loop", () => {
       const response = await testApp.fetch(new Request(`https://shiptorio.com/api/repos/${REPO}/issues/2/start`, { method: "POST", headers: { cookie, origin: "https://shiptorio.com" } }), env as never);
       if (message === "Something else broke") { expect(response.status).toBe(500); continue; }
       expect(response.status).toBe(409);
-      expect(await response.json()).toEqual({ error: message });
+      expect(await response.json()).toEqual({ error: said[message] ?? message });
     }
   });
 });
