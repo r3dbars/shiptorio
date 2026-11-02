@@ -26,7 +26,7 @@ runs on its own.
 
 <img src="docs/readme/shippy-idle.gif" alt="Shippy, the robot, standing by: he blinks, looks around, takes a step, hops and waves" width="186" align="left">
 
-Shippy is the robot who runs your line. **Meta Muse Wonder is Shippy's brain.** It reads your issues, plans the
+Shippy is the robot who runs your line. **Meta Muse Spark 1.3 is Shippy's brain.** It reads your issues, plans the
 change, spots the bottleneck, reviews the result and tells you what to do next. It never writes code.
 
 The code is written by your own **Muse Code subscription**, or another coding subscription like Codex, through a
@@ -106,7 +106,7 @@ The planner and reviewer work in a small tool loop that can read the issue, the 
 never write anything.
 
 <p align="center">
-  <img src="docs/readme/under-the-hood.png" alt="Diagram: your machine runs the runner with Muse Code or Codex and pushes a branch; Cloudflare runs one Worker and one Durable Object per repo; GitHub sends issues and checks in and receives the PR; Meta Muse Wonder is Shippy's brain above; the deck in your browser below over a websocket" width="940">
+  <img src="docs/readme/under-the-hood.png" alt="Diagram: your machine runs the runner with Muse Code or Codex and pushes a branch; Cloudflare runs one Worker and one Durable Object per repo; GitHub sends issues and checks in and receives the PR; Meta Muse Spark 1.3 is Shippy's brain above; the deck in your browser below over a websocket" width="940">
 </p>
 
 ## Coming soon: the rest of the city
@@ -128,7 +128,7 @@ The factory must grow.
 
 ## Built at the Meta AI Developer Hackathon
 
-Everything here was built between Oct 26 and Nov 4, 2026, from an empty repo. Muse Wonder makes every
+Everything here was built between Oct 26 and Nov 4, 2026, from an empty repo. Muse Spark 1.3 makes every
 factory decision. Muse Code writes the code (Codex works too).
 
 ## License
