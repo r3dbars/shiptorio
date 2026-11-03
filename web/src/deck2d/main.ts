@@ -20,6 +20,7 @@ import { createPayoff } from "./payoff";
 import { TOURED_KEY, createFirstRun } from "./data/firstrun";
 import { createTour } from "./story/tour";
 import { shipFeel } from "./story/ship";
+import { JOURNEY } from "./story/journey";
 import { askPassword } from "./password";
 import type { AttentionView } from "./stations/attention";
 
@@ -214,6 +215,7 @@ const seed = Number(params.get("seed")) || 0;
   const pixel = pixelOn();
   const art = createArt(pixel ? FIRST_FRAME_ART : Object.values(SPRITES).flat());
   const want = params.get("source");
+  const journey = !want && params.get("journey") === "1"; // the one-issue demo (story/journey.ts), only by link
   const [{ createEngine }, deckSound, [story, data, shippyMod, cardMod, juiceMod], layerMods, signedIn] = await Promise.all([
     import("./engine/engine"), import("./sound"),
     Promise.all([load("story", "createStory"), load("data", "createLiveSource"), load("shippy", "createShippy"), load("card", "mountCard"), load("juice", "attachJuice")]),
@@ -263,7 +265,8 @@ const seed = Number(params.get("seed")) || 0;
     // A guest at the live front door meets Shippy: a small deck, the story told in the card at their pace, each
     // station built and named, then one fix shipped. /deck.html keeps the jam-and-swipe story for the video, which ends
     // on the city reveal (?reveal=1 starts there, for shots and recording takes), then the same sign-in card.
-    if (want === "live") source = storyBeforeSignIn(shipFeel(createTour(tourMemo()), bus), connections, { ask: true,
+    if (journey) source = shipFeel(createTour(undefined, JOURNEY), bus, JOURNEY.beats, false); // ?journey=1: one issue, Repo to Launch
+    else if (want === "live") source = storyBeforeSignIn(shipFeel(createTour(tourMemo()), bus), connections, { ask: true,
       onAsk: () => { try { localStorage.setItem(TOURED_KEY, "1"); } catch { /* private mode: the full first run plays */ } } });
     else {
       const run = (story.createStory as (o: { seed: number; speed: number; reducedMotion?: boolean; startAt?: "reveal" }) => DeckSource & { phase(): string })({
@@ -275,7 +278,7 @@ const seed = Number(params.get("seed")) || 0;
     }
   }
   else source = createDemo();
-  const guestTour = want === "live" && !signedIn;
+  const guestTour = want === "live" && !signedIn || journey;
 
   const liveState = (source as DeckSource & { state?: () => import("@shiptorio/shared").FactoryState | null }).state;
   // Live only; ?source=sim&away=5h or ?source=replay&away=5h shows it for rehearsals and the video.

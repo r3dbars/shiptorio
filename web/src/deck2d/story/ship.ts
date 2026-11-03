@@ -11,7 +11,7 @@
 import { PAYOFF } from "../payoff";
 import type { CardView, DeckBus, DeckSource, DeckView, ShippyView, StopId } from "../contract";
 import type { AttentionView } from "../stations/attention";
-import { TOUR } from "./tour";
+import { TOUR, type Beat } from "./tour";
 
 export type ShipPhase = "off" | "lever" | "ride" | "press" | "launch" | "done";
 
@@ -36,10 +36,11 @@ export const SHIP_TIMING = {
 } as const;
 
 /** The tour's Ship it card: the beat whose `then` ships. Ids are `tour-<round>-<beat>`. */
-const SHIP_BEAT = TOUR.findIndex(b => b.then && "ship" in b.then);
-export const isShipCard = (c: CardView | null | undefined) => !!c && c.id.startsWith("tour-") && c.id.endsWith(`-${SHIP_BEAT}`);
+const shipBeat = (beats: readonly Beat[]) => beats.findIndex(b => b.then && "ship" in b.then);
+export const isShipCard = (c: CardView | null | undefined, beats: readonly Beat[] = TOUR) => !!c && c.id.startsWith("tour-") && c.id.endsWith(`-${shipBeat(beats)}`);
 
-export function shipFeel<T extends DeckSource>(tour: T, bus: DeckBus): T & { shipPhase(): ShipPhase } {
+/** `beats`: the script the tour runs (default the guest tour), so its Ship it card is found. */
+export function shipFeel<T extends DeckSource>(tour: T, bus: DeckBus, beats: readonly Beat[] = TOUR, captions = true): T & { shipPhase(): ShipPhase } {
   let phase: ShipPhase = "off", t = 0, held = 0, arrived = false, launched = false;
   let bias = 0, lastRaw = 0; // a Replay resets the tour's count; the engine only launches when the number goes up
   let shown: CardView | null = null;
@@ -77,7 +78,7 @@ export function shipFeel<T extends DeckSource>(tour: T, bus: DeckBus): T & { shi
       : phase === "press" ? { pose: "poke", at: "launch" } : { pose: "happy", at: "launch" };
     shown = null;
     return {
-      ...v, stops, card: null, caption: SHIP_CAPTION[phase], shippy, attention: [], focus: phase === "lever" ? "gate" : "launch",
+      ...v, stops, card: null, caption: captions ? SHIP_CAPTION[phase] : null, shippy, attention: [], focus: phase === "lever" ? "gate" : "launch",
       followItem: phase === "ride" ? SHIP_CRATE : undefined,
       // Held until the crate is on the pad: the engine launches the rocket the moment this goes up.
       shipped: (phase === "lever" || phase === "ride" || phase === "press" ? held : held + 1) + bias,
@@ -88,7 +89,7 @@ export function shipFeel<T extends DeckSource>(tour: T, bus: DeckBus): T & { shi
     ...tour, step, view,
     approve(id: string) {
       if (phase !== "off" && phase !== "done") return; // nothing to answer while it ships
-      if (isShipCard(shown) && shown!.id === id) { held = tour.view().shipped; arrived = launched = false; enter("lever"); }
+      if (isShipCard(shown, beats) && shown!.id === id) { held = tour.view().shipped; arrived = launched = false; enter("lever"); }
       tour.approve(id);
     },
     reset() { phase = "off"; (tour as DeckSource & { reset?: () => void }).reset?.(); },
