@@ -42,7 +42,7 @@ export async function smoke(base: string, sha: string, attempts = 12, delayMs = 
     `/auth/login: expected redirect to https://github.com, got ${login.status} ${location}`);
   await login.body?.cancel();
 
-  for (const [path, status] of [["/", 200], ["/?source=live&repo=r3dbars%2Fshiptorio", 401], ["/api/repos", 401]] as const) {
+  for (const [path, status] of [["/", 302], ["/deck", 200], ["/api/me", 401], ["/api/repos", 401]] as const) {
     const response = await request(path);
     check(response.status === status, `${path}: expected ${status}, got ${response.status}`);
     await response.body?.cancel();

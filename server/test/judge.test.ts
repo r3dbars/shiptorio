@@ -1,7 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import { publicRoute } from "../src/access";
 const env = { APP_PASSWORD: "test-password", SESSION_SECRET: "test-secret" };
-const at = (path: string, method = "GET") => new Request(`https://shiptorio.com${path}`, { method });
+const at = (path: string, method = "GET") => new Request(`https://factory.example${path}`, { method });
 
 describe("public judge surface", () => {
   it("opens the replay and hashed build JS/CSS without a preview or GitHub cookie, in either signup mode", async () => {

@@ -5,10 +5,11 @@ import { withRange } from "../src/landing";
 import { testD1 } from "./d1-fixture";
 
 const env = { APP_PASSWORD: "test-preview-password", SESSION_SECRET: "test-session-secret" };
-const at = (path: string, init?: RequestInit) => new Request(`https://shiptorio.com${path}`, init);
+// A self-hosted install keeps the landing page; shiptorio.com and shiptorio.dev open the deck (redirect.ts DECK_HOSTS).
+const at = (path: string, init?: RequestInit) => new Request(`https://factory.example${path}`, init);
 
 async function previewCookie() {
-  const response = await previewAccess(at("/access", { method: "POST", headers: { origin: "https://shiptorio.com" }, body: new URLSearchParams({ password: env.APP_PASSWORD }) }), env);
+  const response = await previewAccess(at("/access", { method: "POST", headers: { origin: "https://factory.example" }, body: new URLSearchParams({ password: env.APP_PASSWORD }) }), env);
   return response!.headers.get("set-cookie")!.split(";")[0];
 }
 
@@ -46,7 +47,7 @@ describe("public landing page", () => {
 const waitlistEnv = () => ({ DB: testD1() }) as never;
 const pending = async (env: { DB: D1Database }) => (await env.DB.prepare("SELECT identity FROM signup_waitlist").all<{ identity: string }>()).results.map((r) => r.identity);
 const join = (body: unknown, headers: Record<string, string> = {}) =>
-  at("/api/waitlist", { method: "POST", headers: { "content-type": "application/json", origin: "https://shiptorio.com", "cf-connecting-ip": "1.2.3.4", ...headers }, body: JSON.stringify(body) });
+  at("/api/waitlist", { method: "POST", headers: { "content-type": "application/json", origin: "https://factory.example", "cf-connecting-ip": "1.2.3.4", ...headers }, body: JSON.stringify(body) });
 
 describe("waitlist", () => {
   it("puts a valid email on the /admin waitlist once", async () => {
@@ -68,7 +69,7 @@ describe("waitlist", () => {
     expect((await joinWaitlist(join({ email: "p9@b.co" }), env)).status).toBe(429);
   });
   it("works without JavaScript: a form post comes back to the page", async () => {
-    const response = await joinWaitlist(at("/api/waitlist", { method: "POST", headers: { origin: "https://shiptorio.com", "content-type": "application/x-www-form-urlencoded" }, body: "email=sam%40b.co" }), waitlistEnv());
+    const response = await joinWaitlist(at("/api/waitlist", { method: "POST", headers: { origin: "https://factory.example", "content-type": "application/x-www-form-urlencoded" }, body: "email=sam%40b.co" }), waitlistEnv());
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe("/?joined=1#join");
   });
@@ -76,7 +77,7 @@ describe("waitlist", () => {
 
 describe("video byte ranges", () => {
   const file = () => new Response(new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]), { headers: { "content-type": "video/mp4" } });
-  const get = (range?: string) => new Request("https://shiptorio.com/welcome/loop.mp4", { headers: range ? { range } : {} });
+  const get = (range?: string) => new Request("https://factory.example/welcome/loop.mp4", { headers: range ? { range } : {} });
   it("answers Safari's range probes with 206 and the right slice", async () => {
     const probe = await withRange(get("bytes=0-1"), file());
     expect(probe.status).toBe(206);

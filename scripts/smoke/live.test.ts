@@ -20,12 +20,13 @@ test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1")("live smoke accepts hea
     if (url.pathname === "/auth/login") return new Response(null, { status: broken === "login200" ? 200 : 302,
       headers: { location: broken === "loginHost" ? "https://github.com.attacker.example/" : "https://github.com/login/oauth/authorize" } });
     if (url.pathname === "/api/repos") return new Response(null, { status: broken === "private" ? 200 : 401 });
-    if (url.search) return new Response(null, { status: broken === "gate" ? 200 : 401 });
-    return new Response(null, { status: broken === "landing" ? 500 : 200 });
+    if (url.pathname === "/api/me") return new Response(null, { status: broken === "gate" ? 200 : 401 });
+    if (url.pathname === "/deck") return new Response(null, { status: broken === "deck" ? 500 : 200 });
+    return new Response(null, { status: broken === "landing" ? 200 : 302, headers: { location: "/deck?source=live" } });
   } });
   try {
     await smoke(server.url.origin, sha, 1, 0);
-    for (broken of ["get", "form", "post", "post403", "login200", "loginHost", "private", "gate", "landing", "version"]) {
+    for (broken of ["get", "form", "post", "post403", "login200", "loginHost", "private", "gate", "deck", "landing", "version"]) {
       await expect(smoke(server.url.origin, sha, 1, 0)).rejects.toThrow();
     }
     versionRequests = 0;
