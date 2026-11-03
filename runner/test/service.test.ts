@@ -25,8 +25,14 @@ test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1")("bundled background run
     const bin = resolve(directory, "bin");
     await mkdir(bin);
     for (const name of ["codex", "claude"]) await writeFile(resolve(bin, name), "#!/bin/sh\nexit 0\n", { mode: 0o700 });
-    const onlyCodex = Bun.spawn([process.execPath, resolve(directory, "runner.mjs"), "paths", "--codex-only"], {
+    // Codex and Claude are development-only opt-ins: installed CLIs are not offered by default.
+    const byDefault = Bun.spawn([process.execPath, resolve(directory, "runner.mjs"), "paths"], {
       cwd: directory, env: { PATH: `${bin}:/usr/bin:/bin`, HOME: directory, SHIPTORIO_RUNNER_ROOT: root }, stdout: "pipe", stderr: "pipe",
+    });
+    expect(JSON.parse(await new Response(byDefault.stdout).text()).harnesses).toEqual([]);
+    expect(await byDefault.exited).toBe(0);
+    const onlyCodex = Bun.spawn([process.execPath, resolve(directory, "runner.mjs"), "paths", "--codex-only"], {
+      cwd: directory, env: { PATH: `${bin}:/usr/bin:/bin`, HOME: directory, SHIPTORIO_RUNNER_ROOT: root, SHIPTORIO_ENABLE_CODEX: "1" }, stdout: "pipe", stderr: "pipe",
     });
     const selected = JSON.parse(await new Response(onlyCodex.stdout).text());
     expect(await onlyCodex.exited).toBe(0);
