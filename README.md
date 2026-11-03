@@ -29,8 +29,8 @@ runs on its own.
 Shippy is the robot who runs your line. **Meta Muse Spark 1.3 is Shippy's brain.** It reads your issues, plans the
 change, spots the bottleneck, reviews the result and tells you what to do next. It never writes code.
 
-The code is written by your own **Muse Code subscription**, or another coding subscription like Codex, through a
-small runner on your machine. In the game, your sign-ins are the power plants: more of them, bigger factory.
+The code is written by your own **Meta Muse Code subscription**, through a small runner on your machine. In the
+game, your sign-in is the power plant: more power, bigger factory.
 Nothing runs on our servers but the game.
 
 <br clear="left">
@@ -39,7 +39,7 @@ Nothing runs on our servers but the game.
 
 1. **Repo.** An issue arrives on the line.
 2. **Planner.** Shippy proposes a plan and the files it may touch. You approve or send it back.
-3. **Builder.** Your Muse Code or Codex writes the change on your machine and opens a pull request.
+3. **Builder.** Your Meta Muse Code writes the change on your machine and opens a pull request.
 4. **Checks.** CI, lint and tests run on the PR. A failed check sends it back to the Planner, with a scar so you can see it was caught.
 5. **Review.** Shippy reads the diff and gives a verdict.
 6. **Gate.** You hold **Ship it**. The PR merges for real.
@@ -89,6 +89,9 @@ bun run dev:web
 
 Open [localhost:5173/deck.html](http://localhost:5173/deck.html). Add `?source=sim` for a simulated factory.
 `bun run dev` starts the full Worker with a local database on [localhost:8787](http://localhost:8787).
+Every setting is listed, empty, in [`.env.example`](.env.example). Server values go in `server/.dev.vars`, which
+`bun run dev` creates for you: `META_API_KEY` turns on Muse Spark, the GitHub App keys turn on real repos.
+None of them are needed for the simulated factory.
 
 To host it: [self-host on Cloudflare](docs/site/self-host.md) with your own GitHub App and Meta API key.
 Everything else is in the [docs](docs/site/index.md). Contributing: [AGENTS.md](AGENTS.md).
@@ -106,7 +109,7 @@ The planner and reviewer work in a small tool loop that can read the issue, the 
 never write anything.
 
 <p align="center">
-  <img src="docs/readme/under-the-hood.png" alt="Diagram: your machine runs the runner with Muse Code or Codex and pushes a branch; Cloudflare runs one Worker and one Durable Object per repo; GitHub sends issues and checks in and receives the PR; Meta Muse Spark 1.3 is Shippy's brain above; the deck in your browser below over a websocket" width="940">
+  <img src="docs/readme/under-the-hood.png" alt="Diagram: your machine runs the runner with Meta Muse Code and pushes a branch; Cloudflare runs one Worker and one Durable Object per repo; GitHub sends issues and checks in and receives the PR; Meta Muse Spark 1.3 is Shippy's brain above; the deck in your browser below over a websocket" width="940">
 </p>
 
 ## Coming soon: the rest of the city
@@ -126,10 +129,40 @@ and feed it real work.
 
 The factory must grow.
 
+## What's a Meta model call vs plain code
+
+Every AI model Shiptorio runs is Meta's. Everything else is ordinary code, and the simulated parts say so.
+
+| Step | What runs it | Where |
+| --- | --- | --- |
+| Triage, plan, routing, bottleneck pick, review, research and launch calls | **Meta Muse Spark 1.3** via the Meta Model API (`https://api.meta.ai/v1`, model `muse-spark-1.3`), with a fixed JSON reply | Cloudflare Worker: `sparkChat` / `sparkJson` and their callers in [`server/src/spark.ts`](server/src/spark.ts) (`triage`, `gameMaster`, `pickPower`, ...) |
+| Planner and reviewer tool loops (read the issue, code and CI; never write) | **Meta Muse Spark 1.3** | Cloudflare Worker: `planLocalTask` and `reviewWithTools` in [`server/src/spark-tools.ts`](server/src/spark-tools.ts) |
+| Writing the code | **Meta Muse Code**, your own subscription | Your machine, through the runner ([`runner/src/muse-assembler.ts`](runner/src/muse-assembler.ts)) |
+| Optional small local jobs ("geothermal") | **Meta open-weight models only** (Muse Glimmer or Muse Spark Open). Off unless you configure it; any other model is refused | Your machine ([`runner/src/local-model.ts`](runner/src/local-model.ts), [guide](docs/runner-local-models.md)) |
+| Triage without a Meta API key | Plain code: a keyword rule (`heuristicTriage` in `server/src/spark.ts`). When Spark is unavailable, card order and routing also fall back to fixed rules, never to another model | Cloudflare Worker |
+| Supervisor checks, CI, the Gate, the merge, the deck, the music | Plain code. No model | Worker, runner, GitHub Actions, your browser |
+| `?source=sim` and the [shiptorio.dev](https://shiptorio.dev) walkthrough | **Simulated.** A scripted factory: Shippy's lines are pre-written, no model is called and no real repo is touched | Your browser |
+
+The runner still contains Codex and Claude Code adapters used while developing Shiptorio. They are off by default,
+never offered to players, and only turn on with `SHIPTORIO_ENABLE_CODEX=1` / `SHIPTORIO_ENABLE_CLAUDE=1`.
+Configuration: [`.env.example`](.env.example).
+
 ## Built at the Meta AI Developer Hackathon
 
-Everything here was built between Oct 26 and Nov 4, 2026, from an empty repo. Muse Spark 1.3 makes every
-factory decision. Muse Code writes the code (Codex works too).
+Shiptorio was built for the Meta AI Developer Hackathon, Oct 26 to Nov 4, 2026. Muse Spark 1.3 makes every
+factory decision and Muse Code writes the code.
+
+### Before vs. during the event
+
+The git history is unedited, so you can check this:
+
+- **Before kickoff ended (11:24 AM CT, Oct 26):** two scaffold commits, `e2472b7e` at 11:14 AM CT ("Phase 1:
+  Shiptorio map on Cloudflare Workers with a GitHub App") and `31d4bb36` at 11:18 AM CT (Cloudflare resources and
+  local dev), on top of GitHub's two-line "Initial commit" README.
+- **During the event:** `bc04a40d` at 11:32 AM CT reshaped the repo into `shared/`, `server/` and `web/` and
+  replaced most of that scaffold. Everything since is event work.
+- **Planning notes:** [`docs/context/archive`](docs/context/archive) keeps earlier notes as history, including
+  a design canvas dated Oct 25 (`feedback-factory/`). None of it describes how Shiptorio works today.
 
 ## License
 
