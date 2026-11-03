@@ -46,7 +46,8 @@ nativeTest("clean HOME install → browser pairing → two repos in one runner �
   const files: Record<string, string> = {
     curl: `#!/bin/sh\ncase "$2" in https://github.com/oven-sh/bun/*) touch "$4";; *) exec /usr/bin/curl "$@";; esac\n`,
     unzip: `#!/bin/sh\nmkdir -p "$4/${asset}"\ncp ${quote(process.execPath)} "$4/${asset}/bun"\n`,
-    codex: '#!/bin/sh\nif [ "$1 $2" = "login status" ]; then exit 0; fi\nexit 1\n',
+    // Muse Code is the default assembler; the stub reports a version and leaves a signed-in credential in its isolated home.
+    muse: '#!/bin/sh\nif [ "$1" = "--version" ]; then mkdir -p "$HOME/.config/muse" && printf \'{"signedIn":true}\' > "$HOME/.config/muse/auth.json"; exit 0; fi\nexit 1\n',
     open: '#!/bin/sh\nprintf "%s" "$1" > "$HOME/browser-url"\n',
     "xdg-open": '#!/bin/sh\nprintf "%s" "$1" > "$HOME/browser-url"\n',
   };

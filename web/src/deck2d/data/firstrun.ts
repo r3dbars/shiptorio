@@ -10,7 +10,7 @@ import { LAUNCH_BUILD_SECONDS } from "../launch/timeline";
 import { STOPS, type DeckView, type ShippyView, type StopId } from "../contract";
 
 /** intro: a guest just swiped the sample jam clear. hello: signed in, no repo yet. repo: repo chosen, waiting on the
- *  Codex engine. engine: Codex is ready. */
+ *  Muse Code engine. engine: Muse Code is ready. */
 export type FirstRunStage = "intro" | "hello" | "repo" | "engine";
 type DeckSize = NonNullable<DeckView["deck"]>["size"];
 type Island = NonNullable<DeckView["deck"]>["island"];
@@ -39,8 +39,8 @@ export const FIRST_RUN_LINES = {
   pick: "Pick a repo and I'll build your factory.",
   repo: "Repo: your GitHub issues come in here.",
   planner: "Planner: I read an issue and write a short plan.",
-  engine: "Plug your own Codex or Muse Code into the steam engine.",
-  builder: "Builder: Codex or Muse Code writes the code on your computer.",
+  engine: "Plug your own Muse Code into the steam engine.",
+  builder: "Builder: Muse Code writes the code on your computer.",
   checks: "Checks: your tests run. Broken code stops here.",
   review: "Review: a second look before anything ships.",
   gate: "Gate: nothing merges until you say so.",

@@ -6,14 +6,13 @@ order: 4
 ---
 # Connect your machine
 
-Shippy makes the plan. Your local Codex or Muse Code builds it, using your own
+Shippy makes the plan. Your local Meta Muse Code builds it, using your own
 subscription. Agent sign-ins stay on your computer; pairing never approves a build.
 
 ## Install
 
 Use macOS or Linux; on Windows, use a glibc Linux distribution in WSL2. Install git and
-[Codex CLI](https://developers.openai.com/codex/cli) or [Meta Muse Code](https://dev.meta.ai),
-and sign in with your own subscription.
+[Meta Muse Code](https://dev.meta.ai), and sign in with your own subscription.
 
 1. On the deck, open **Connect your coding engine** and copy its install command into Terminal.
    Use that factory's command so the runner connects to the same server.
@@ -54,12 +53,9 @@ the terminal, restart with `~/.local/bin/shiptorio-runner watch`.
 
 On the deck, tap the boilers at the back to open the engine card. It shows online/offline, last seen,
 detected agents and latest job. A newly selected live repo opens this card.
-Codex and Muse Code appear separately. Each shows ready, running or
-offline. Subscription usage remaining is not measured here; your plan's limits still apply.
+Muse Code shows ready, running or offline. Subscription usage remaining is not measured here; your plan's limits still apply.
 
-Before each job the runner checks which subscriptions are signed in and idle. If
-Shippy's preferred subscription is unavailable, the other can execute the same approved
-plan and files. One supervised build runs at a time across paired repos; a running or
+Before each job the runner checks that Muse Code is signed in and idle. One supervised build runs at a time across paired repos; a running or
 recovering job keeps its original provider. Local models keep their guarded routing.
 
 ## Troubleshooting
@@ -69,7 +65,7 @@ recovering job keeps its original provider. Local models keep their guarded rout
 - **Offline:** keep the terminal open, check its error and your internet connection,
   then run `~/.local/bin/shiptorio-runner watch`.
 - **Agent sign-in:** run `~/.local/bin/shiptorio-runner doctor`. Use
-  `~/.local/bin/shiptorio-runner login codex` or `login muse` for the dedicated
+  `~/.local/bin/shiptorio-runner login muse` for the dedicated
   Shiptorio agent sign-in. Setup never copies your normal credential directory.
 - **Expired pairing:** grants last up to seven days, capped by the approving sign-in.
   The heartbeat renews with a day remaining; sleep and network failures retain a
@@ -85,8 +81,6 @@ not spend subscription inference or prove the assembler can change a file. Run t
 explicit edit probe when startup passes but a build produces no changes:
 
 ```sh
-shiptorio-runner doctor --edit codex
-# Or, for Muse Code:
 shiptorio-runner doctor --edit muse
 ```
 
@@ -103,12 +97,10 @@ raw transcripts are withheld. A sign-in check can pass while the real edit fails
 keep that failed result and investigate its category instead of assuming a build
 worked or repeatedly rerunning the probe.
 
-macOS rejects Codex applying a second Seatbelt profile inside the runner's existing OS
-sandbox. The runner preserves that outer boundary and Codex's read-only mode: Codex
-returns structured edit proposals, and the trusted supervisor applies only exact matches
-within the approved files. The same verification and publication gates still run. Do not
-bypass either sandbox or expose your normal home or credentials to work around an edit
-failure.
+The agent returns structured edit proposals inside the runner's OS sandbox, and the
+trusted supervisor applies only exact matches within the approved files. The same
+verification and publication gates still run. Do not bypass the sandbox or expose your
+normal home or credentials to work around an edit failure.
 
 ## What your agent can and can't touch
 
@@ -120,7 +112,7 @@ keeps your normal home, unrelated repositories and supervisor GitHub credentials
 outside the agent and test processes. The agent can read its dedicated subscription
 sign-in and contact its inference provider; tests run without those credentials.
 
-Codex and Muse Code return structured edit proposals. After the agent exits, the
+Muse Code returns structured edit proposals. After the agent exits, the
 supervisor applies only exact, unique replacements in approved regular files; new
 files require an explicit create proposal. Dirty checkouts, ambiguous matches and
 links are rejected. The agent never receives the supervisor's GitHub credentials.

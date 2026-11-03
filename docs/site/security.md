@@ -52,7 +52,7 @@ Prompts treat all of that as untrusted evidence, never as instructions.
 ## What your runner and agent can do
 
 - The agent gets a minimal environment, not your shell's secrets, and signs in from its own dedicated folder, not your normal config.
-- Codex and Muse Code return structured edit proposals inside an OS sandbox. The supervisor applies only validated edits to approved files.
+- Muse Code (and the opt-in development adapters) return structured edit proposals inside an OS sandbox. The supervisor applies only validated edits to approved files.
 - It may only change the files you approved in the plan: at most 10 files and 500 changed lines.
 - `.env*`, `.git*`, CI config, key files (`.pem`, `.key`, `.p12`, `.pfx`), `node_modules` and anything outside the repo are never in scope.
 - Shell tools are off. The agent proposes edits, and the runner applies them and runs the checks.

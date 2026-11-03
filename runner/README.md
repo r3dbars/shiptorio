@@ -1,12 +1,12 @@
 # Shiptorio local runner
 
-Shippy, powered by Meta Muse Spark, plans and reviews. Your own **Codex or Muse Code subscription**
+Shippy, powered by Meta Muse Spark, plans and reviews. Your own **Meta Muse Code subscription**
 builds on your computer. The runner validates the edits, runs the checks and publishes a PR branch.
 It never pushes to the default branch or merges a PR. You hold **Ship it** at the deck's Gate.
 
 ## Install and connect
 
-Install git and either `codex` or Meta's `muse` CLI first. Use macOS or Linux; on Windows, use a glibc
+Install git and Meta's `muse` CLI (Muse Code) first. Use macOS or Linux; on Windows, use a glibc
 Linux distribution in WSL2 and install your agent inside WSL.
 
 Open **Connect your coding engine** on the deck and copy its command into Terminal. Use the command
@@ -27,11 +27,9 @@ Add the launcher directory to PATH, or use its full path below.
 ## Commands
 
 ```sh
-shiptorio-runner login codex        # dedicated Codex sign-in
 shiptorio-runner login muse         # dedicated Muse Code sign-in
 shiptorio-runner doctor             # sign-in, OS sandbox and pairing checks
-shiptorio-runner doctor --edit codex # one subscription edit in a disposable fixture
-shiptorio-runner doctor --edit muse  # the same explicit probe with Muse Code
+shiptorio-runner doctor --edit muse  # one Muse Code edit in a disposable fixture
 shiptorio-runner watch              # resume watching after closing Terminal
 shiptorio-runner pair               # pair another repo
 shiptorio-runner uninstall
@@ -43,9 +41,9 @@ redacted technical detail. `paths` prints the installation paths as JSON.
 
 ## Builds and recovery
 
-One runner serves its paired repos, one build at a time. The runner checks that a subscription is
+One runner serves its paired repos, one build at a time. The runner checks that Muse Code is
 signed in and idle before handing it work; a running or recovering job keeps the same provider.
-Codex and Muse Code return structured edit proposals. The supervisor accepts only exact edits to
+Muse Code returns structured edit proposals. The supervisor accepts only exact edits to
 approved files, runs checks without provider credentials, and verifies the frozen patch before publishing.
 
 Temporary network failures retry with backoff. A private `.recovery/` journal and `.work/` checkout
@@ -72,8 +70,10 @@ The legacy macOS service remains supported through `bun run runner:service insta
 `~/Library/LaunchAgents/com.shiptorio.runner.plist`. Stop it before starting a second watcher for the
 same data root. Use that service's data root when checking its sign-in; standalone sign-ins are separate.
 
-The retained Claude adapter is opt-in via `SHIPTORIO_ENABLE_CLAUDE=1`; it is not offered by the current
-deck. Its old Keychain and authentication tests remain for compatibility.
+Shiptorio runs Meta models only. The retained Codex and Claude adapters are development-only opt-ins
+(`SHIPTORIO_ENABLE_CODEX=1`, `SHIPTORIO_ENABLE_CLAUDE=1`), off by default and not offered to players.
+Their tests remain for compatibility. Geothermal local models are limited to Meta open-weight models
+(Muse Glimmer or Muse Spark Open); see [local models](../docs/runner-local-models.md).
 
 Full help: [Connect your machine](../docs/site/runner.md), [security](../docs/site/security.md),
 [self-hosting](../docs/site/self-host.md).

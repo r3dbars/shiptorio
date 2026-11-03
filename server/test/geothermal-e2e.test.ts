@@ -103,7 +103,7 @@ test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1")("geothermal end to end:
     await git(work, "add", "README.md"); await git(work, "commit", "-qm", "base");
     const boundary = await localBoundary(work);
     let out: Awaited<ReturnType<typeof runLocalAssembler>>;
-    try { out = await runLocalAssembler({ plan: assigned.plan!, allowedPaths: assigned.allowedPaths }, work, { baseUrl: ollama.url, model: "qwen2.5-coder:7b" }, boundary, originalFetch); }
+    try { out = await runLocalAssembler({ plan: assigned.plan!, allowedPaths: assigned.allowedPaths }, work, { baseUrl: ollama.url, model: "muse-glimmer" }, boundary, originalFetch); }
     finally { await boundary.close(); }
     expect(out.paths).toEqual(["README.md"]);
     expect(await readFile(join(work, "README.md"), "utf8")).toContain("bun install");

@@ -1,6 +1,6 @@
 // A stand-in for Ollama's OpenAI-compatible API. Tests script the reply; nothing leaves the machine.
 export interface FakeOllama { url: string; requests: any[]; stop(): void }
-export function fakeOllama(reply: (body: any) => string | Response, models = ["qwen2.5-coder:7b"]): FakeOllama {
+export function fakeOllama(reply: (body: any) => string | Response, models = ["muse-glimmer"]): FakeOllama {
   const requests: any[] = [];
   const server = Bun.serve({
     port: 0, hostname: "127.0.0.1",

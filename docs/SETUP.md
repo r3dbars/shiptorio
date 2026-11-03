@@ -115,7 +115,7 @@ normalizers only attach evidence and exact route/Sentry hints.
 `HOSTED_SPARK_ASSEMBLER` is **off by default**. Set it to `1` only for an explicitly
 approved dev/demo fallback; the product's builders are local subscription agents.
 Without a builder, queued ore produces a resources bottleneck and a Next Move to connect
-Claude or ChatGPT. `/api/repos` lists installed repos after GitHub sign-in; `/api/sources`
+Meta Muse Code. `/api/repos` lists installed repos after GitHub sign-in; `/api/sources`
 reports setup steps after preview sign-in. `disconnect_source github` pauses that repo's
 mine; GitHub uninstallation remains a separate dashboard action.
 

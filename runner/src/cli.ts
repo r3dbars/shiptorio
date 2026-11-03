@@ -51,10 +51,14 @@ const authHome = await prepareAgentHome(root, () => {
 });
 const harnessPath = (h: Exclude<Job["harness"], "local">) => Bun.which(h === "codex" ? "codex" : h === "muse_code" ? "muse" : "claude");
 const localFile = Bun.file(resolve(root, "local-model.json"));
-const local = localModelConfig(process.env, await localFile.exists() ? await localFile.json() : null);
+const local = await (async () => {
+  try { return localModelConfig(process.env, await localFile.exists() ? await localFile.json() : null); }
+  catch (error) { showError(error); return null; } // a non-Meta or malformed local model is simply not offered
+})();
 const localStatus = local ? await detectLocalModel(local) : null;
-// Players are offered Codex or Muse Code. Claude Code stays wired for development, behind an explicit opt-in.
-const offered: Subscription[] = ["codex", "muse_code", ...(process.env.SHIPTORIO_ENABLE_CLAUDE === "1" ? ["claude_code" as const] : [])];
+// Players are offered Meta Muse Code only. Codex and Claude Code stay wired for development, each behind an
+// explicit, off-by-default opt-in (SHIPTORIO_ENABLE_CODEX=1, SHIPTORIO_ENABLE_CLAUDE=1), so no default path runs a non-Meta model.
+const offered: Subscription[] = ["muse_code", ...(process.env.SHIPTORIO_ENABLE_CODEX === "1" ? ["codex" as const] : []), ...(process.env.SHIPTORIO_ENABLE_CLAUDE === "1" ? ["claude_code" as const] : [])];
 const installedSubscriptions = offered.filter(h => harnessPath(h) && (!process.argv.includes("--codex-only") || h === "codex"));
 const busySubscriptions = new Set<Subscription>();
 let available: Job["harness"][] = [...installedSubscriptions, ...(localStatus?.ok && !process.argv.includes("--codex-only") ? ["local" as const] : [])];
@@ -76,7 +80,7 @@ async function command(args: string[], cwd: string, env = cleanEnv, timeout = 12
 if (process.argv[2] === "geothermal") {
   // bun run runner geothermal MODEL [URL]: save local-model settings, then check the endpoint answers.
   const config = localModelConfig({ SHIPTORIO_LOCAL_MODEL: process.argv[3] ?? "", SHIPTORIO_LOCAL_MODEL_URL: process.argv[4] ?? "" });
-  if (!config) throw new Error("Usage: runner geothermal MODEL [URL], e.g. runner geothermal qwen2.5-coder:7b");
+  if (!config) throw new Error("Usage: runner geothermal MODEL [URL], where MODEL is your local Muse Glimmer or Muse Spark Open tag");
   const status = await detectLocalModel(config);
   await Bun.write(resolve(root, "local-model.json"), JSON.stringify({ model: config.model, url: config.baseUrl }, null, 2) + "\n");
   console.log(status.ok ? "Your local model is ready.\nshiptorio-runner watch" : "Your local model was saved but is not ready.\nshiptorio-runner doctor");
@@ -104,7 +108,7 @@ if (process.argv[2] === "doctor") {
   const args = process.argv.slice(3).filter(arg => arg !== "--verbose");
   if (args.length && (args.length !== 2 || args[0] !== "--edit" || !["codex", "muse"].includes(args[1]))) throw new Error("Usage: shiptorio-runner doctor [--edit codex|muse]");
   const realEdit = args.length > 0;
-  const editAgent: "codex" | "muse_code" = args[1] === "muse" ? "muse_code" : "codex";
+  const editAgent: "codex" | "muse_code" = args[1] === "codex" && offered.includes("codex") ? "codex" : "muse_code";
   if (realEdit) console.log(`${agentName(editAgent)} will try one small test change without starting factory work.`);
   const checks = await diagnose({ harnesses: available, pairs: await connections(), auth: signedInHarness,
     editHarness: realEdit ? editAgent : undefined,
@@ -146,14 +150,14 @@ if (process.argv[2] === "doctor") {
       } finally { await boundary?.close(); await rm(dir, { recursive: true, force: true }); }
     } });
   for (const check of checks) console.log(verbose ? `${check.ok ? "PASS" : "FAIL"} ${check.check}: ${redactText(check.detail)}` : check.ok ? `${runnerCheckLabel(check.check)} passed.` : check.check.startsWith("sandbox:") ? `${runnerCheckLabel(check.check)} could not complete its safety check.\nshiptorio-runner doctor` : plainRunnerError(new Error(check.detail)));
-  if (!realEdit) for (const h of installedSubscriptions.some(h => h === "muse_code") ? installedSubscriptions.filter(h => h !== "claude_code") : ["codex" as const]) console.log(`${agentName(h)} has not tried a test change yet.\nshiptorio-runner doctor --edit ${h === "muse_code" ? "muse" : "codex"}`);
+  if (!realEdit) for (const h of installedSubscriptions.length ? installedSubscriptions.filter(h => h !== "claude_code") : ["muse_code" as const]) console.log(`${agentName(h)} has not tried a test change yet.\nshiptorio-runner doctor --edit ${h === "muse_code" ? "muse" : "codex"}`);
   process.exit(checks.every(c => c.ok) ? 0 : 1);
 }
 if (["setup", "login"].includes(process.argv[2])) {
-  if (!available.length) throw new Error(`Install Codex CLI or Muse Code first, then rerun the installer. See ${base}/docs/runner`);
+  if (!available.length) throw new Error(`Install Muse Code first, then rerun the installer. See ${base}/docs/runner`);
   if (process.argv[2] === "login") {
     const h = ({ claude: "claude_code", codex: "codex", muse: "muse_code" } as const)[process.argv[3] as "claude" | "codex" | "muse"] ?? null;
-    if (!h || !available.includes(h)) throw new Error("Use login codex or login muse, with that CLI installed");
+    if (!h || !available.includes(h)) throw new Error("Use login muse, with Muse Code installed");
     await loginHarness(h);
   }
   let ready = false;
