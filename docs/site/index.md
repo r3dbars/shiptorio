@@ -16,7 +16,7 @@ There's always a bottleneck, and it's usually waiting on one of your calls. Ship
 
 1. **Repo.** Your open GitHub issues wait here. You pick one to start.
 2. **Planner.** Shippy, powered by Meta Muse Spark, reads the issue and the code and writes a small plan: which files, what changes.
-3. **Builder.** Your own coding agent (Codex or Muse Code, on your own machine) builds it and opens a PR.
+3. **Builder.** Your own coding agent (Meta Muse Code, on your own machine) builds it and opens a PR.
 4. **Checks.** CI runs, plus a proof check that the fix really fixes the issue.
 5. **Review.** Shippy reviews the diff.
 6. **Gate.** You hold **Ship it** to merge.

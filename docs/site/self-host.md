@@ -8,7 +8,7 @@ order: 5
 
 <p class="lede">Your Cloudflare account. Your API keys. Your factory.</p>
 
-Shiptorio runs as one Cloudflare Worker with static assets, a SQLite Durable Object per repo, a D1 database and a KV namespace. Meta Muse Spark makes factory decisions using **your Meta API key**. Your local Codex or Muse Code subscription builds the changes through the [runner](/docs/runner).
+Shiptorio runs as one Cloudflare Worker with static assets, a SQLite Durable Object per repo, a D1 database and a KV namespace. Meta Muse Spark makes factory decisions using **your Meta API key**. Your local Muse Code subscription builds the changes through the [runner](/docs/runner).
 
 ## Before you start
 

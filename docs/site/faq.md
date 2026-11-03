@@ -12,15 +12,15 @@ A game over your GitHub repo: a pixel deck, Shippy the robot, and a line from is
 
 ## Does Shiptorio write my code?
 
-No. Shippy plans. Your own agents (Codex or Muse Code) write the code, on your machine, on your subscription. See [Connect your machine](/docs/runner).
+No. Shippy plans. Your own agents (Meta Muse Code) write the code, on your machine, on your subscription. See [Connect your machine](/docs/runner).
 
 ## Which agents work?
 
-Codex and Muse Code today, signed in on your own machine through the [runner](/docs/runner).
+Meta Muse Code today, signed in on your own machine through the [runner](/docs/runner).
 
 ## Who pays for what?
 
-Shippy's thinking runs on Shiptorio's Meta API key. The building runs on your own Codex or Muse Code subscription through the runner. GitHub is your existing account.
+Shippy's thinking runs on Shiptorio's Meta API key. The building runs on your own Muse Code subscription through the runner. GitHub is your existing account.
 
 ## Why is my factory paused at a quota?
 
@@ -48,7 +48,7 @@ Checks wants proof the fix works, not just that it builds. A code change needs a
 
 ## Why does nothing build?
 
-Probably no agent connected. Shippy can read and plan, but something has to build: connect a runner with Codex or Muse Code signed in. See [Connect your machine](/docs/runner).
+Probably no agent connected. Shippy can read and plan, but something has to build: connect a runner with Muse Code signed in. See [Connect your machine](/docs/runner).
 
 ## Why can't I sign in?
 

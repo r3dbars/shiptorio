@@ -9,20 +9,22 @@ or an exhausted budget stop the job; no automatic coding retry or merge follows.
 The runner polls outbound HTTPS, claims one lease and uses a fresh clone pinned to the
 planned commit. Its supervisor receives a short-lived installation token. The coding
 agent receives only its subscription environment, the plan, and the approved paths.
-Codex uses workspace-write with no approval bypass; Claude uses restricted file tools.
+Muse Code (the only builder players are offered) proposes edits with no tools and the supervisor applies them.
+The development-only Codex and Claude adapters (`SHIPTORIO_ENABLE_CODEX=1`, `SHIPTORIO_ENABLE_CLAUDE=1`, off by default)
+keep their own limits: Codex uses workspace-write with no approval bypass; Claude uses restricted file tools.
 The supervisor validates paths, regular files, secret patterns and patch size, then runs
 typecheck, tests and build. It commits one change and pushes only `shiptorio/runner-*`.
 The server checks the actual remote branch, commit ancestry and file scope before
 opening a PR. CI alone does not mark runner PRs ready to merge: independent proof,
 review and human merge remain required.
 
-**Local models (geothermal power):** a local OpenAI-compatible model (Ollama etc.) can build small, low-risk jobs for free. See [runner-local-models.md](runner-local-models.md).
+**Local models (geothermal power):** a local Meta open-weight model (Muse Glimmer or Muse Spark Open) behind an OpenAI-compatible server such as Ollama can build small, low-risk jobs for free. See [runner-local-models.md](runner-local-models.md).
 
 ## Operator commands
 
 ## Approve work in the game
 
-With this Mac's runner connected, new issues get a **Plan with Codex / Claude** card.
+With this Mac's runner connected, new issues get a **Plan with Muse Code** card.
 That requests read-only planning. Open **Review plan and files** to see the exact file
 scope, pinned commit, plan and checks. Only **Approve and build** makes that plan
 claimable. **Not now** defers it without starting an agent. Replayed clicks are ignored;
