@@ -61,8 +61,8 @@ export const HUD = {
     place: "Place",
     placeLabel: (who: string) => `Place another ${who} assembler`,
     placeTitle: (who: string) => `Place another ${who} assembler (A)`,
-    placeNeedsPower: "Plug in Claude or ChatGPT to place builders",
-    placeNeedsPowerTitle: "Plug in Claude or ChatGPT first",
+    placeNeedsPower: "Plug in Muse Code to place builders",
+    placeNeedsPowerTitle: "Plug in Muse Code first",
     tools: "TOOLS",
   },
   /** The floor card, top left: the factory's numbers in one row, then what the colored items are. */
@@ -115,7 +115,7 @@ export const LINE = {
 
 export const POWER = {
   title: "Power",
-  intro: "Your Claude and ChatGPT sign-ins are the power. More sign-ins, more builders. The planner picks what they build.",
+  intro: "Your Muse Code sign-in is the power. More power, more builders. The planner picks what they build.",
   introGeo: "Your sign-ins and your own computer power the builders. The planner decides what each one builds.",
   planner: "Planner",
   plannerTag: "steam plant",
@@ -129,8 +129,7 @@ export const POWER = {
   pair: "pair the runner",
   pairTitle: "Run ~/.local/bin/shiptorio-runner pair on your machine to plug it in",
   slots: [
-    { harness: "claude_code", name: "Claude Code" },
-    { harness: "codex", name: "Codex" },
+    { harness: "muse_code", name: "Meta Muse Code" },
   ] as const,
 };
 
@@ -158,7 +157,7 @@ export const POWER_COPY: PanelCopy = {
   zone: "Power · AI compute",
   name: "Power plants",
   tag: ["green", "your sign-ins"],
-  what: "Your Claude and ChatGPT sign-ins are power plants. Each subscription plant shows whether its agent is signed in and ready; your plan’s usage limits still apply. Every check spends power, so more checks cost more. Heavy checks go where mistakes are expensive; docs stay cheap. A model on your own computer is geothermal: free, but small and capped. The planner runs on its own steam plant.",
+  what: "Your Muse Code sign-in is a power plant. The subscription plant shows whether its agent is signed in and ready; your plan’s usage limits still apply. Every check spends power, so more checks cost more. Heavy checks go where mistakes are expensive; docs stay cheap. A model on your own computer is geothermal: free, but small and capped. The planner runs on its own steam plant.",
   actions: [
     { id: "sign-in", label: "Sign in with another plan", recommended: false },
     { id: "hold", label: "Hold low-value work", recommended: false },
@@ -185,7 +184,7 @@ export const MACHINE_COPY: Partial<Record<Machine["type"], PanelCopy>> = {
     zone: "2 · Build",
     name: "Assembler",
     tag: ["amber", "your subscription"],
-    what: "Your Claude Code or Codex, on your own subscription, builds what the planner planned and opens a PR. It has to bring proof, not just say done.",
+    what: "Your Meta Muse Code, on your own subscription, builds what the planner planned and opens a PR. It has to bring proof, not just say done.",
     actions: [
       { id: "upgrade", label: "Upgrade to MK2 (more jobs at once)", recommended: true },
       { id: "pause", label: "Pause this assembler", recommended: false },
@@ -234,8 +233,7 @@ export const YOURS = {
   moveDown: "Move down",
   moveRight: "Move right",
   agents: [
-    { harness: "claude_code", name: "Claude Code" },
-    { harness: "codex", name: "Codex" },
+    { harness: "muse_code", name: "Meta Muse Code" },
   ] as const,
 };
 

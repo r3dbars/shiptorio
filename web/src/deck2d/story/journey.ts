@@ -10,7 +10,7 @@ export const JOURNEY_BEATS: Beat[] = [
     then: { roll: true, to: "planner" } },
   { title: "Here's my plan", line: "Fix the link in docs/STORE.md so it points to SHIPPING.md. One file, docs only. Build it?", yes: "Build it", at: "planner", pose: "talk",
     then: { roll: true, to: "review" } },
-  { title: "Approve the fix?", line: "Codex wrote it and opened a pull request. Your checks passed. The shipping link works now.", yes: "Approve", at: "review", pose: "point",
+  { title: "Approve the fix?", line: "Muse Code wrote it and opened a pull request. Your checks passed. The shipping link works now.", yes: "Approve", at: "review", pose: "point",
     then: { roll: true, to: "gate" } },
   { title: "Ship it?", line: "The pull request is ready to merge. Press and hold to ship it to your users.", yes: "Hold to ship", at: "gate", hold: true,
     then: { ship: true } },

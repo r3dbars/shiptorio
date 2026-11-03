@@ -6,8 +6,9 @@ type Repo = { fullName: string };
 type Issue = { id: number; number: number; title: string; body: string };
 type Suggested = { number: number; because: string; by: 'spark' | 'fallback' };
 type Pane = 'repos' | 'issues' | 'power' | 'setup' | 'disconnect';
-// The two engines a player can plug in, in preference order. Claude Code stays a development-only runner option.
-const ENGINES = [['codex', 'Codex'], ['muse_code', 'Muse Code']] as const;
+// Engines in preference order. Muse Code is the player's engine; Codex only appears when a developer opted in on
+// their runner (SHIPTORIO_ENABLE_CODEX=1). Claude Code is a development-only runner option and never counts here.
+const ENGINES = [['muse_code', 'Muse Code'], ['codex', 'Codex']] as const;
 const readyEngine = (status: RunnerStatus | null) => status?.online ? ENGINES.find(([h]) => status.harnesses.includes(h))?.[1] : undefined;
 type Options = { repo?: string; origin: string; path: string; fetch?: typeof fetch; navigate: (url: string) => void; askPassword?: (next: string) => void; copy: (text: string | Promise<string>) => Promise<void>; onStart?: (id: string) => void; now?: () => number };
 
@@ -112,14 +113,14 @@ export function createConnections(o: Options) {
       yes = issue ? 'Plan' : nextPage ? 'More issues' : 'Refresh'; no = issue ? 'Next issue' : 'Close';
     } else if (pane === 'setup') {
       title = copied ? 'Paste it into Terminal' : 'Copy the setup line';
-      line = copyFailed ? `Copy this into Terminal: ${command}` : 'Then press Return. Shippy moves on by itself once Codex or Muse Code is plugged in.';
+      line = copyFailed ? `Copy this into Terminal: ${command}` : 'Then press Return. Shippy moves on by itself once Muse Code is plugged in.';
       yes = copied ? 'Copy again' : 'Copy setup'; no = 'Close';
     } else if (pane === 'disconnect') {
-      title = 'Engine options'; line = 'Unplug this engine from the factory. Your Codex or Muse Code sign-in stays on your computer.'; yes = 'Unplug'; no = 'Close';
+      title = 'Engine options'; line = 'Unplug this engine from the factory. Your Muse Code sign-in stays on your computer.'; yes = 'Unplug'; no = 'Close';
     } else {
       const ready = readyEngine(status);
-      title = !status?.paired ? 'Connect your coding engine' : !status.online ? 'Your engine is offline' : !ready ? 'Sign in to Codex or Muse Code' : status.working ? 'Engine is busy' : `${ready} engine is ready`;
-      line = !status?.paired ? 'Your own Codex or Meta Muse Code subscription writes the code, on your computer. One line in Terminal plugs it in.' : !status.online ? 'Run shiptorio-runner watch on your computer so the factory can hand your engine work.' : !ready ? 'Run shiptorio-runner login codex (or login muse) on your computer so it can write code for you.' : status.working ? `Working on ${status.working.title}.` : `${ready} is ready. Pick an issue so the factory has something to build.`;
+      title = !status?.paired ? 'Connect your coding engine' : !status.online ? 'Your engine is offline' : !ready ? 'Sign in to Muse Code' : status.working ? 'Engine is busy' : `${ready} engine is ready`;
+      line = !status?.paired ? 'Your own Meta Muse Code subscription writes the code, on your computer. One line in Terminal plugs it in.' : !status.online ? 'Run shiptorio-runner watch on your computer so the factory can hand your engine work.' : !ready ? 'Run shiptorio-runner login codex (or login muse) on your computer so it can write code for you.' : status.working ? `Working on ${status.working.title}.` : `${ready} is ready. Pick an issue so the factory has something to build.`;
       yes = !status?.paired ? 'Copy setup' : ready && !status.working ? 'See issues' : 'Refresh'; no = status?.paired ? 'Options' : 'Close';
     }
     return { id: `connection-${revision}-${displayRevision}-${pane}`, stop: pane === 'power' || pane === 'setup' || pane === 'disconnect' ? 'builder' : 'repo', title, line, yes, no, dots: null };
