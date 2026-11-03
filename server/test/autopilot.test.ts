@@ -10,7 +10,7 @@ const card = (tool: string, args: Record<string, unknown> = {}, extra: Partial<M
 
 describe("autopilot allowlist", () => {
   it("taps plan, approve, launch and permit cards", () => {
-    for (const c of [card("plan_runner_job", { harness: "codex" }), card("approve_runner_job", { jobId: "j" }), card("request_merge", { pr: 3 }), card("set_autonomy", { district: "docs", permit: true })])
+    for (const c of [card("plan_runner_job", { harness: "muse_code" }), card("approve_runner_job", { jobId: "j" }), card("request_merge", { pr: 3 }), card("set_autonomy", { district: "docs", permit: true })])
       expect(allowedTap(c)).toEqual({ optionId: "go", why: expect.any(String) });
   });
   it("never launches a locked card or overrules a failed station", () => {
@@ -21,7 +21,7 @@ describe("autopilot allowlist", () => {
     const held = new Set(["gh-7"]);
     expect(allowedTap({ ...card("request_merge", { pr: 13 }), itemId: "gh-7" }, held)).toHaveProperty("skip");
     expect(allowedTap({ ...card("request_merge", { pr: 12 }), itemId: "gh-5" }, held)).toHaveProperty("optionId");
-    expect(allowedTap({ ...card("plan_runner_job", { harness: "codex" }), itemId: "gh-7" }, held)).toHaveProperty("optionId");
+    expect(allowedTap({ ...card("plan_runner_job", { harness: "muse_code" }), itemId: "gh-7" }, held)).toHaveProperty("optionId");
   });
   it("leaves research, sources, dismissals and permit revokes to the human", () => {
     for (const c of [card("research", { tech: "lint" }), card("connect_source", { kind: "claude" }), card("set_autonomy", { district: "docs", permit: false })])
@@ -29,6 +29,6 @@ describe("autopilot allowlist", () => {
   });
   it("sends a scarred PR back to the rework belt, not overrule", () => {
     const move = reworkMove({ id: "gh-1", title: "x", prNumber: 4, scars: [{ station: "verify", strike: 1 }] } as any);
-    expect(allowedTap(move)).toEqual({ optionId: "rework-codex", why: "plan_runner_job" });
+    expect(allowedTap(move)).toEqual({ optionId: "rework-muse_code", why: "plan_runner_job" });
   });
 });

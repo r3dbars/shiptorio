@@ -316,7 +316,7 @@ export function proofComment(proof: RegressionProof): string {
   return [`<!-- shiptorio-proof:${proof.headSha} -->`, `### Proof check — ${proof.headSha.slice(0, 8)}`, "", `Base fails: **${proof.failsOnBase}**; head passes: **${proof.passesOnHead}**.`, `Base: ${proof.baseSha}`, "", `Command: ${proof.command}`, "", `${fence}text`, proof.logTail.replace(/`/g, "'"), fence].join("\n");
 }
 
-export function reworkMove(item: Item, now = Date.now(), harness: "codex" | "claude_code" | "muse_code" = "codex"): Move {
+export function reworkMove(item: Item, now = Date.now(), harness: "codex" | "claude_code" | "muse_code" = "muse_code"): Move {
   const scar = item.scars?.at(-1);
   const check = scar?.check ? techById(scar.check) : undefined;
   const station = check?.name ?? GAUNTLET.find((g) => g.kind === scar?.station)?.name ?? "The gauntlet";

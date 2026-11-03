@@ -2,7 +2,7 @@
 // for the plan numbers (the landing page's hidden #pricing block mirrors them, shown with ?pricing=1) and the
 // unit-cost math behind them.
 //
-// What we pay for is the brain. Building runs on the player's own Claude / Codex sign-ins, so a launch costs us
+// What we pay for is the brain. Building runs on the player's own Meta Muse Code sign-in, so a launch costs us
 // only the Spark calls that sort, plan, review and judge it, plus a little Cloudflare time.
 
 export interface Plan {

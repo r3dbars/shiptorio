@@ -1035,7 +1035,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         // One PR that can't be read right now must not block dealing the next issue's plan below.
         const target = await refreshTarget(token, this.meta.repo, item.prNumber!, item.branch!, s.baseBranch).catch((error: unknown) => { log("warn", "factory.refresh_target_skipped", { itemId: item.id, error: error instanceof Error ? error.message : String(error) }); return null; });
         if (!target || !ownsRefreshPr(jobs, item, this.meta.repo, target.headSha)) continue;
-        const harness = presence.harnesses.includes("codex") ? "codex" : presence.harnesses.find(h => h !== "local");
+        const harness = presence.harnesses.includes("muse_code") ? "muse_code" : presence.harnesses.find(h => h !== "local");
         if (!harness) continue;
         await this.publishRunnerMove({ id: `refresh-base:${item.id}:${target.headSha}:${target.baseSha}`, title: `Update #${item.prNumber} to latest ${target.baseBranch}`, why: "The main branch advanced. Review a fresh plan before your local agent rebuilds and verifies the same PR.", stage: "build", kind: "build", itemId: item.id, createdAt: Date.now(), options: [{ id: "refresh-base", label: "Plan update and verify again", recommended: true, actions: [{ tool: "plan_runner_job", args: { harness, refreshBase: true }, reason: "Request a new plan; replacing the existing branch requires your separate approval." }] }, { id: "decline", label: "Later", recommended: false, actions: [] }] });
         return;
@@ -1326,7 +1326,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (active) return { waitingFor: active.prNumber };
     const signal = await freshIssueInput(await installationToken(this.env, this.meta.installationId), this.meta.repo, number);
     await this.ingestSignal(signal);
-    const job = await this.enqueueRunner({ itemId: `gh-${number}`, harness: "codex", allowedPaths: [], needsApproval: true }, requestedBy);
+    const job = await this.enqueueRunner({ itemId: `gh-${number}`, harness: "muse_code", allowedPaths: [], needsApproval: true }, requestedBy);
     return { jobId: job.id };
   }
 
@@ -1410,7 +1410,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       } catch { pick = ruleRoute(c, available); }
     }
     const final = pick && enforceRoute(pick.harness as RunnerJob["harness"], c, available);
-    if (!final) throw new Error(`${guard.reason} Sign in to Claude or Codex on your runner to build it.`);
+    if (!final) throw new Error(`${guard.reason} Sign in to Muse Code on your runner to build it.`);
     job.harness = final.harness;
     job.route = `${final.harness === "local" ? "geothermal, your computer (free)" : `solar, ${harnessLabel(final.harness)}`}. ${final.why || pick!.why}`.trim();
     this.broadcast({ type: "log", level: "info", text: final.vetoed ? `Too big for local power: ${guard.reason} Moved to ${harnessLabel(final.harness)}.` : `Power: ${job.route}`, at: Date.now(), actor: "spark", tool: "set_power", reason: final.why || pick!.why || "Routing rule", approvedBy: "player", itemId: item.id });
@@ -3013,10 +3013,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           if (waiting || planningHold(await this.ctx.storage.get<PlanningRetry>(`planningRetry:${item.id}`))) continue;
         }
         await this.accountPut(`gauntletOffered:${item.id}`, item.scars.length);
-        const last = (await this.runnerJobs()).filter(j => j.itemId === item.id).at(-1)?.harness ?? "codex";
+        const last = (await this.runnerJobs()).filter(j => j.itemId === item.id).at(-1)?.harness ?? "muse_code";
         // A scarred job never goes back to geothermal: the retry takes a subscription.
         const subs = (await this.ctx.storage.get<{ harnesses: RunnerJob["harness"][] }>("runnerPresence"))?.harnesses.filter(h => h !== "local") ?? [];
-        const builder = last !== "local" ? last : subs[0] ?? "codex";
+        const builder = last !== "local" ? last : subs[0] ?? "muse_code";
         await this.publishGauntletMove(reworkMove(item, now, builder as "codex" | "claude_code" | "muse_code"));
         continue;
       }
@@ -4024,7 +4024,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
         });
         if (!s.move) {
-          s.move = { id: crypto.randomUUID(), title: "Your computer writes the code. Plug it in to start building.", why: "The factory plans the work. Codex or Meta Muse Code on your computer writes the code: paste one line, once.", stage: "resources", itemId: item.id, createdAt: now, options: [{ id: "connect", label: "Connect a local agent", recommended: true, actions: [{ tool: "connect_source", args: { kind: "claude" }, reason: "No subscription builder is connected." }] }] };
+          s.move = { id: crypto.randomUUID(), title: "Your computer writes the code. Plug it in to start building.", why: "The factory plans the work. Meta Muse Code on your computer writes the code: paste one line, once.", stage: "resources", itemId: item.id, createdAt: now, options: [{ id: "connect", label: "Connect a local agent", recommended: true, actions: [{ tool: "connect_source", args: { kind: "claude" }, reason: "No subscription builder is connected." }] }] };
           await this.publishDecision(s.move);
         }
         continue;
