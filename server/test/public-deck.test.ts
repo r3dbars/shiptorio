@@ -42,8 +42,23 @@ test("the password unlocks the account routes exactly as before", async () => {
   expect((await visit("/index.html", { headers: { cookie: cookie + "x" } })).status).toBe(401);
 });
 
-test("shiptorio.com keeps its landing page and gates the deck", async () => {
-  for (const path of ["/deck", "/deck?source=live"]) expect((await visit(path, undefined, "shiptorio.com")).status, path).toBe(401);
-  // Only the deck's static art is public there, for /judge's story.
-  expect((await visit("/deck/art/sky.webp", undefined, "shiptorio.com")).status).toBe(200);
+// shiptorio.com is the public tutorial + waitlist since 2026-11-03 (Justin): same front door as .dev, same gates.
+test("shiptorio.com opens the tutorial and still gates every account route", async () => {
+  const door = await visit("/", undefined, "shiptorio.com");
+  expect(door.status).toBe(302);
+  expect(door.headers.get("location")).toBe("/deck?source=live");
+  for (const path of ["/deck", "/deck?source=live", "/deck/art/sky.webp"]) expect((await visit(path, undefined, "shiptorio.com")).status, path).toBe(200);
+  for (const path of ["/api/me", "/api/repos", "/api/repos/a/b/factory", "/connect/a/b", "/admin", "/setup", "/index.html"]) {
+    expect((await visit(path, undefined, "shiptorio.com")).status, path).toBe(401);
+  }
+});
+
+test("a self-hosted install keeps its landing page and gates the deck", async () => {
+  for (const path of ["/deck", "/deck?source=live"]) expect((await visit(path, undefined, "factory.example")).status, path).toBe(401);
+  expect((await visit("/deck/art/sky.webp", undefined, "factory.example")).status).toBe(200);
+});
+
+test("the production deploy turns every Meta model call off (shiptorio.com is tutorial + waitlist only)", async () => {
+  const { scripts } = await Bun.file(new URL("../package.json", import.meta.url)).json();
+  expect(scripts.deploy).toContain("wrangler deploy --name shiptorio --var SPARK_DISABLED:1 ");
 });

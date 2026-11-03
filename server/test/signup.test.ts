@@ -53,7 +53,8 @@ test('Justin approves pending user from /admin; pending cannot access assets, AP
   const friend=await signedInCookie(e,'new-player');
   await addPending(e as never,'new-player','github');
   expect((await app.fetch(req('/api/repos',friend),e as never)).status).toBe(403);
-  expect(await (await app.fetch(req('/',friend),e as never)).text()).toContain('pending approval');
+  // A self-hosted install's "/" (shiptorio.com and .dev open the deck to everyone instead).
+  expect(await (await app.fetch(new Request('https://factory.example/',{headers:{cookie:friend}}),e as never)).text()).toContain('pending approval');
   expect((await app.fetch(req('/admin',friend,{action:'approve',identity:'new-player'}),e as never)).status).toBe(403);
   const approved=await app.fetch(req('/admin',admin,{action:'approve',identity:'new-player'}),e as never);
   expect(approved.status).toBe(302);

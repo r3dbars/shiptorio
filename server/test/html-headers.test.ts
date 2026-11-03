@@ -7,7 +7,8 @@ import { membershipCache, unlimitedFactory } from "./browser-fixture";
 mock.module("cloudflare:workers", () => ({ DurableObject: class { constructor(public ctx: unknown, public env: unknown) {} } }));
 const { testApp: app } = await import("./app-fixture");
 const { accessFastPath } = await import("../src/index");
-const origin = "https://shiptorio.com";
+// A self-hosted install: shiptorio.com and shiptorio.dev open the deck to everyone (redirect.ts DECK_HOSTS).
+const origin = "https://factory.example";
 
 function expectHeaders(response: Response, path: string) {
   expect(response.headers.get("content-type")).toContain("text/html");

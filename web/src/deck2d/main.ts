@@ -21,7 +21,7 @@ import { TOURED_KEY, createFirstRun } from "./data/firstrun";
 import { createTour } from "./story/tour";
 import { shipFeel } from "./story/ship";
 import { JOURNEY } from "./story/journey";
-import { askPassword } from "./password";
+import { askPassword, askWaitlist, WAITLIST_HOSTS } from "./password";
 import type { AttentionView } from "./stations/attention";
 
 /** Keyboard and screen-reader access for the existing card; it never invents an action. */
@@ -228,7 +228,10 @@ const seed = Number(params.get("seed")) || 0;
   const connections = createConnections({
     repo: signedIn ? params.get("repo") || undefined : undefined, origin: location.origin, path: location.pathname + location.search,
     navigate: url => { location.href = url; }, copy: copyText,
-    askPassword: next => askPassword(document, next, url => { location.href = url; }),
+    askPassword: next => {
+      const password = () => askPassword(document, next, url => { location.href = url; });
+      if (WAITLIST_HOSTS.has(location.hostname)) askWaitlist(document, password); else password();
+    },
     onStart: id => (source as DeckSource & { focusItem?: (id: string) => void }).focusItem?.(id),
   });
   let source: DeckSource;
