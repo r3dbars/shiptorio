@@ -5,7 +5,8 @@ test("runner errors explain the problem before one next command", () => {
   for (const [error, expected] of [
     ["Build lease expired; job 1234", "The build ran out of time; approve a new attempt in Shiptorio."],
     ["Grant revoked for private-id", "This computer needs to reconnect to your factory.\nshiptorio-runner pair"],
-    ["Sign-in expired", "Sign in to Codex again.\nshiptorio-runner login codex"],
+    ["Sign-in expired", "Sign in to Muse Code again.\nshiptorio-runner login muse"],
+    ["Codex sign-in expired", "Sign in to Codex again.\nshiptorio-runner login codex"],
     ["ECONNRESET secret=do-not-print", "The runner could not connect.\nshiptorio-runner watch"],
   ]) expect(plainRunnerError(new Error(error))).toBe(expected);
 });

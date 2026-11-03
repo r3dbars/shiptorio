@@ -2,8 +2,9 @@ import type { CheckSandbox } from "./sandbox";
 import { localFiles } from "./local-files";
 import { lookup } from "node:dns/promises";
 
-// Geothermal power: a model on the player's own hardware (Ollama, llama.cpp server, LM Studio, MLX)
-// behind an OpenAI-compatible endpoint. Free and always on, but small, so it only gets small jobs.
+// Geothermal power: a Meta open-weight model (Muse Glimmer or Muse Spark Open) on the player's own hardware,
+// served by Ollama, llama.cpp server, LM Studio or MLX behind an OpenAI-compatible endpoint.
+// Free and always on, but small, so it only gets small jobs. Off unless the player configures it.
 export interface LocalModelConfig { baseUrl: string; model: string }
 export const OLLAMA_URL = "http://localhost:11434/v1";
 /** Runner-side guardrails. The server routes conservatively too; this is the second lock. */
@@ -28,11 +29,19 @@ export function assertLocalEndpoint(raw: string): string {
   return url.toString().replace(/\/+$/, "");
 }
 
+/** Shiptorio only runs Meta models: geothermal accepts Muse Glimmer or Muse Spark Open, by whatever tag the local server uses. */
+export const META_OPEN_WEIGHT = /(?:^|[\/:_.-])(?:muse[-_.]?)?(?:glimmer|spark[-_.]?open)(?=$|[\/:_.@-])/i;
+export function assertMetaOpenWeight(model: string): string {
+  if (!META_OPEN_WEIGHT.test(model)) throw new Error("Geothermal only runs Meta open-weight models (Muse Glimmer or Muse Spark Open)");
+  return model;
+}
+
 /** Env vars win; otherwise `local-model.json` ({ "model", "url" }) in the runner root, which survives re-pairing. */
 export function localModelConfig(env: NodeJS.ProcessEnv, file?: { model?: unknown; url?: unknown } | null): LocalModelConfig | null {
   const model = (env.SHIPTORIO_LOCAL_MODEL || (typeof file?.model === "string" ? file.model : ""))?.trim();
   if (!model) return null;
   if (!/^[\w.:/@-]{1,120}$/.test(model)) throw new Error("Local model name has unexpected characters");
+  assertMetaOpenWeight(model);
   const url = env.SHIPTORIO_LOCAL_MODEL_URL || (typeof file?.url === "string" ? file.url : "");
   return { baseUrl: assertLocalEndpoint(url.trim() || OLLAMA_URL), model };
 }

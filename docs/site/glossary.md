@@ -14,7 +14,7 @@ Every station has one name, and the game uses it everywhere: on the deck, on car
 | --- | --- |
 | **Repo** | Your open GitHub issues wait here |
 | **Planner** | Shippy reads an issue and writes a plan |
-| **Builder** | Your agent (Codex or Muse Code) builds the change and opens a PR |
+| **Builder** | Your agent (Meta Muse Code) builds the change and opens a PR |
 | **Checks** | The CI check and the proof check run on the PR |
 | **Review** | Shippy reviews the diff |
 | **Gate** | You decide: hold Ship it to merge |

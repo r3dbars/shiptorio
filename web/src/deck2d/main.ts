@@ -44,7 +44,7 @@ export function wireDeckAccessibility(canvas: HTMLCanvasElement, host: HTMLEleme
     if (e.key === "Escape") {
       e.preventDefault(); face.querySelector<HTMLButtonElement>(".later")?.click();
     } else if (e.key === "Enter" && !e.repeat && target && face.contains(target) && !target.closest("button,a")) {
-      // Only when the card has focus: a stray Enter elsewhere must not start a Codex build.
+      // Only when the card has focus: a stray Enter elsewhere must not start a Muse Code build.
       e.preventDefault();
       const primary = face.querySelector<HTMLButtonElement>(".approve");
       if (!primary) return;
@@ -307,7 +307,7 @@ const seed = Number(params.get("seed")) || 0;
   const city = cityMod ? (cityMod.createCity as (art: ArtLoader, bus: DeckBus, host: HTMLElement) => CityModule)(art, bus, document.body) : undefined;
   const inspector = createMachineInteraction(machines ? id => { if (id === machines.machine) machines.setMode("working"); } : undefined);
   if (want === "live" && signedIn && !params.has("repo")) connections.open("repo");
-  // The live first run after sign-in (the guest already met Shippy in the tour): picking a repo and connecting Codex
+  // The live first run after sign-in (the guest already met Shippy in the tour): picking a repo and connecting Muse Code
   // each build the next stations, one at a time, with one plain line each.
   // New accounts only (no repo yet, or the onboarding hand-off); ?firstrun=1 replays it.
   const repo = signedIn ? params.get("repo") ?? "" : "";

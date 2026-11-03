@@ -180,7 +180,7 @@ export const SCENARIOS = {
   // Judge replay uses the ordinary protocol and gauntlet; captions live outside the map.
   judge: {
     districts: SHOP_DISTRICTS,
-    harness: "claude_code",
+    harness: "muse_code",
     ores: [
       { at: 2, title: "TypeError: cart.total is undefined", kind: "bug", district: "checkout", source: "sentry", users: 112,
         ask: "Guard cart.total and prove coupon checkout works with an empty cart.",
@@ -203,7 +203,7 @@ export const SCENARIOS = {
   // then nothing worth a card. Continue clears each one; Later moves on without nagging.
   brain: {
     districts: SHOP_DISTRICTS,
-    harness: "claude_code",
+    harness: "muse_code",
     // One late ore, once the brain has dealt its cards: an earlier one's launch card would jump the brain's.
     ores: [{ at: 45, title: "Clarify the shipping FAQ", kind: "cleanup", district: "docs" }],
     brain: {
@@ -258,7 +258,7 @@ export const SCENARIOS = {
   // The heal cascade from docs/PRODUCT.md, beat for beat. Also the demo's backup replay.
   heal: {
     districts: SHOP_DISTRICTS,
-    harness: "claude_code",
+    harness: "muse_code",
     ores: [
       {
         at: 2,
@@ -269,7 +269,7 @@ export const SCENARIOS = {
         users: 112,
         failAt: "verify",
         failFirst: "passed CI, but the crash still happens with an empty cart (repro attached)",
-        ask: "Send it to your Claude Code assembler with the plan: guard cart.total, add a coupon-on-empty-cart test.",
+        ask: "Send it to your Muse Code assembler with the plan: guard cart.total, add a coupon-on-empty-cart test.",
         spark: [
           { tool: "get_sentry_issue", text: "New error on /checkout: TypeError: cart.total is undefined, 112 users", reason: "Sentry alert" },
           { tool: "triage", text: "Triaged as a bug in checkout, value 112 users", reason: "Every checkout with a coupon fails" },
@@ -292,7 +292,7 @@ export const SCENARIOS = {
   // The drop on /checkout is the same problem as the Sentry error, so it folds in.
   mines: {
     districts: SHOP_DISTRICTS,
-    harness: "claude_code",
+    harness: "muse_code",
     ores: [
       {
         at: 2,
@@ -337,7 +337,7 @@ export const SCENARIOS = {
   // launches drafts an "it's fixed" reply.
   support: {
     districts: SHOP_DISTRICTS,
-    harness: "claude_code",
+    harness: "muse_code",
     rockets: 3,
     support: SUPPORT_MAIL,
     ores: [
@@ -357,7 +357,7 @@ export const SCENARIOS = {
   // fires the same error again. The fix rides the rework belt with an orbit scar and /checkout loses its permit.
   orbit: {
     districts: SHOP_DISTRICTS,
-    harness: "claude_code",
+    harness: "muse_code",
     permits: ["checkout"],
     ores: [
       {
@@ -378,7 +378,7 @@ export const SCENARIOS = {
   // station calls a lift. Then /pricing → /signup slips, the planner tries shorter signup copy, and it's a wash.
   growth: {
     districts: GROWTH_DISTRICTS,
-    harness: "claude_code",
+    harness: "muse_code",
     ores: [{ at: 12, title: "Fix typo in shipping FAQ", kind: "cleanup", district: "docs" }],
     growth: [
       {
@@ -438,7 +438,7 @@ export const SCENARIOS = {
   },
   checkin: {
     districts: SHOP_DISTRICTS,
-    harness: "claude_code",
+    harness: "muse_code",
     checkin: true,
     // the night before you opened the app: four PRs shipped, and #143 cleared the gauntlet and waits on you
     rockets: 12,
@@ -455,7 +455,7 @@ export const SCENARIOS = {
         title: "CSV export is empty",
         kind: "bug",
         district: "api",
-        ask: "3 customers asked. Found it: the export reads the wrong date column. Build it on Claude Code?",
+        ask: "3 customers asked. Found it: the export reads the wrong date column. Build it on Muse Code?",
         spark: [{ tool: "triage", text: "Triaged \"CSV export is empty\" as a bug in /api, 3 customers asked", reason: "issue + 2 emails" }],
       },
       { at: 6, title: "Fix typo in shipping FAQ", kind: "cleanup", district: "docs" },
@@ -478,10 +478,10 @@ export const SCENARIOS = {
     ],
   },
   // Geothermal power (docs/PRODUCT.md power table): the runner found a local model on your computer, so a free,
-  // capped geothermal plant sits next to the Claude solar plant. The planner routes the small, low-risk docs fix
-  // to it and the bigger bug to Claude. Both ride the whole gauntlet to a rocket.
+  // capped geothermal plant sits next to the Muse Code solar plant. The planner routes the small, low-risk docs fix
+  // to it and the bigger bug to Muse Code. Both ride the whole gauntlet to a rocket.
   geothermal: {
-    harness: "claude_code",
+    harness: "muse_code",
     geothermal: true,
     ores: [
       {
@@ -497,7 +497,7 @@ export const SCENARIOS = {
         kind: "bug",
         district: "web",
         users: 42,
-        route: { to: "claude_code", why: "a bug across 4 files with 42 users waiting, too big and risky for the local model" },
+        route: { to: "muse_code", why: "a bug across 4 files with 42 users waiting, too big and risky for the local model" },
       },
     ],
   },
@@ -505,7 +505,7 @@ export const SCENARIOS = {
   // cards cue each beat (station_action "intro"), and the ore keeps coming from INTRO_ORE once the line stands.
   intro: {
     districts: SHOP_DISTRICTS,
-    harness: "claude_code",
+    harness: "muse_code",
     onboard: true,
     intro: true,
     ores: [],
@@ -516,7 +516,7 @@ export const SCENARIOS = {
   // until the first rocket; after that it's the normal demo shop.
   buildout: {
     districts: SHOP_DISTRICTS,
-    harness: "claude_code",
+    harness: "muse_code",
     buildout: true,
     ores: [],
   },
@@ -525,13 +525,13 @@ export const SCENARIOS = {
   // moves, approve twice more and it's automatic.
   "deck-watch": {
     districts: SHOP_DISTRICTS,
-    harness: "claude_code",
+    harness: "muse_code",
     ores: [{ at: 2, title: "Fix checkout on Safari", kind: "bug", district: "checkout",
       ask: "Build the checkout fix.", failAt: "ci", failFirst: "Checkout test failed. Repair the payment retry before shipping." }],
   },
   deck2d: {
     districts: SHOP_DISTRICTS,
-    harness: "claude_code",
+    harness: "muse_code",
     ores: [
       { at: 2, title: "Fix checkout bug on Safari", kind: "bug", district: "checkout", ask: "Build the fix: await the payment intent before enabling the button." },
       { at: 6, title: "Cart badge shows a stale count", kind: "bug", district: "cart", ask: "Build the fix: refresh the badge when the cart changes." },
@@ -580,7 +580,7 @@ const BUILDOUT_ORDER: BuildoutStep[] = ["tunnel", "boiler", "builder", "issue", 
 const BUILDOUT_ISSUE = { number: 1, title: STARTER_ISSUE.title, kind: "cleanup", district: "docs" } as const;
 const BUILDOUT_PLAN = ["Read the README and package scripts", 'Add a "Run it locally" section: install, env, dev server', "Check the commands run on a clean clone"];
 
-const SOLAR_NAME: Partial<Record<Harness, string>> = { claude_code: "Claude", codex: "ChatGPT" };
+const SOLAR_NAME: Partial<Record<Harness, string>> = { muse_code: "Meta Muse Code" };
 const GEO_PLANT = "geo-local"; // the runner's local model, same id the live server uses
 
 // The stations in line order, with the panel actions from docs/loop.html. caught seeds "this week".
@@ -620,8 +620,8 @@ const WATCH_TICKS = 10; // orbit watch, sim-sized: "24 hours" after a launch
 const COMEBACK_TICKS = 4; // a scripted comeback trips orbit watch this long after the launch
 
 function initialState(sc: Scenario): FactoryState {
-  // Spark never writes code: without a scenario harness, the player is signed in with Claude
-  const harness = sc.harness ?? "claude_code";
+  // Spark never writes code: without a scenario harness, the player is signed in with Muse Code
+  const harness = sc.harness ?? "muse_code";
   // Spark's steam plant powers the brain. A subscription (solar) powers the assemblers, when there is one.
   const plant = harness === "spark" ? "steam-spark" : `solar-${harness}`;
   const machines: Machine[] = [
@@ -642,7 +642,7 @@ function initialState(sc: Scenario): FactoryState {
     power.push({ id: plant, kind: "solar", name: SOLAR_NAME[harness] ?? harness, level: 0.9, online: true });
   }
   if (sc.geothermal) {
-    // the local model gets its own assembler under the Claude one, and the plants line up in a row below them
+    // the local model gets its own assembler under the Muse Code one, and the plants line up in a row below them
     const at = (id: string, x: number, y: number) => Object.assign(machines.find((m) => m.id === id)!, { x, y });
     at("steam-spark", -3, 6);
     if (harness !== "spark" && !sc.unplugged) at(plant, 3, 6);
@@ -1390,7 +1390,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       later(220 * add.length, () => {
         apply({ belts: full.belts, power: full.power });
         s.power = full.power;
-        spark({ tool: "place_machine", text: "Line's down: Claude Code on the assembler" }, { target: "assembler-1" });
+        spark({ tool: "place_machine", text: "Line's down: Muse Code on the assembler" }, { target: "assembler-1" });
         clock0 = s.tick;
       });
     } else if (cue === "catch") arrive({ at: 0, ...INTRO_CATCH }, Date.now());
@@ -1408,7 +1408,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   const piece = (id: string) => full.machines.find((m) => m.id === id)!;
   const BUILDS: Record<BuildoutStep, { machines: string[]; belts: [string, string][]; line: string }> = {
     tunnel: { machines: ["ore-issues"], belts: [], line: "GitHub tunnel open. Work comes up from your repo here" },
-    boiler: { machines: ["steam-spark", `solar-${sc.harness ?? "claude_code"}`], belts: [], line: "Boiler lit. Your AI is the power" },
+    boiler: { machines: ["steam-spark", `solar-${sc.harness ?? "muse_code"}`], belts: [], line: "Boiler lit. Your AI is the power" },
     builder: { machines: ["assembler-1"], belts: [], line: "Builder online. It writes the code, using your AI" },
     // the planner desk rises as the ore reaches it, so the plan is on the card before Continue
     issue: { machines: ["splitter-1"], belts: [["ore-issues", "splitter-1"], ["splitter-1", "assembler-1"]], line: `Issue #${BUILDOUT_ISSUE.number} is on the cart: ${BUILDOUT_ISSUE.title}` },
@@ -1852,7 +1852,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
 
   // ---------- plugging in a subscription ----------
 
-  const plugIn = (harness: "claude_code" | "codex") => {
+  const plugIn = (harness: "muse_code") => {
     const name = SOLAR_NAME[harness]!;
     const plant = `solar-${harness}`;
     const n = s.power.filter((p) => p.kind === "solar").length;
@@ -1865,7 +1865,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       power: s.power,
       machines: [{ id: plant, type: "solar", x: 3 + n * 3, y: 3, tier: 1, state: "idle" }, { id: `battery-${harness}`, type: "battery", x: 4 + n * 3, y: 5, powerId: plant, tier: 1, state: "idle" }, asm],
     });
-    log("success", `${name} plugged in: solar plant online, ${harness === "codex" ? "Codex" : "Claude Code"} assembler lit`);
+    log("success", `${name} plugged in: solar plant online, Muse Code assembler lit`);
   };
 
   const askForPower = () => {
@@ -1874,17 +1874,16 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       {
         title: "Plug in power to start building",
         // The demo shop can't really sign in to anything, so it says so: on your own repo this is your real subscription.
-        why: "The repo's read and the first fix is lined up, but nothing can build yet. On your own repo, your Claude or ChatGPT subscription powers the builders. Here in the demo, just pick one.",
+        why: "The repo's read and the first fix is lined up, but nothing can build yet. On your own repo, your Meta Muse Code subscription powers the builders. Here in the demo, just plug it in.",
         stage: "resources",
         kind: "input",
         focus: "assembler-1",
         grows: ["+1 POWER PLANT", "ASSEMBLERS ON"],
         options: [
-          { id: "claude_code", label: "Use Claude (demo)", recommended: true, actions: [] },
-          { id: "codex", label: "Use ChatGPT (demo)", recommended: false, actions: [] },
+          { id: "muse_code", label: "Use Muse Code (demo)", recommended: true, actions: [] },
         ],
       },
-      (opt) => plugIn(opt === "codex" ? "codex" : "claude_code"),
+      () => plugIn("muse_code"),
     );
   };
 
@@ -1938,7 +1937,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           title: "Same review note, third time. Make it a lint rule?",
           why: "AI review flagged a missing null check on cart items in #138, #140 and #143. Each one cost a rework loop.",
           kind: "verify", stage: "inspect", focus: "review-1", grows: ["+1 CHECK", "−1 REWORK LOOP"],
-          plan: ["Claude Code writes the rule plus a fixture", "It lands as a PR through the same gauntlet", "AI review stops raising it, lint catches it earlier"],
+          plan: ["Muse Code writes the rule plus a fixture", "It lands as a PR through the same gauntlet", "AI review stops raising it, lint catches it earlier"],
           options: [one("lint", "Promote it to a lint rule", [{ tool: "promote_check", args: { layer: "lint" }, reason: "3 scars, same reason" }]), alt("turret", "Make it a test turret"), alt("keep", "Keep it as a review note")],
         },
         { lint: yes("Promoting the cart null check to a lint rule. PR incoming", "promote_check", "review-1"), turret: yes("Adding a test turret on /cart", "add_turret", "review-1") },
@@ -1948,7 +1947,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           title: "4 PRs stuck at the verify bay for 2h",
           why: "One bay, and each repro takes about 6 minutes. Everything downstream waits on it.",
           kind: "unblock", stage: "inspect", focus: "verify-1", grows: ["+1 STATION"],
-          plan: ["Second bay goes on the Claude plant, it has charge left", "The pile splits across both bays", "Wait should drop from 2h to about 40m"],
+          plan: ["Second bay goes on the Muse Code plant, it has charge left", "The pile splits across both bays", "Wait should drop from 2h to about 40m"],
           options: [one("second", "Build a second verify bay"), alt("skip-docs", "Let docs PRs skip verify")],
         },
         { second: yes("Building a second verify bay", "place_machine", "verify-1"), "skip-docs": yes("Docs PRs skip the verify bay now", "set_loadout", "verify-1") },
@@ -1969,7 +1968,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           why: "The verify bay has no recipe for /api, so it skipped. CI green isn't proof.",
           kind: "verify", stage: "inspect", focus: "verify-1", locked: true, grows: ["+1 CHECK", "/API VERIFIABLE"],
           evidence: [{ station: "CI inspector", ok: true }, { station: "Verify bay", ok: false, note: "no recipe" }, { station: "AI review", ok: true }],
-          plan: ["Codex writes a recipe: call the endpoint, check the response", "Verify bay runs it before and after #151", "If it passes, #151 comes back as a merge card"],
+          plan: ["Muse Code writes a recipe: call the endpoint, check the response", "Verify bay runs it before and after #151", "If it passes, #151 comes back as a merge card"],
           options: [one("recipe", "Write an /api verify recipe, then run it"), alt("close", "Close #151")],
         },
         { recipe: yes("Writing an /api verify recipe, #151 waits for it", "start_job", "verify-1") },

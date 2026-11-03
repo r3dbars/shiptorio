@@ -39,7 +39,7 @@ export const TOUR: Beat[] = [
   { title: "Checks", line: "Your tests run here. Broken code stops before it can hurt anything.", yes: "Build next", pose: "point", at: "checks", then: { grow: "large", build: "review" } },
   { title: "Review", line: "A second look at the change, so nothing odd slips through.", yes: "Build next", pose: "point", at: "review", then: { build: "gate" } },
   { title: "Gate", line: "Nothing merges until you say so. That's your whole line. Now it needs power.", yes: "Power it", at: "gate", shot: "line", pose: "point", then: { boiler: true } },
-  { title: "The steam engine", line: "It powers the whole line. Power it with your own Codex or Muse Code subscription.", yes: "Next", at: "repo", shot: "boiler", pose: "point", then: { island: true } },
+  { title: "The steam engine", line: "It powers the whole line. Power it with your own Muse Code subscription.", yes: "Next", at: "repo", shot: "boiler", pose: "point", then: { island: true } },
   { title: "Launch", line: "This is where you actually ship. Merged PRs fly out to your users from here. Want to ship one now?", yes: "Ship one", pose: "point", at: "launch", then: { roll: true } },
   { title: "Ship this fix?", line: "A fix rode through every machine and it's waiting on your call. Press and hold to ship it.", yes: "Hold to ship", at: "gate", hold: true, then: { ship: true } },
   { title: "Shipped!", line: "Your fix is live. Issues come in, shipped code goes out, and you make all the calls.", yes: "Next", at: "launch", pose: "happy" },
@@ -82,7 +82,7 @@ const shipBeat = (beats: Beat[]) => beats.findIndex((b) => b.then && "ship" in b
 export const ROLL_CAPTION: Record<StopId, string> = {
   repo: "Repo: an issue comes in from GitHub. This crate is one fix.",
   planner: "Planner: I write a short plan. You say yes before any code.",
-  builder: "Builder: your Codex or Muse Code writes the code and opens a PR.",
+  builder: "Builder: your Muse Code writes the code and opens a PR.",
   checks: "Checks: your tests run on the PR. Broken code stops here.",
   review: "Review: a second look at the change, so nothing odd slips through.",
   gate: "Gate: it waits here for your call.",

@@ -62,8 +62,8 @@ test('login preserves the return path', async () => {
   const f = setup([new Response('', { status: 401 })]); f.ui.open('repo'); await settle(); await f.yes();
   expect(f.navigations[0]).toContain('/auth/login?next=%2Fdeck');
 });
-test('engine readiness requires Codex or Muse Code, not merely another signed-in agent', async () => {
-  for (const [harnesses, word] of [[['claude_code'], 'Sign in to Codex or Muse Code'], [['codex'], 'Codex engine is ready'], [['muse_code'], 'Muse Code engine is ready'], [['muse_code', 'codex'], 'Codex engine is ready']] as const) {
+test('engine readiness requires Muse Code (or an opted-in Codex), not merely another signed-in agent', async () => {
+  for (const [harnesses, word] of [[['claude_code'], 'Sign in to Muse Code'], [['codex'], 'Codex engine is ready'], [['muse_code'], 'Muse Code engine is ready'], [['muse_code', 'codex'], 'Muse Code engine is ready']] as const) {
     const f = setup([{ paired: true, online: true, harnesses }]); f.ui.open('power'); await settle(); expect(f.ui.card()?.title).toBe(word);
   }
 });

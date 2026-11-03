@@ -29,7 +29,7 @@ Shippy's brain, Meta Muse Spark, reads the issue and the code and proposes a sma
 
 ## Builder
 
-Your own coding agent builds the plan on your own machine: Codex or Muse Code, on your subscription, through the [local runner](/docs/runner). It pushes one commit to a `shiptorio/runner-*` branch and opens a PR. The server then re-reads the diff from GitHub and rejects it if it touched files you didn't approve or got too big.
+Your own coding agent builds the plan on your own machine: Muse Code, on your subscription, through the [local runner](/docs/runner). It pushes one commit to a `shiptorio/runner-*` branch and opens a PR. The server then re-reads the diff from GitHub and rejects it if it touched files you didn't approve or got too big.
 
 ## Checks
 

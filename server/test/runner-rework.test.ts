@@ -22,7 +22,7 @@ test("verify receipts require a reproduced base failure and passing head; third 
   let item = { id: "gh-1", kind: "bug", source: "github_issue", title: "Fix guard", district: "server", state: "inspecting", attempts: 1, branch, prNumber: 99, updatedAt: 1, inspection: freshInspection(first) } as Item;
   item = setStage(item, "verify", "rework", "Missing repro");
   expect(canRework(item)).toBe(true);
-  expect(reworkMove(item).options[0].id).toBe("rework-codex");
+  expect(reworkMove(item).options[0].id).toBe("rework-muse_code");
   item = setStage(item, "verify", "rework", "Still missing repro");
   item = setStage(item, "verify", "rework", "Third failed repro");
   expect(canRework(item)).toBe(false);
@@ -70,7 +70,7 @@ test("scar → re-plan → approve → one same-branch fix → fresh gauntlet �
   }) as typeof fetch;
   const initial = setStage({ id: "gh-1", kind: "bug", source: "github_issue", title: "Fix credential guard", body: "Guard the paths", district: "server", state: "inspecting", attempts: 1, prNumber: 99, prUrl: "https://github.com/r3dbars/demo/pull/99", branch, inspection: freshInspection(first, { passed: true, reason: "green" }), updatedAt: 1 } as Item, "verify", "rework", "Missing repro on base");
   const state = FactoryState.parse({ repo: "r3dbars/demo", baseBranch: "main", districts: [], ...starterLine(), items: [initial], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 });
-  const data = new Map<string, unknown>([["githubAccessCheckedAt", Date.now()], ["state", state], ["meta", { repo: state.repo, installationId: 1 }], ["runnerPair", "pair"], ["runnerJob:old", { id: "old", itemId: "gh-1", repo: state.repo, harness: "codex", branch, baseSha: base, status: "completed", headSha: first, prUrl: initial.prUrl, allowedPaths: ["server/src/engine.ts", "server/test/engine.test.ts"] }]]);
+  const data = new Map<string, unknown>([["githubAccessCheckedAt", Date.now()], ["state", state], ["meta", { repo: state.repo, installationId: 1 }], ["runnerPair", "pair"], ["runnerJob:old", { id: "old", itemId: "gh-1", repo: state.repo, harness: "muse_code", branch, baseSha: base, status: "completed", headSha: first, prUrl: initial.prUrl, allowedPaths: ["server/src/engine.ts", "server/test/engine.test.ts"] }]]);
   let alarm: number | null = null;
   const storage = { async transaction<T>(fn: (tx: { get(key: string): Promise<unknown>; put(key: string, value: unknown): Promise<void> }) => Promise<T>): Promise<T> { return fn(storage); }, async get(k: string) { return structuredClone(data.get(k)); }, async put(k: string, v: unknown) { data.set(k, structuredClone(v)); }, async delete(k: string) { return data.delete(k); }, async list(o: { prefix: string; limit?: number }) { return new Map([...data.entries()].filter(([k]) => k.startsWith(o.prefix)).slice(0, o.limit)); }, async getAlarm() { return alarm; }, async setAlarm(n: number) { alarm = n; } };
   const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [] };
@@ -80,22 +80,22 @@ test("scar → re-plan → approve → one same-branch fix → fresh gauntlet �
   const choose = async (optionId: string) => f.webSocketMessage(authorizedSocket(), JSON.stringify({ type: "choose_move", moveId: saved().move!.id, optionId }));
   try {
     await f.alarm();
-    expect(saved().move?.options[0].id).toBe("rework-codex");
+    expect(saved().move?.options[0].id).toBe("rework-muse_code");
     // A planning hold drops the rework card. Once the hold ends it comes back, rather than waiting forever.
     data.set("planningRetry:gh-1", { day: new Date().toISOString().slice(0, 10), failures: 1, reason: "offline", retryAt: Date.now() + 60000 });
     await f.alarm();
-    expect(saved().deck?.some(m => m.options.some(o => o.id === "rework-codex"))).toBe(false);
+    expect(saved().deck?.some(m => m.options.some(o => o.id === "rework-muse_code"))).toBe(false);
     data.delete("planningRetry:gh-1");
     await f.alarm();
-    expect(saved().move?.options[0].id).toBe("rework-codex");
-    await choose("rework-codex");
+    expect(saved().move?.options[0].id).toBe("rework-muse_code");
+    await choose("rework-muse_code");
     await f.alarm();
     const job = (await f.runnerJobs()).find(j => j.id !== "old")!;
     expect(job).toMatchObject({ status: "awaiting_approval", reworkPr: 99, baseSha: first, verifyBaseSha: base, branch });
     expect(plans.join("\n")).toContain("Missing repro on base");
-    expect(await f.claimRunner("pair", ["codex"])).toBeNull();
+    expect(await f.claimRunner("pair", ["muse_code"])).toBeNull();
     await choose("approve");
-    const assigned = await f.claimRunner("pair", ["codex"]);
+    const assigned = await f.claimRunner("pair", ["muse_code"]);
     expect(assigned?.branch).toBe(branch);
     head = second;
     const receipt = { jobId: job.id, lease: assigned!.lease!, ok: true, sha: second, summary: "Fixed regression", checks: ["typecheck", "test", "build"] as ("typecheck" | "test" | "build")[], proof };
@@ -124,6 +124,6 @@ test("scar → re-plan → approve → one same-branch fix → fresh gauntlet �
     expect(saved().science.red).toBe(1);
     const third = setStage(setStage(initial, "verify", "rework", "again"), "verify", "rework", "third");
     (f as unknown as { state: FactoryState }).state.items = [third];
-    await expect(f.enqueueRunner({ itemId: third.id, harness: "codex", allowedPaths: [], needsApproval: true })).rejects.toThrow("escalation");
+    await expect(f.enqueueRunner({ itemId: third.id, harness: "muse_code", allowedPaths: [], needsApproval: true })).rejects.toThrow("escalation");
   } finally { globalThis.fetch = originalFetch; }
 });

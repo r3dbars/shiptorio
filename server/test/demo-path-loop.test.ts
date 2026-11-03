@@ -225,7 +225,7 @@ async function driveToGate(f: Demo) {
   // ---- The planner reads the issue and code and offers the plan (Planner, waiting on the player).
   await f.tick();
   const job = f.jobs()[0];
-  expect(job).toMatchObject({ status: "awaiting_approval", allowedPaths: FILES, baseSha: BASE, harness: "codex" });
+  expect(job).toMatchObject({ status: "awaiting_approval", allowedPaths: FILES, baseSha: BASE, harness: "muse_code" });
   const approval = f.card(m => m.id === job.approvalMoveId)!;
   expect(approval).toMatchObject({ title: `Build #${ISSUE}: Fix "check" failing on #${RED_PR}`, kind: "build", itemId: `gh-${ISSUE}` });
   expect(approval.plan).toContain(`Files: ${FILES.join(", ")}`);
@@ -236,19 +236,19 @@ async function driveToGate(f: Demo) {
   expect(f.stations().planner).toBe("waiting_player");
   expect(["queued", "ore"]).toContain(f.item()!.state);
   // Nothing builds before the yes: the runner gets no job.
-  expect(await f.factory.claimRunner("pair", ["codex"])).toBeNull();
+  expect(await f.factory.claimRunner("pair", ["muse_code"])).toBeNull();
 
   // ---- Approve the plan; the local runner claims it (Builder).
   await f.send({ type: "choose_move", moveId: approval.id, optionId: "approve" });
   expect(f.jobs()[0]).toMatchObject({ status: "ready", approvedBy: "player" });
   expect(f.card(m => m.id === approval.id)).toBeUndefined();
-  const claimed = await f.factory.claimRunner("pair", ["codex"]);
+  const claimed = await f.factory.claimRunner("pair", ["muse_code"]);
   await f.settle();
   expect(claimed).toMatchObject({ id: job.id, status: "running", allowedPaths: FILES, baseSha: BASE });
   expect(claimed!.token).toBeTruthy();
   expect(f.item()).toMatchObject({ state: "working", attempts: 1 });
   expect(f.stations()).toMatchObject({ planner: "done", builder: "working" });
-  expect(await f.factory.claimRunner("pair", ["codex"])).toBeNull(); // one lease
+  expect(await f.factory.claimRunner("pair", ["muse_code"])).toBeNull(); // one lease
 
   // ---- The runner pushes one commit and reports; the factory opens the PR (Builder → Checks).
   f.gh.push(claimed!.branch, FIX_HEAD);
@@ -263,7 +263,7 @@ async function driveToGate(f: Demo) {
   expect(opened[0].body.body).toContain("Human review and merge required.");
   expect(f.item()).toMatchObject({ state: "inspecting", prNumber: FIX_PR, branch: claimed!.branch, machineId: "ci-1", inspection: { headSha: FIX_HEAD } });
   expect(f.stations()).toMatchObject({ builder: "done", checks: "working" });
-  expect(f.logs()).toContain(`Local codex opened PR #${FIX_PR}; waiting for CI and independent verification.`);
+  expect(f.logs()).toContain(`Local muse_code opened PR #${FIX_PR}; waiting for CI and independent verification.`);
 
   // ---- CI goes green on the PR head (Checks), then the proof check and Review run on the tick.
   await f.factory.onCheckSuite([FIX_PR], true, "pending", FIX_HEAD);
@@ -416,7 +416,7 @@ describe("the demo path, through the real factory", () => {
     await f.tick();
     const job = f.jobs()[0];
     await f.send({ type: "choose_move", moveId: job.approvalMoveId, optionId: "approve" });
-    const claimed = (await f.factory.claimRunner("pair", ["codex"]))!;
+    const claimed = (await f.factory.claimRunner("pair", ["muse_code"]))!;
     f.gh.push(claimed.branch, FIX_HEAD);
     f.gh.checks.set(FIX_HEAD, "failure");
     await f.factory.finishRunner("pair", { jobId: job.id, lease: claimed.lease!, ok: true, sha: FIX_HEAD, summary: "done", checks: ["typecheck", "test", "build"] });

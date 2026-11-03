@@ -14,18 +14,23 @@ const edits = (files: { path: string; content: string }[], summary = "Fixed it")
 
 test("config is opt-in, defaults to Ollama, and refuses endpoints off this machine or LAN", () => {
   expect(localModelConfig({})).toBeNull();
-  expect(localModelConfig({ SHIPTORIO_LOCAL_MODEL: "qwen2.5-coder:7b" })).toEqual({ baseUrl: OLLAMA_URL, model: "qwen2.5-coder:7b" });
+  expect(localModelConfig({ SHIPTORIO_LOCAL_MODEL: "muse-glimmer" })).toEqual({ baseUrl: OLLAMA_URL, model: "muse-glimmer" });
   for (const ok of ["http://localhost:1234/v1", "http://127.0.0.1:8080/v1", "http://192.168.1.20:11434/v1", "http://gpu-box.local:8000/v1", "http://[::1]:11434/v1"]) expect(() => assertLocalEndpoint(ok)).not.toThrow();
   for (const bad of ["https://api.openai.com/v1", "http://8.8.8.8/v1", "http://user:pw@localhost/v1", "file:///etc/passwd", "http://localhost.evil.com/v1", "nope"]) expect(() => assertLocalEndpoint(bad)).toThrow();
   expect(() => localModelConfig({ SHIPTORIO_LOCAL_MODEL: "x; rm -rf /" })).toThrow();
-  expect(localModelConfig({}, { model: "llama3.2:3b", url: "http://127.0.0.1:8080/v1" })).toEqual({ baseUrl: "http://127.0.0.1:8080/v1", model: "llama3.2:3b" });
-  expect(localModelConfig({ SHIPTORIO_LOCAL_MODEL: "a" }, { model: "b" })?.model).toBe("a");
-  expect(() => localModelConfig({}, { model: "m", url: "https://api.example.com/v1" })).toThrow();
+  expect(localModelConfig({}, { model: "muse-spark-open", url: "http://127.0.0.1:8080/v1" })).toEqual({ baseUrl: "http://127.0.0.1:8080/v1", model: "muse-spark-open" });
+  expect(localModelConfig({ SHIPTORIO_LOCAL_MODEL: "muse-glimmer:latest" }, { model: "muse-spark-open" })?.model).toBe("muse-glimmer:latest");
+  expect(() => localModelConfig({}, { model: "muse-glimmer", url: "https://api.example.com/v1" })).toThrow();
+});
+
+test("geothermal only accepts Meta open-weight models", () => {
+  for (const meta of ["muse-glimmer", "muse-glimmer:latest", "muse-spark-open", "meta/muse-spark-open:q4", "hf.co/meta/Muse-Glimmer-GGUF"]) expect(localModelConfig({ SHIPTORIO_LOCAL_MODEL: meta })?.model).toBe(meta);
+  for (const other of ["qwen2.5-coder:7b", "llama3.2:3b", "deepseek-coder", "gpt-oss:20b", "muse-spark-1.3", "notglimmerx"]) expect(() => localModelConfig({ SHIPTORIO_LOCAL_MODEL: other })).toThrow("Meta open-weight");
 });
 
 test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1")("detection reports a loaded model and explains a missing one", async () => {
-  server = fakeOllama(() => "{}", ["llama3.2:3b", "qwen2.5-coder:7b"]);
-  expect((await detectLocalModel({ baseUrl: server.url, model: "qwen2.5-coder:7b" })).ok).toBe(true);
+  server = fakeOllama(() => "{}", ["other-model", "muse-glimmer"]);
+  expect((await detectLocalModel({ baseUrl: server.url, model: "muse-glimmer" })).ok).toBe(true);
   const missing = await detectLocalModel({ baseUrl: server.url, model: "gemma:2b" });
   expect(missing.ok).toBe(false);
   expect(missing.reason).toContain("gemma:2b");
@@ -45,12 +50,12 @@ test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1")("assembler sends the pl
   const work = await checkout();
   await writeFile(join(work, "README.md"), "Run bun isntall\n");
   server = fakeOllama(body => {
-    expect(body.model).toBe("qwen2.5-coder:7b");
+    expect(body.model).toBe("muse-glimmer");
     expect(body.messages[1].content).toContain("Fix the typo");
     expect(body.messages[1].content).toContain("Run bun isntall");
     return edits([{ path: "README.md", content: "Run bun install\n" }, { path: "docs/new.md", content: "# New\n" }], "Fixed the typo");
   });
-  const out = await runLocalAssembler({ plan: "Fix the typo in README", allowedPaths: ["README.md", "docs/new.md"] }, work, { baseUrl: server.url, model: "qwen2.5-coder:7b" });
+  const out = await runLocalAssembler({ plan: "Fix the typo in README", allowedPaths: ["README.md", "docs/new.md"] }, work, { baseUrl: server.url, model: "muse-glimmer" });
   expect(out).toEqual({ summary: "Fixed the typo", paths: ["README.md", "docs/new.md"] });
   expect(await readFile(join(work, "README.md"), "utf8")).toBe("Run bun install\n");
   expect(await readFile(join(work, "docs/new.md"), "utf8")).toBe("# New\n");
@@ -59,7 +64,7 @@ test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1")("assembler sends the pl
 
 test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1")("assembler refuses big jobs, symlink escapes, empty edits and endpoint errors", async () => {
   const work = await checkout(), outside = await checkout();
-  const config = () => ({ baseUrl: server!.url, model: "qwen2.5-coder:7b" });
+  const config = () => ({ baseUrl: server!.url, model: "muse-glimmer" });
   server = fakeOllama(() => edits([{ path: "link.md", content: "pwned" }]));
   await expect(runLocalAssembler({ plan: "x", allowedPaths: ["a", "b", "c", "d"] }, work, config())).rejects.toThrow("subscription");
   expect(server.requests).toHaveLength(0);

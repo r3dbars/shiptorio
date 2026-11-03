@@ -68,7 +68,7 @@ export async function diagnose(options: {
     try { await run(); results.push({ check: name, ok: true, detail: "OK" }); }
     catch { results.push({ check: name, ok: false, detail: remedy }); }
   };
-  if (!options.harnesses.length) results.push({ check: "auth", ok: false, detail: "Install Codex or Muse Code." });
+  if (!options.harnesses.length) results.push({ check: "auth", ok: false, detail: "Install Muse Code." });
   for (const h of options.harnesses) {
     await check(`auth:${h}`, async () => { if (!await options.auth(h)) throw Error(); }, h === "local" ? "Check the local model endpoint." : `Sign in again: ${loginCommand(h)}`);
   }
