@@ -144,7 +144,10 @@ Bun.serve({
       if (req.method === "POST" && pathname === "/api/grade") return json(await grade(await req.json()));
       return json({ error: "not found" }, 404);
     } catch (e) {
-      return json({ error: e instanceof Error ? e.message : String(e) }, 400);
+      // The full error stays in this terminal; the page gets a short line, never a stack (CodeQL).
+      console.error(e);
+      const message = e instanceof Error ? e.message.split("\n")[0].slice(0, 200) : "request failed";
+      return json({ error: message }, 400);
     }
   },
 });
