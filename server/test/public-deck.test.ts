@@ -57,3 +57,8 @@ test("a self-hosted install keeps its landing page and gates the deck", async ()
   for (const path of ["/deck", "/deck?source=live"]) expect((await visit(path, undefined, "factory.example")).status, path).toBe(401);
   expect((await visit("/deck/art/sky.webp", undefined, "factory.example")).status).toBe(200);
 });
+
+test("the production deploy turns every Meta model call off (shiptorio.com is tutorial + waitlist only)", async () => {
+  const { scripts } = await Bun.file(new URL("../package.json", import.meta.url)).json();
+  expect(scripts.deploy).toContain("wrangler deploy --name shiptorio --var SPARK_DISABLED:1 ");
+});
