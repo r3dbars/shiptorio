@@ -246,7 +246,7 @@ export function createTour(memo?: TourMemo, script?: TourScript): Tour {
     }));
     return {
       stops, jam: null, attention: c && !S.end ? (script ? (S.crate ? [S.crate] : []) : S.beat === SHIP_BEAT ? ["gate"] : []) : [], card: c, shippy, shipped: S.shipped,
-      caption: rolling && S.crate ? ROLL_CAPTION[S.crate] : null,
+      caption: rolling && S.crate && !script ? ROLL_CAPTION[S.crate] : null, // a script looks like the live deck: cards only
       // the fix's ride: the camera goes station to station with it, at the same framing as the build cards
       focus, ...(rolling && S.crate ? { shot: S.crate } : shot ? { shot } : {}),
       deck: { size: S.size, island: S.island, boiler: S.boiler, ...(S.growing ? { growing: S.growing } : {}), ...(S.islandProgress != null ? { islandProgress: S.islandProgress } : {}) },

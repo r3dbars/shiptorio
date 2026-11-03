@@ -265,7 +265,7 @@ const seed = Number(params.get("seed")) || 0;
     // A guest at the live front door meets Shippy: a small deck, the story told in the card at their pace, each
     // station built and named, then one fix shipped. /deck.html keeps the jam-and-swipe story for the video, which ends
     // on the city reveal (?reveal=1 starts there, for shots and recording takes), then the same sign-in card.
-    if (journey) source = shipFeel(createTour(undefined, JOURNEY), bus, JOURNEY.beats); // ?journey=1: one issue, Repo to Launch
+    if (journey) source = shipFeel(createTour(undefined, JOURNEY), bus, JOURNEY.beats, false); // ?journey=1: one issue, Repo to Launch
     else if (want === "live") source = storyBeforeSignIn(shipFeel(createTour(tourMemo()), bus), connections, { ask: true,
       onAsk: () => { try { localStorage.setItem(TOURED_KEY, "1"); } catch { /* private mode: the full first run plays */ } } });
     else {

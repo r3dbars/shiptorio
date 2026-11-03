@@ -40,7 +40,7 @@ const shipBeat = (beats: readonly Beat[]) => beats.findIndex(b => b.then && "shi
 export const isShipCard = (c: CardView | null | undefined, beats: readonly Beat[] = TOUR) => !!c && c.id.startsWith("tour-") && c.id.endsWith(`-${shipBeat(beats)}`);
 
 /** `beats`: the script the tour runs (default the guest tour), so its Ship it card is found. */
-export function shipFeel<T extends DeckSource>(tour: T, bus: DeckBus, beats: readonly Beat[] = TOUR): T & { shipPhase(): ShipPhase } {
+export function shipFeel<T extends DeckSource>(tour: T, bus: DeckBus, beats: readonly Beat[] = TOUR, captions = true): T & { shipPhase(): ShipPhase } {
   let phase: ShipPhase = "off", t = 0, held = 0, arrived = false, launched = false;
   let bias = 0, lastRaw = 0; // a Replay resets the tour's count; the engine only launches when the number goes up
   let shown: CardView | null = null;
@@ -78,7 +78,7 @@ export function shipFeel<T extends DeckSource>(tour: T, bus: DeckBus, beats: rea
       : phase === "press" ? { pose: "poke", at: "launch" } : { pose: "happy", at: "launch" };
     shown = null;
     return {
-      ...v, stops, card: null, caption: SHIP_CAPTION[phase], shippy, attention: [], focus: phase === "lever" ? "gate" : "launch",
+      ...v, stops, card: null, caption: captions ? SHIP_CAPTION[phase] : null, shippy, attention: [], focus: phase === "lever" ? "gate" : "launch",
       followItem: phase === "ride" ? SHIP_CRATE : undefined,
       // Held until the crate is on the pad: the engine launches the rocket the moment this goes up.
       shipped: (phase === "lever" || phase === "ride" || phase === "press" ? held : held + 1) + bias,
