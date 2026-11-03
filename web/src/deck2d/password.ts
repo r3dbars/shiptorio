@@ -75,7 +75,7 @@ export function askWaitlist(doc: Document, onPassword: () => void, join: Join = 
   const box = doc.createElement("div");
   box.id = "deck-password"; box.className = "deck-password";
   box.setAttribute("role", "dialog"); box.setAttribute("aria-modal", "true"); box.setAttribute("aria-labelledby", "deck-password-title");
-  box.innerHTML = `<form><h2 id="deck-password-title">Join the waitlist</h2><p>Shiptorio is invite-only for now. Leave your email and you’ll hear when your own factory is ready.</p>
+  box.innerHTML = `<form><h2 id="deck-password-title">Join the waitlist</h2><p>Put your email in and I’ll send you more info once Shiptorio becomes a real thing.</p>
 <input name="email" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" required aria-label="Email" placeholder="you@example.com">
 <p class="err" role="alert"></p><div class="row"><button type="button" class="later">Not now</button><button type="submit" class="approve">Join the waitlist</button></div>
 <p class="alt"><a href="#" class="has-password">I have a password</a></p></form>`;
@@ -95,7 +95,7 @@ export function askWaitlist(doc: Document, onPassword: () => void, join: Join = 
     const result = await join(email);
     form.ariaBusy = "false";
     if (result === "ok") {
-      form.innerHTML = `<h2 id="deck-password-title">You’re on the list</h2><p>Thanks! We’ll email you when it’s your turn.</p><div class="row"><button type="button" class="approve">Back to the factory</button></div>`;
+      form.innerHTML = `<h2 id="deck-password-title">You’re on the list</h2><p>Thanks! I’ll email you once there’s more to share.</p><div class="row"><button type="button" class="approve">Back to the factory</button></div>`;
       const done = form.querySelector<HTMLButtonElement>("button")!;
       done.onclick = close; done.focus();
       return;
