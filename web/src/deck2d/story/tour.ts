@@ -14,7 +14,7 @@ type DeckSize = NonNullable<DeckView["deck"]>["size"];
 type Island = NonNullable<DeckView["deck"]>["island"];
 
 /** One beat: a card you read and answer, then (optionally) the thing it starts. */
-interface Beat {
+export interface Beat {
   title: string;
   line: string;
   yes: string;
@@ -22,7 +22,7 @@ interface Beat {
   shot?: Shot; // what the story camera frames while you read (default: at)
   hold?: boolean; // ships (pretend) code: a held press, like every real merge; shows as a plain work card
   pose?: NonNullable<CardView["shippy"]>; // Shippy inside the card (default talk)
-  then?: { build: StopId } | { grow: DeckSize; build: StopId } | { boiler: true } | { island: true } | { roll: true } | { ship: true };
+  then?: { build: StopId } | { grow: DeckSize; build: StopId } | { boiler: true } | { island: true } | { roll: true; to?: StopId } | { ship: true };
   /** The islands story: the camera pulls back to the city while this card talks; `light` islands light up one after another. */
   city?: { zoom: CityZoom; beat: CityBeat; light?: CityIsland[] };
 }
@@ -75,7 +75,8 @@ const ROLL_HOP_MAX = 3.2;
 const ROCKET_SEC = 3.5; // the rocket's moment, on camera, before Shippy says what happened
 const LIGHT_GAP = 0.9; // the islands story: seconds between two islands lighting on the same card
 const CRATE = "tour-crate";
-const SHIP_BEAT = TOUR.findIndex((b) => b.then && "ship" in b.then);
+const TOUR_BEATS = TOUR;
+const shipBeat = (beats: Beat[]) => beats.findIndex((b) => b.then && "ship" in b.then);
 /** What each machine is doing while the fix rides through it (Justin 2026-10-30: "a title for each one of these things
  *  that it's processing through"). Shown as the caption over the deck; no card is up during the ride. */
 export const ROLL_CAPTION: Record<StopId, string> = {
@@ -103,13 +104,18 @@ export interface Tour {
 /** Where a reload picks the tour back up: the card you were on (sessionStorage in main.ts, so a new tab starts over). */
 export interface TourMemo { load(): number | null; save(beat: number): void }
 
-export function createTour(memo?: TourMemo): Tour {
+/** Another script on the tour's machinery (the one-issue journey): its beats, the line it opens on, and how long the
+ *  crate stays at a stop on its ride. `loop`: the last card's yes plays it again instead of going on to sign-in. */
+export interface TourScript { beats: Beat[]; built: StopId[]; crate?: StopId; dwell?: Partial<Record<StopId, number>>; loop?: boolean }
+
+export function createTour(memo?: TourMemo, script?: TourScript): Tour {
+  const TOUR = script?.beats ?? TOUR_BEATS, SHIP_BEAT = shipBeat(TOUR);
   let S = fresh(), round = 0;
   function fresh() {
     return {
       beat: 0, playing: null as Beat["then"] | null, t: 0, sub: 0, cardT: 0, hopT: 0, landed: false,
-      built: new Set<StopId>(), size: "small" as DeckSize, island: "none" as Island, islandProgress: undefined as number | undefined,
-      boiler: 0, crate: null as StopId | null, shipped: 0, end: false, growing: 0,
+      built: new Set<StopId>(script?.built ?? []), size: (script ? "large" : "small") as DeckSize, island: (script ? "built" : "none") as Island,
+      islandProgress: undefined as number | undefined, boiler: script ? 1 : 0, crate: (script?.crate ?? null) as StopId | null, shipped: 0, end: false, growing: 0,
     };
   }
 
@@ -138,9 +144,9 @@ export function createTour(memo?: TourMemo): Tour {
       // One crate from Repo down the whole line, a machine at a time, the camera riding along; it waits at the Gate for your call.
       if (S.crate === null) { S.crate = "repo"; S.hopT = 0; S.landed = true; return; }
       S.hopT += dt;
-      const ready = S.landed ? S.hopT >= DWELL_SEC : S.hopT >= ROLL_HOP_MAX;
+      const ready = S.landed ? S.hopT >= (script?.dwell?.[S.crate] ?? DWELL_SEC) : S.hopT >= ROLL_HOP_MAX;
       if (!ready) return;
-      if (S.crate === "gate") { done(); return; }
+      if (S.crate === (p.to ?? "gate")) { done(); return; }
       S.crate = STOPS[STOPS.indexOf(S.crate) + 1]; S.hopT = 0; S.landed = false;
       return;
     }
@@ -172,13 +178,15 @@ export function createTour(memo?: TourMemo): Tour {
     if (!b.then) { next(); return; }
     S.playing = b.then; S.t = 0; S.sub = 0;
     if ("island" in b.then) S.island = "building";
-    if ("roll" in b.then) S.crate = null;
+    if ("roll" in b.then && !script) S.crate = null;
+    if ("roll" in b.then && script) { S.hopT = 0; S.landed = true; }
   }
 
   function approve(id: string) {
     const c = card();
     if (!c || c.id !== id) return;
     if (S.end) return; // the page hands this card to sign-in
+    if (script?.loop && S.beat === TOUR.length - 1) { reset(); return; }
     start(TOUR[S.beat]);
   }
 
@@ -190,7 +198,8 @@ export function createTour(memo?: TourMemo): Tour {
     round++; // fresh ids, so the card shows the earlier beat again
     S.beat--; S.cardT = 0; remember(); // Back re-reads the last beat; what's built stays built
     // Back onto the fix's own cards puts the fix back where that card found it
-    if (S.beat === SHIP_BEAT) S.crate = "gate";
+    if (script) S.crate = S.beat <= SHIP_BEAT ? TOUR[S.beat].at : null; // the crate waits where that card found it
+    else if (S.beat === SHIP_BEAT) S.crate = "gate";
     else if (S.beat < SHIP_BEAT) S.crate = null;
   }
 
@@ -233,10 +242,10 @@ export function createTour(memo?: TourMemo): Tour {
     const stops = STOPS.map((id) => ({
       id, built: S.built.has(id), automated: false,
       state: S.crate === id ? "working" : "idle",
-      items: S.crate === id ? [{ id: CRATE, title: "Fix the broken docs link", look: id === "gate" && !p ? "glow" : "ok" }] : [],
+      items: S.crate === id ? [{ id: CRATE, title: "Fix the broken docs link", look: (script ? !!c : id === "gate") && !p ? "glow" : "ok" }] : [],
     }));
     return {
-      stops, jam: null, attention: c && S.beat === SHIP_BEAT && !S.end ? ["gate"] : [], card: c, shippy, shipped: S.shipped,
+      stops, jam: null, attention: c && !S.end ? (script ? (S.crate ? [S.crate] : []) : S.beat === SHIP_BEAT ? ["gate"] : []) : [], card: c, shippy, shipped: S.shipped,
       caption: rolling && S.crate ? ROLL_CAPTION[S.crate] : null,
       // the fix's ride: the camera goes station to station with it, at the same framing as the build cards
       focus, ...(rolling && S.crate ? { shot: S.crate } : shot ? { shot } : {}),
