@@ -11,7 +11,7 @@ export function sameOriginPath(next: string | null | undefined, origin: string):
 // ?source=replay, ?scenario=) keep their query on /deck; everything else lands on the live deck, keeping ?repo= and
 // ?fresh=1. ?px=0 is dropped.
 // DECK_HOSTS is where the deck is public without the password (access.ts isPublicDeck).
-// shiptorio.com joined 2026-11-03 (Justin): the public tutorial plus the email waitlist, no accounts or model calls.
+// shiptorio.com joined 2026-11-03 (Justin): the public tutorial plus the email waitlist. Visitors never reach a model call; Spark runs only for signed-in factories.
 export const DECK_HOSTS = new Set(["shiptorio.dev", "www.shiptorio.dev", "shiptorio.com", "www.shiptorio.com"]);
 // The old app's own switches; they mean nothing to the deck.
 const OLD_APP_KEYS = ["onboard", "tour", "world", "simple", "buildout", "artpass", "intro", "px", "connect"];
