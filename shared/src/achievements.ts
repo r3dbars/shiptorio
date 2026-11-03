@@ -5,12 +5,13 @@
 // factory state in with `check`.
 
 import type { FactoryState } from "./model";
+import { dayKey, daysBetween } from "./progression";
 
 export interface Achievement {
   id: string;
   name: string;
   what: string; // one plain line: what you did
-  icon: string; // HUD pixel icon (web/src/ui/icons.tsx)
+  icon: string; // HUD pixel icon name (the old React HUD drew these)
   xp: number; // paid into progression when it unlocks
   tier: "bronze" | "silver" | "gold";
   /** How far along you are, from this factory's state. Unlocks at have >= need. */
@@ -53,7 +54,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: "first-research", name: "New check", what: "You researched a check. It runs on every PR now.", icon: "flask", xp: 25, tier: "bronze", need: 1, progress: (s) => s.research?.done.length ?? 0 },
   { id: "first-mine-sentry", name: "Error miner", what: "Sentry is connected. Real errors become ore.", icon: "ore", xp: 25, tier: "bronze", need: 1, progress: (s) => (connected(s, "sentry") ? 1 : 0) },
   { id: "first-mine-posthog", name: "Traffic miner", what: "PostHog is connected. Traffic drops become ore.", icon: "gauge", xp: 25, tier: "bronze", need: 1, progress: (s) => (connected(s, "posthog") ? 1 : 0) },
-  { id: "caught-before-prod", name: "Caught it", what: "The verify bay stopped a bad fix before it reached your users.", icon: "shield", xp: 40, tier: "silver", need: 1, progress: verifyCatches },
+  { id: "caught-before-prod", name: "Caught it", what: "Checks stopped a bad fix before it reached your users.", icon: "shield", xp: 40, tier: "silver", need: 1, progress: verifyCatches },
   { id: "second-try", name: "Back on the belt", what: "A PR that got sent back came round again and shipped.", icon: "wrench", xp: 30, tier: "bronze", need: 1, progress: (s) => launchedOf(s).filter((i) => i.scars?.length).length },
   { id: "first-permit", name: "Permit to launch", what: "A lane earned a launch permit. Its PRs ship on their own.", icon: "key", xp: 50, tier: "silver", need: 1, progress: (s) => (s.autonomy?.districts.some((d) => d.permit) ? 1 : 0) },
   { id: "first-auto", name: "Hands off", what: "A PR launched on a permit. Nobody had to tap.", icon: "bot", xp: 60, tier: "silver", need: 1, progress: automatedOf },
@@ -101,20 +102,12 @@ export function mergeEarned(a: Earned, b: Earned): Earned {
   return { v: 1, got, streak: newer.streak, best: Math.max(a.best, b.best), last: newer.last };
 }
 
-const dayKey = (t: number) => {
-  const d = new Date(t);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-};
-const dayNum = (key: string) => {
-  const [y, m, d] = key.split("-").map(Number);
-  return Math.round(Date.UTC(y, m - 1, d) / 86_400_000);
-};
 
 /** A real move today (a ship, a card answered): the record's streak goes on or starts over. */
 export function markDay(e: Earned, now: number): Earned {
   const key = dayKey(now);
   if (e.last === key) return e;
-  const streak = e.last && dayNum(key) - dayNum(e.last) === 1 ? e.streak + 1 : 1;
+  const streak = e.last && daysBetween(e.last, key) === 1 ? e.streak + 1 : 1;
   return { ...e, streak, best: Math.max(e.best, streak), last: key };
 }
 

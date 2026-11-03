@@ -9,6 +9,7 @@
 import { signalId, type BrainSignal, type SignalCollector, type SupportTicket } from "@shiptorio/shared";
 import { gh } from "../github";
 import { isOutsideAuthor, isTeamAuthor, type GitHubIssue } from "../sources/github";
+import { plural } from "../encode";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -51,7 +52,6 @@ export const waitingOnReply = (t: FeedbackThread, now: number) =>
   t.open && (t.lastTeamAt === undefined || t.lastTeamAt < t.lastOutsideAt) && now - t.lastOutsideAt >= GRACE_MS;
 
 const ago = (ms: number) => ms < DAY ? `${Math.max(1, Math.round(ms / HOUR))}h` : `${Math.round(ms / DAY)}d`;
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 export function feedbackSignals({ threads, now, repo, shipped = 0, complete = true }: FeedbackInput): BrainSignal[] {
   const out: BrainSignal[] = [];
@@ -76,7 +76,8 @@ export function feedbackSignals({ threads, now, repo, shipped = 0, complete = tr
   if (voices < MIN_INFLOW) {
     const days = Math.round(INFLOW_WINDOW_MS / DAY);
     // Quiet is normal on day one; it matters once things are shipping and nobody says a word.
-    const severity = Math.min(0.8, 0.2 + 0.08 * (MIN_INFLOW - voices) + 0.05 * Math.min(shipped, 6));
+    // A quiet week is worth a nudge, never a stop: it stays under anything that blocks a ship.
+    const severity = Math.min(0.5, 0.2 + 0.08 * (MIN_INFLOW - voices) + 0.05 * Math.min(shipped, 6));
     const who = voices === 0 ? "Nobody" : plural(voices, "person", "people");
     out.push({
       ...base, id: signalId("feedback", "feedback_thin"), kind: "feedback_thin",

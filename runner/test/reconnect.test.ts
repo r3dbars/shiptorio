@@ -37,7 +37,7 @@ test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1" || process.platform !== 
   } finally {
     child.kill(); await child.exited; await out;
     const errors = await err;
-    expect(errors).toContain("Retrying in");
+    expect(errors).toContain("retrying shortly");
     server.stop(true); await rm(root, { recursive: true, force: true });
   }
 }, 20000);

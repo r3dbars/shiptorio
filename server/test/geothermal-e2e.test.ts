@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { FactoryState, type Item } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
 import { RunnerReceipt } from "../src/runner-job";
+import { localBoundary } from "../../runner/src/local-files";
 import { runLocalAssembler } from "../../runner/src/local-model";
 import { validateChanges } from "../../runner/src/policy";
 import { fakeOllama } from "../../runner/test/fake-ollama";
@@ -62,7 +63,7 @@ test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1")("geothermal end to end:
   }) as typeof fetch;
   const item = { id: "gh-1", kind: "cleanup", source: "github_issue", title: "Fix typo in README setup steps", body: "It says isntall", district: "docs", state: "queued", attempts: 0, updatedAt: Date.now() } as Item;
   const state = FactoryState.parse({ repo: "r3dbars/demo", baseBranch: "main", districts: [], ...starterLine(), items: [item], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 });
-  const data = new Map<string, unknown>([["state", state], ["meta", { repo: state.repo, installationId: 1 }], ["runnerPair", "pair"]]);
+  const data = new Map<string, unknown>([["githubAccessCheckedAt", Date.now()], ["state", state], ["meta", { repo: state.repo, installationId: 1 }], ["runnerPair", "pair"]]);
   let alarm: number | null = null;
   const storage = { async transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> { return fn(storage); }, async get(k: string) { return structuredClone(data.get(k)); }, async put(k: string, v: unknown) { data.set(k, structuredClone(v)); }, async delete(k: string) { return data.delete(k); }, async list(o: { prefix: string; limit?: number }) { return new Map([...data.entries()].filter(([k]) => k.startsWith(o.prefix)).slice(0, o.limit)); }, async getAlarm() { return alarm; }, async setAlarm(n: number) { alarm = n; } };
   const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [] };
@@ -100,7 +101,10 @@ test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1")("geothermal end to end:
     await git(work, "init", "-q", "-b", "main");
     await writeFile(join(work, "README.md"), "# Demo\n\nRun bun isntall\n");
     await git(work, "add", "README.md"); await git(work, "commit", "-qm", "base");
-    const out = await runLocalAssembler({ plan: assigned.plan!, allowedPaths: assigned.allowedPaths }, work, { baseUrl: ollama.url, model: "qwen2.5-coder:7b" }, originalFetch);
+    const boundary = await localBoundary(work);
+    let out: Awaited<ReturnType<typeof runLocalAssembler>>;
+    try { out = await runLocalAssembler({ plan: assigned.plan!, allowedPaths: assigned.allowedPaths }, work, { baseUrl: ollama.url, model: "qwen2.5-coder:7b" }, boundary, originalFetch); }
+    finally { await boundary.close(); }
     expect(out.paths).toEqual(["README.md"]);
     expect(await readFile(join(work, "README.md"), "utf8")).toContain("bun install");
     await git(work, "add", "--", ...out.paths);

@@ -5,10 +5,8 @@
 // voice, asks before building (autonomy starts at Advisor), puts the bottleneck on the
 // Next Move card, and keeps the HUD metrics. Spark never writes code; the assemblers do.
 
-import { STARTER_ISSUE, type StepId } from "../buildout/journey";
-import { ghostSpots } from "../map/ghosts";
-import { actionLabel } from "../ui/stationCopy";
-import { mineUnlocked } from "../ui/whatsNext";
+import { ghostSpots } from "../deck2d/rules/ghosts";
+import { actionLabel, mineUnlocked, STARTER_ISSUE, type StepId } from "../deck2d/rules/sim";
 import {
   SCIENCE_FOR,
   findFunnelDrop,
@@ -56,7 +54,7 @@ import {
   inferGoals,
   type Goals,
 } from "@shiptorio/shared";
-import type { Listener, Source, StatusListener } from "../source";
+import type { Listener, Source, StatusListener } from "../source/config";
 import { simSupport, SUPPORT_MAIL, type SimMail } from "./support";
 
 const TICK_MS = 1400; // a calm floor: one beat every 1.4s (was 0.9s, Justin's playtest 2026-10-27: "slow everything down")
@@ -512,7 +510,7 @@ export const SCENARIOS = {
     intro: true,
     ores: [],
   },
-  // Build as you go (docs/GAMEPLAY-PICKS.md, web/src/buildout/CONTRACT.md). Nothing exists until the player builds it
+  // Build as you go (docs/GAMEPLAY-PICKS.md). Nothing exists until the player builds it
   // with station_action("buildout", step), and one guided issue rides the line as it goes up: plan, wait for
   // Continue, build, CI, wait for the pad, wait for the hold. The coach card does the asking, so no moves
   // until the first rocket; after that it's the normal demo shop.
@@ -521,6 +519,26 @@ export const SCENARIOS = {
     harness: "claude_code",
     buildout: true,
     ores: [],
+  },
+  // The 2D deck's story (web/src/deck2d/data/CONTRACT.md): every bug asks before it builds, so you can say yes three
+  // times in a row and watch the builder go automatic. Software is a factory, it's waiting on your calls, swipe and it
+  // moves, approve twice more and it's automatic.
+  "deck-watch": {
+    districts: SHOP_DISTRICTS,
+    harness: "claude_code",
+    ores: [{ at: 2, title: "Fix checkout on Safari", kind: "bug", district: "checkout",
+      ask: "Build the checkout fix.", failAt: "ci", failFirst: "Checkout test failed. Repair the payment retry before shipping." }],
+  },
+  deck2d: {
+    districts: SHOP_DISTRICTS,
+    harness: "claude_code",
+    ores: [
+      { at: 2, title: "Fix checkout bug on Safari", kind: "bug", district: "checkout", ask: "Build the fix: await the payment intent before enabling the button." },
+      { at: 6, title: "Cart badge shows a stale count", kind: "bug", district: "cart", ask: "Build the fix: refresh the badge when the cart changes." },
+      { at: 10, title: "Coupon total off by a cent", kind: "bug", district: "cart", ask: "Build the fix: round once, at the end." },
+      { at: 14, title: "Timeout on /api/orders", kind: "bug", district: "api", ask: "Build the fix: page the orders query." },
+      { at: 18, title: "Fix typo in shipping FAQ", kind: "cleanup", district: "docs", ask: "Build it: one word in the FAQ." },
+    ],
   },
 } satisfies Record<string, Scenario>;
 
@@ -552,7 +570,7 @@ const INTRO_PILE = 6; // before docs can ship alone, the merge gate holds at mos
 
 export type ScenarioName = keyof typeof SCENARIOS;
 
-// Build as you go (web/src/buildout/CONTRACT.md): the steps the sim builds, in journey order. Building one builds
+// Build as you go (the old app's Build as you go, retired 2026-10-29): the steps the sim builds, in journey order. Building one builds
 // anything missing before it, so a skipped beat never strands the line. The coach card (ui/Buildout.tsx) sends
 // connect_source github for the tunnel, station_action("buildout", step) for boiler, builder, issue and planner (the
 // plan's Continue), and launch_pr for the hold. "checks" builds itself when the guided PR opens, the launch pad when

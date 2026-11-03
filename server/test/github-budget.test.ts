@@ -2,7 +2,7 @@ import { afterEach, expect, it, spyOn } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
 import { GitHubReadCache } from "../src/github-cache";
 import { githubLease } from "../src/github-concurrency";
-import { gh, openPullRequest, registerGithubCredential } from "../src/github";
+import { GITHUB_STEP_DEADLINE_MS, gh, openPullRequest, registerGithubCredential } from "../src/github";
 import { githubCooldown, RateLimitError } from "../src/rate-limit";
 import { budgetDb } from "./budget-fixture";
 
@@ -150,7 +150,7 @@ it("serializes replacement credentials, bounds queue pressure, and forwards Retr
   globalThis.fetch = (async () => { calls++; started(); await new Promise<void>(resolve => { finish = resolve; }); return new Response(null, { status: 429, headers: { "retry-after": "180" } }); }) as unknown as typeof fetch;
   const first = gh("/repos/a/b", tokens[0]);
   await entered;
-  const rest = Array.from({ length: 8 }, (_, index) => gh("/repos/a/b", tokens[index % 2]));
+  const rest = Array.from({ length: 8 }, (_, index) => gh(`/repos/a/b/issues/${index}`, tokens[index % 2]));
   // Attach handlers before releasing the first request to catch every rejection.
   const settled = Promise.allSettled([first, ...rest]);
   const overflow = await Promise.race(rest.map(promise => promise.catch(error => error)));
@@ -162,6 +162,35 @@ it("serializes replacement credentials, bounds queue pressure, and forwards Retr
   expect(results.filter(result => result.status === "rejected" && result.reason.retryAt > Date.now() + 170000)).toHaveLength(8);
   globalThis.fetch = (async () => new Response(null, { status: 429, headers: { "retry-after": "120" } })) as unknown as typeof fetch;
   await expect(openPullRequest(crypto.randomUUID(), "a/b", { title: "test", body: "test", base: "main", head: "fix" })).rejects.toBeInstanceOf(RateLimitError);
+});
+
+it("a hung step times out instead of wedging its scope queue", async () => {
+  const { db } = budgetDb();
+  const scope = `github:installation:hang-${crypto.randomUUID()}`;
+  const token = crypto.randomUUID();
+  await registerGithubCredential(token, db, scope);
+  // The first pacing read never settles, like a stuck D1 call in production.
+  const originalPrepare = db.prepare.bind(db);
+  let hung = false;
+  const prepare = spyOn(db, "prepare").mockImplementation((sql: string) => {
+    const statement = originalPrepare(sql);
+    if (hung || !sql.startsWith("SELECT next_at, failures")) return statement;
+    hung = true;
+    return { bind: () => ({ first: () => new Promise(() => {}) }) } as unknown as D1PreparedStatement;
+  });
+  // Only the hung call's deadline fires at once; the follow-up keeps its real 45s.
+  const realSetTimeout = globalThis.setTimeout;
+  let shortcut = false;
+  const timers = spyOn(globalThis, "setTimeout").mockImplementation(((fn: () => void, ms?: number) => {
+    const first = ms === GITHUB_STEP_DEADLINE_MS && !shortcut;
+    if (first) shortcut = true;
+    return realSetTimeout(fn, first ? 0 : ms);
+  }) as typeof setTimeout);
+  globalThis.fetch = (async () => Response.json({ ok: true })) as unknown as typeof fetch;
+  try {
+    await expect(gh("/repos/a/b", token)).rejects.toBeInstanceOf(RateLimitError);
+    expect(await gh("/repos/a/c", token)).toEqual({ ok: true });
+  } finally { prepare.mockRestore(); timers.mockRestore(); }
 });
 
 it("secondary backoff increases while primary and HTTP-date deadlines are never shortened", () => {
@@ -326,4 +355,112 @@ for (const status of [403, 404]) it(`never serves an in-flight expired candidate
     else await expect(gh("/repos/a/b/issues/1", token)).rejects.toMatchObject({ cause: { status } });
     expect(calls).toBe(2);
   } finally { clock.mockRestore(); }
+});
+
+it("coalesces overlapping reads, clones results and revalidates every later read", async () => {
+  const token = crypto.randomUUID();
+  let calls = 0, release!: () => void, entered!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const conditionals: (string | null)[] = [];
+  globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+    calls++; conditionals.push(new Headers(init?.headers).get("if-none-match")); entered();
+    await held;
+    return conditionals.at(-1) ? new Response(null, { status: 304 }) : Response.json({ checks: ["green"] }, { headers: { etag: '"current"' } });
+  }) as unknown as typeof fetch;
+  const first = gh<{ checks: string[] }>("/repos/a/b/pulls/7", token);
+  await started;
+  const second = gh<{ checks: string[] }>("/repos/a/b/pulls/7", token);
+  // Let both asynchronous fingerprint lookups finish before the provider responds.
+  await new Promise(resolve => setTimeout(resolve, 10));
+  release();
+  const [a, b] = await Promise.all([first, second]);
+  expect(calls).toBe(1);
+  a.checks.push("caller mutation");
+  expect(b.checks).toEqual(["green"]);
+  expect(await gh("/repos/a/b/pulls/7", token)).toEqual({ checks: ["green"] });
+  expect(calls).toBe(2);
+  expect(conditionals).toEqual([null, '"current"']);
+});
+
+it("never coalesces credentials, representations, queries or explicit freshness/cancellation controls", async () => {
+  const token = crypto.randomUUID();
+  let calls = 0;
+  globalThis.fetch = (async () => { calls++; await new Promise(resolve => setTimeout(resolve, 5)); return Response.json({ ok: true }); }) as unknown as typeof fetch;
+  await Promise.all([
+    gh("/repos/a/b", token),
+    gh("/repos/a/b", crypto.randomUUID()),
+    gh("/repos/a/b?page=2", token),
+    gh("/repos/a/b", token, { headers: { accept: "application/vnd.github.raw+json" } }),
+    gh("/repos/a/b", token, { headers: { "cache-control": "no-cache" } }),
+    gh("/repos/a/b", token, { headers: { "if-none-match": '"caller"' } }),
+    gh("/repos/a/b", token, { signal: new AbortController().signal }),
+    gh("/repos/a/b", token, { cache: "reload" }),
+  ]);
+  expect(calls).toBe(8);
+  await Promise.all([gh("/repos/a/b", token), gh("/repos/a/b", token, { redirect: "manual" })]);
+  expect(calls).toBe(10);
+});
+
+it("shares provider backoff across duplicate reads without consuming more GitHub calls", async () => {
+  const { db } = budgetDb();
+  const token = crypto.randomUUID();
+  await registerGithubCredential(token, db, `github:installation:backoff-${crypto.randomUUID()}`);
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls++; await new Promise(resolve => setTimeout(resolve, 10));
+    return new Response(null, { status: 429, headers: { "retry-after": "180" } });
+  }) as unknown as typeof fetch;
+  const results = await Promise.allSettled(Array.from({ length: 12 }, () => gh("/repos/a/b/pulls/7", token)));
+  expect(calls).toBe(1);
+  expect(results.every(r => r.status === "rejected" && r.reason instanceof RateLimitError && r.reason.retryAt > Date.now() + 170000)).toBe(true);
+  await expect(gh("/repos/a/b/pulls/7", token)).rejects.toBeInstanceOf(RateLimitError);
+  expect(calls).toBe(1);
+});
+
+it("a read after a queued write cannot join the read before that write", async () => {
+  const token = crypto.randomUUID();
+  let value = "before", release!: () => void, entered!: () => void, reads = 0;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const held = new Promise<void>(resolve => { release = resolve; });
+  globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+    if (init?.method === "PATCH") { value = "after"; return Response.json({ value }); }
+    reads++; const atStart = value;
+    if (reads === 1) { entered(); await held; }
+    return Response.json({ value: atStart });
+  }) as unknown as typeof fetch;
+  const before = gh("/repos/a/b/issues/1", token);
+  await started;
+  const write = gh("/repos/a/b/issues/1", token, { method: "PATCH", body: "{}" });
+  await new Promise(resolve => setTimeout(resolve, 10));
+  const after = gh("/repos/a/b/issues/1", token);
+  await new Promise(resolve => setTimeout(resolve, 10));
+  release();
+  expect(await before).toEqual({ value: "before" });
+  await write;
+  expect(await after).toEqual({ value: "after" });
+  expect(reads).toBe(2);
+});
+
+it("a revoked installation cannot join an already-running authorized read", async () => {
+  const isolated = await import(`../src/github.ts?pending-revocation=${crypto.randomUUID()}`) as typeof import("../src/github");
+  const { db, sqlite } = budgetDb();
+  sqlite.exec("ALTER TABLE installations ADD COLUMN token_version INTEGER DEFAULT 0; ALTER TABLE installations ADD COLUMN status TEXT DEFAULT 'active'; INSERT INTO installations(id, account_login) VALUES(9022, 'owner'); CREATE TABLE repos(full_name TEXT, archived_at INTEGER, installation_id INTEGER); INSERT INTO repos VALUES('a/b', NULL, 9022)");
+  const env = { DB: db, GITHUB_APP_ID: crypto.randomUUID(), GITHUB_APP_PRIVATE_KEY: generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } }).privateKey };
+  const token = crypto.randomUUID();
+  let release!: () => void, entered!: () => void, reads = 0;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const held = new Promise<void>(resolve => { release = resolve; });
+  globalThis.fetch = (async (url: unknown) => {
+    if (String(url).endsWith("/access_tokens")) return Response.json({ token, expires_at: new Date(Date.now() + 3600000).toISOString() });
+    reads++; entered(); await held; return Response.json({ private: true });
+  }) as unknown as typeof fetch;
+  await isolated.installationToken(env, 9022);
+  const first = isolated.gh("/repos/a/b", token);
+  await started;
+  sqlite.exec("UPDATE installations SET status='suspended', token_version=1 WHERE id=9022");
+  try { await expect(isolated.gh("/repos/a/b", token)).rejects.toThrow("suspended"); }
+  finally { release(); }
+  await first;
+  expect(reads).toBe(1);
 });

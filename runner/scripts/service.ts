@@ -1,7 +1,9 @@
 // Reversible macOS background service; credentials stay in the existing gitignored vars file.
-import { chmod, copyFile, cp, mkdir, stat, writeFile } from "node:fs/promises";
+import { chmod, copyFile, cp, mkdir, realpath, stat, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { pairingConfig } from "../src/service-config";
+import { pairingConfig, serviceConnectionOrigin } from "../src/service-config";
+import { importServicePairings } from "../src/grant-store";
+import { loadPairings } from "../src/pairing";
 const runnerRoot = resolve(import.meta.dir, "..");
 const support = resolve(process.env.HOME!, "Library/Application Support/Shiptorio");
 const label = "com.shiptorio.runner";
@@ -16,16 +18,30 @@ const launch = async (args: string[], required = true) => {
 };
 if (process.platform !== "darwin") throw new Error("Run runner watch on this platform; service installation currently supports macOS.");
 if (action === "install") {
-  if (!(await Bun.file(resolve(runnerRoot, ".dev.vars")).exists())) throw new Error("Pair this Mac first");
+  const workspaceVars = Bun.file(resolve(runnerRoot, ".dev.vars"));
+  const installedVars = Bun.file(resolve(support, ".dev.vars"));
+  const installed = await installedVars.exists() ? await installedVars.text() : undefined;
+  const config = await workspaceVars.exists() ? pairingConfig(await workspaceVars.text(), installed) : installed ?? "";
+  const pinnedFile = Bun.file(resolve(support, "server-url"));
+  const existing = await loadPairings(support);
+  const pinned = await pinnedFile.exists() ? (await pinnedFile.text()).trim() : existing.length ? "https://shiptorio.com" : undefined;
+  const serviceOrigin = serviceConnectionOrigin(config, pinned);
+  // Standalone uses --no-env-file: its server-url (or production default) is authoritative.
+  const standalone = resolve(process.env.HOME!, ".local/share/shiptorio/runner");
+  const sourceFile = Bun.file(resolve(standalone, "server-url"));
+  const sourceOrigin = serviceConnectionOrigin("", await sourceFile.exists() ? (await sourceFile.text()).trim() : "https://shiptorio.com");
+  await importServicePairings(standalone, support, sourceOrigin, serviceOrigin);
+  if (!await workspaceVars.exists() && !await installedVars.exists() &&
+    !(await loadPairings(support)).length) throw new Error("Pair this Mac first");
   const runtime = resolve(support, "bun");
   await mkdir(support, { recursive: true, mode: 0o700 });
   const bundled = await Bun.build({ entrypoints: [resolve(runnerRoot, "src/cli.ts")], target: "bun", outdir: support, naming: "runner.mjs" });
   if (!bundled.success) throw new Error("Unable to bundle the background runner");
-  const vars = Bun.file(resolve(support, ".dev.vars"));
-  const config = pairingConfig(await Bun.file(resolve(runnerRoot, ".dev.vars")).text(), await vars.exists() ? await vars.text() : undefined);
-  await writeFile(resolve(support, ".dev.vars"), config, { mode: 0o600 });
+  await writeFile(resolve(support, ".dev.vars"), config || `SHIPTORIO_URL=${serviceOrigin}\n`, { mode: 0o600 });
+  await writeFile(resolve(support, "server-url"), serviceOrigin + "\n", { mode: 0o600 });
   await chmod(resolve(support, ".dev.vars"), 0o600);
-  await copyFile(process.execPath, runtime); await chmod(runtime, 0o755);
+  if (await realpath(process.execPath) !== await realpath(runtime).catch(() => "")) await copyFile(process.execPath, runtime);
+  await chmod(runtime, 0o755);
   // A `runner login` from this checkout signs in under runner/.agent-home, but the service runs from
   // Application Support. Carry the dedicated agent sign-in over, never overwriting one already there.
   const agentHome = resolve(runnerRoot, ".agent-home");

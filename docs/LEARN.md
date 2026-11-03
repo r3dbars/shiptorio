@@ -15,7 +15,8 @@
   else. ("Wrong call" already did.) The notes reach the planner through `playerFeedback`.
 - **Comes back**: if an item the factory moved on its own later needs rework or comes back after launch, that kind
   forgets and asks again.
-- **Ask me again**: Make it yours lists every learned kind with a button that forgets it.
+- **Ask me again**: Make it yours lists every learned kind with a button that forgets it. `unlearn` with key `*`
+  (no button; `scripts/e2e/real-loop.ts forget`) starts every kind over, half-filled dots too, after a scripted run.
 
 ## What can be learned
 
@@ -44,6 +45,6 @@ it's automatic." (Justin's round 3 pick) An old streak from before learning neve
 - `server/src/factory.ts`: counts yeses on `choose_move`, resets on Edit/Later/Never, `runLearned()` in the tick
   answers one learned card per tick through the same runner handlers a tap uses (logged `approvedBy: "autonomy"`,
   card_taps action `auto`), `unlearn` message, `unlearnOnComeback`.
-- `web/src/ui/LearnDots.tsx`: the dots. Shown on the attention tray, the check-in deck, and the simple tray (#477).
+- The dots on the card (`dots: { have, need }` in the deck's card view, `web/src/deck2d/card/`): "Approve 2 more like this and it's automatic."
 - Sim: build cards learn the same way, so `?source=sim` shows it.
 - Tests: `server/test/learn.test.ts`, `server/test/deck-factory.test.ts` ("the factory learns what the player approves").

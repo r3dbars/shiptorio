@@ -37,6 +37,13 @@ describe("Spark game master", () => {
 });
 
 describe("decision log", () => {
+  it("keeps the agent's tool calls on a thought, trimmed", () => {
+    const b = recordThought(emptyBrain("muse-spark-1.3", true), { at: 1, decision: "diagnose", by: "spark", model: "muse-spark-1.3", ms: 900, title: "4 signals", outcome: "CI → fix", reason: "r",
+      steps: [{ tool: "read_signal", reason: "How bad is CI?", result: "x".repeat(500) }, { tool: "diagnose", reason: "Red PR", result: "speed: CI → fix" }] });
+    expect(b.thoughts[0].steps!.map(s => s.tool)).toEqual(["read_signal", "diagnose"]);
+    expect(b.thoughts[0].steps![0].result.length).toBe(200);
+  });
+
   it("counts Spark calls and fallbacks, newest first", () => {
     let b = emptyBrain("muse-spark-1.3", true);
     b = recordThought(b, { at: 1, decision: "triage", by: "spark", model: "muse-spark-1.3", ms: 900, title: "A", outcome: "bug → web", reason: "r" });

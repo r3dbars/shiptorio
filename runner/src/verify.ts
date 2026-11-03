@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { checkSandbox, type CheckSandbox } from "./sandbox";
+import { checkSandbox, resumeOnTimeout, type CheckSandbox } from "./sandbox";
 import { snapshotApproved } from "./publication";
 
 export const TEST_PATH = /(^|\/)(test|tests|__tests__|spec)\/.*\.[cm]?[jt]sx?$|\.(test|spec)\.[cm]?[jt]sx?$/i;
@@ -18,7 +18,7 @@ export function testOutcome(result: Result): { passed: boolean; reproduced: bool
 export async function resetVerifyBase(sandbox: CheckSandbox, work: string) {
   const base = resolve(work, ".shiptorio-verify-base");
   await sandbox.run(["git", "worktree", "remove", "--force", base], work);
-  const cleanup = await sandbox.run([process.execPath, "--no-env-file", "-e", 'import {rmSync} from "node:fs";rmSync(".shiptorio-verify-base",{recursive:true,force:true});'], work);
+  const cleanup = await sandbox.run([process.execPath, "--no-env-file", "--config=/dev/null", "-e", 'import {rmSync} from "node:fs";rmSync(".shiptorio-verify-base",{recursive:true,force:true});'], work);
   if (cleanup.code) throw new Error("Unable to clean interrupted verify base");
   const prune = await sandbox.run(["git", "worktree", "prune"], work);
   if (prune.code) throw new Error("Unable to prune interrupted verify base");
@@ -32,12 +32,7 @@ export async function verifyRegression(work: string, baseSha: string, paths: str
   const args = [process.execPath, "test", ...tests.map(p => `./${p}`)];
   const command = `bun test ${tests.map(p => `./${p}`).join(" ")}`.slice(0, 1000);
   if (!tests.length) return { failsOnBase: false, passesOnHead: false, baseSha, command: "No changed test files", logTail: "No reproducible test recipe was attached." };
-  const boundary = await checkSandbox(boundaryRoot);
-  const sandbox: CheckSandbox = { run: async (args, cwd = work, options) => {
-      const result = await boundary.run(args, cwd, options);
-      if (result.timedOut) throw new TypeError("Supervisor interrupted or timed out; saved build will resume");
-      return result;
-    }, close: () => boundary.close() };
+  const sandbox = resumeOnTimeout(await checkSandbox(boundaryRoot), work);
   const run = async (args: string[], cwd: string, boundary: CheckSandbox = sandbox, install = false): Promise<Result> => {
     const result = await boundary.run(args, cwd, { install });
     if (result.timedOut) throw new TypeError("Verification interrupted or timed out; saved build will resume");
@@ -57,7 +52,7 @@ export async function verifyRegression(work: string, baseSha: string, paths: str
         if (install.code) throw new Error("Verify base dependency setup failed");
       }
       const recipes = await snapshotApproved(sandbox, tests);
-      const overlay = await baseSandbox.run([process.execPath, "--no-env-file", "-e", `
+      const overlay = await baseSandbox.run([process.execPath, "--no-env-file", "--config=/dev/null", "-e", `
         import {mkdirSync,writeFileSync} from "node:fs";import {dirname} from "node:path";
         for(const [path,content] of Object.entries(JSON.parse(process.argv[1]))){mkdirSync(dirname(path),{recursive:true});writeFileSync(path,Buffer.from(content,"base64"));}
       `, JSON.stringify(recipes)], base);

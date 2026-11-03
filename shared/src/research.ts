@@ -8,7 +8,7 @@ import type { Belt, FactoryState, Item, Machine, Research, Science } from "./mod
 export interface Tech {
   id: string;
   name: string; // "Leftover sweeper"
-  icon: string; // a HUD pixel icon name (web/src/ui/icons.tsx)
+  icon: string; // a HUD pixel icon name (the old React HUD drew these)
   tier: 1 | 2 | 3;
   cost: number; // science packs
   needs: string[]; // every one of these first
@@ -124,7 +124,6 @@ export const TECHS: Tech[] = [
 export const techById = (id: string) => TECHS.find((t) => t.id === id);
 export const CHECK_PREFIX = "check-";
 export const checkStationId = (tech: string) => `${CHECK_PREFIX}${tech}`;
-export const techOfStation = (id: string | undefined) => (id?.startsWith(CHECK_PREFIX) ? techById(id.slice(CHECK_PREFIX.length)) : undefined);
 
 export const emptyResearch = (): Research => ({ done: [], spent: 0 });
 export const packs = (s: Science) => s.red + s.green + s.grey + s.blue;
@@ -267,18 +266,12 @@ export function suggestResearch(state: Pick<FactoryState, "items" | "science" | 
   if (!best) return undefined;
   return { tech: best.tech.id, why: `${best.station} sent back ${best.n} PRs for this. ${best.tech.name} would have caught them in a second, before anything expensive ran.` };
 }
-const STATION_WORD: Record<string, string> = { ci: "CI", verify: "The verify bay", review: "AI review", merge: "You", orbit: "Orbit watch" };
+const STATION_WORD: Record<string, string> = { ci: "Checks", verify: "Checks", review: "Review", merge: "You", orbit: "Orbit watch" };
 
 // ---------- the line ----------
 
 /** The researched check stations, in line order (the order they were researched). */
 export const researchedChecks = (state: Pick<FactoryState, "research">) => (state.research?.done ?? []).filter((id) => !techById(id)?.soon);
-
-/** Pending checks for an item entering the gauntlet. Undefined when nothing is researched. */
-export function pendingChecks(state: Pick<FactoryState, "research">): NonNullable<Item["inspection"]>["checks"] {
-  const ids = researchedChecks(state);
-  return ids.length ? ids.map((id) => ({ id, state: "pending" as const, reason: "Waiting for its turn" })) : undefined;
-}
 
 const STEP = 3; // grid cells between stations on the line
 

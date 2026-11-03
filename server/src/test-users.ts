@@ -128,6 +128,7 @@ export function testUserRoutes(app: Hono<any>): void {
       }
       return c.json({ error: "Isolated test factory is unavailable; no real provider request was made" }, 503);
     }
+    if (url.pathname === "/github/installed" && c.req.method === "GET") return next(); // Redirect-only App callback for the already verified test persona.
     if (/^\/(?:connect|admin|setup|github)(?:\/|$)/.test(url.pathname) || /^\/api\/(?:runner|account|setup|sources|empire)/.test(url.pathname) || ["/auth/owner-session", "/auth/login"].includes(url.pathname)) return c.json({ error: "Test account operation is not permitted" }, 403);
     // Test accounts may use ordinary persisted preferences/progress and the built client only.
     if (url.pathname.startsWith("/api/") && !/^\/api\/(?:me(?:\/|$)|version$|health$|flags$|telemetry\/config$)/.test(url.pathname)) return c.json({ error: "Test account operation is not permitted" }, 403);

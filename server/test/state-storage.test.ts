@@ -87,7 +87,7 @@ describe("persisted factory schema", () => {
     for (const [key,value] of f.rows) if (key.startsWith("stateChunk:")) expect(jsonBytes(value)).toBeLessThan(INLINE_BYTES);
     expect(await loadFactoryState(f.storage)).toEqual(large);
     f.fail("stateChunk:000001");
-    await expect(saveFactoryState(f.storage, {...large, goal: large.goal + "more"})).rejects.toThrow("disk failure");
+    await expect(saveFactoryState(f.storage, {...large, goal: "!" + large.goal})).rejects.toThrow("disk failure");
     expect(await loadFactoryState(f.storage)).toEqual(large);
     f.fail(); await saveFactoryState(f.storage, migrateFactoryState(original));
     expect([...f.rows.keys()]).toEqual(["state"]);
@@ -139,4 +139,41 @@ it("rolls back a failed later chunk batch, then a retry can read it", async () =
   f.fail();
   await saveFactoryState(f.storage, large);
   expect(await loadFactoryState(f.storage)).toEqual(large);
+});
+
+it("skips writing an unchanged inline snapshot but still writes a changed one", async () => {
+  const f = stateStorage(null);
+  const state = migrateFactoryState(original);
+  await saveFactoryState(f.storage, state);
+  f.resetCalls();
+  await saveFactoryState(f.storage, structuredClone(state));
+  expect(f.calls).toEqual({get: 1, put: 0, delete: 0});
+  await saveFactoryState(f.storage, {...state, goal: "ship it"});
+  expect(f.calls.put).toBe(1);
+  expect(await loadFactoryState(f.storage)).toEqual({...state, goal: "ship it"});
+  // A deleted snapshot is rewritten even when memory looks unchanged.
+  f.rows.delete("state"); f.resetCalls();
+  await saveFactoryState(f.storage, {...state, goal: "ship it"});
+  expect(f.calls.put).toBe(1);
+  expect(await loadFactoryState(f.storage)).toEqual({...state, goal: "ship it"});
+});
+
+it("rewrites only the chunks that changed in a chunked snapshot", async () => {
+  const f = stateStorage(null);
+  const large = migrateFactoryState({...original, goal: "x".repeat(16000 * 128)});
+  await saveFactoryState(f.storage, large);
+  f.resetCalls();
+  await saveFactoryState(f.storage, structuredClone(large));
+  expect(f.calls).toEqual({get: 3, put: 0, delete: 0});
+  f.resetCalls();
+  // Same length, one character changed near the start: one chunk, same manifest.
+  const edited = {...large, goal: "y" + large.goal!.slice(1)};
+  await saveFactoryState(f.storage, edited);
+  expect(f.calls.put).toBe(1);
+  expect(f.batchSizes.at(-1)).toBe(1);
+  expect(await loadFactoryState(f.storage)).toEqual(edited);
+  // A missing chunk is restored rather than trusted.
+  f.rows.delete("stateChunk:000005");
+  await saveFactoryState(f.storage, edited);
+  expect(await loadFactoryState(f.storage)).toEqual(edited);
 });

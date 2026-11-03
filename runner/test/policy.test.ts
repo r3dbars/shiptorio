@@ -16,6 +16,9 @@ test("supervisor refuses out-of-scope patches, huge changes and private keys", (
 test("adapters keep native subscription auth and enforce bounded tool permissions", () => {
   expect(harnessArgs("codex", "task")).toContain("read-only");
   expect(harnessArgs("codex", "task")).toContain("--ignore-user-config");
+  // --ignore-user-config still starts installed plugin MCPs (Gmail, Drive, meetings...) unless plugins are off.
+  expect(harnessArgs("codex", "task")).toContain("features.plugins=false");
+  expect(harnessArgs("codex", "task")).toContain("features.apps=false");
   expect(harnessArgs("claude_code", "task")).toContain("--restricted");
   expect(harnessArgs("claude_code", "task")).not.toContain("--bare");
   expect(harnessArgs("claude_code", "task")).not.toContain("--dangerously-skip-permissions");

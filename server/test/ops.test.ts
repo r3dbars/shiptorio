@@ -35,7 +35,13 @@ test("flag precedence, user isolation, defaults and fail-closed storage", async 
 test("FEATURES=all (shiptorio.dev) defaults every flag on, and KV false still kills it", async () => {
   const values = new Map<string, string>();
   const env = { FEATURES: "all", CACHE: { get: async (key: string) => values.get(key) ?? null } };
+  // One trust meter: permits and levels stay parked even on dev, and only a KV "true" opts in.
+  expect(await flagEnabled(env as never, "permits")).toBe(false);
+  expect(await flagEnabled(env as never, "autonomy")).toBe(false);
+  expect(await flagEnabled(env as never, "learn")).toBe(true);
+  values.set(flagKey("autonomy"), "true");
   expect(await flagEnabled(env as never, "autonomy")).toBe(true);
+  values.delete(flagKey("autonomy"));
   expect(await flagEnabled(env as never, "brain", "alice")).toBe(true);
   expect(await flagEnabled({ FEATURES: "all" } as never, "newFeatures")).toBe(true);
   values.set(flagKey("brain"), "false");

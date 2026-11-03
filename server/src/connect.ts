@@ -1,8 +1,8 @@
 import { ironPage } from "./ironPage";
+import { escapeHtml as esc } from "./encode";
 // /connect/<kind>: the one page where the player pastes a mine's key. Server-rendered,
 // Black Iron plate (ironPage.ts), same look as the access page. Keys are encrypted in D1 and never come back out to the browser.
 
-const esc = (s: string) => s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
 
 export function connectPage(o: { kind: "sentry" | "posthog"; repo: string | null; connected: boolean; webhookUrl: string; error?: string; saved?: boolean; lastUsedAt?: number | null; revoked?: boolean; workerOverride?: boolean }): string {
   const name = o.kind === "sentry" ? "Sentry" : "PostHog";

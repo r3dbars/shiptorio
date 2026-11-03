@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { BudgetError } from "../src/budget";
 import { OutboundError, RetryExhausted } from "../src/reliability";
 import { SparkError } from "../src/spark";
+import { ACCOUNT_CAP_LINE, SITE_CAP_LINE } from "../src/spend";
 import { planningDeadline, planningFailure, planningFailureKind, planningHold, plannerRestDeck } from "../src/planning-retry";
 
 const now = Date.parse("2026-10-27T20:00:00Z");
@@ -49,6 +50,18 @@ describe("planner cooldowns", () => {
     await expect(planningDeadline(async () => { started = true; }, 0)).rejects.toThrow("deadline");
     expect(started).toBe(false);
   });
+});
+
+test("a short timeout or 429 rest reads as a calm moment, a long rest keeps its reset time", async () => {
+  const { PLANNER_BUSY_LINE } = await import("../src/planning-retry");
+  for (const error of [new Error("Planner rate limit (429)"), new Error("The operation timed out.")]) {
+    const once = planningFailure(undefined, error, now);
+    expect(plannerRestDeck([], once, now)[0].title).toBe(PLANNER_BUSY_LINE);
+    let long = once;
+    for (let n = 1; n < 3; n++) long = planningFailure(long, error, now + n * 1000);
+    expect(plannerRestDeck([], long, now)[0].title).toMatch(/^Planner is resting until/);
+  }
+  expect(plannerRestDeck([], planningFailure(undefined, new Error("503"), now), now)[0].title).toMatch(/^Planner is resting until/);
 });
 
 test("the resting card respects the twelve-card browser contract on a full deck", async () => {
@@ -107,4 +120,20 @@ test("a provider's Retry-After window can cross UTC midnight without retrying ea
   expect(retry.retryAt).toBe(retryAt);
   expect(planningHold(retry, Date.parse('2026-10-28T00:00:00Z'))).toEqual(retry);
   expect(planningHold(retry, retryAt)).toBeNull();
+});
+
+test("the $5/day account cap rests Shippy until UTC midnight with a plain card, not an outage", () => {
+  const retry = planningFailure(undefined, new BudgetError("Account daily dollar budget reached. Shippy is done thinking for today"), now);
+  expect(retry).toMatchObject({ kind: "cap", retryAt: Date.parse("2026-10-28T00:00:00Z") });
+  const [card] = plannerRestDeck([], retry, now);
+  expect(card).toMatchObject({ title: "Shippy is done thinking for today", why: expect.stringContaining("five dollars of AI. He's back at 00:00 UTC") });
+});
+
+test("the $50/day site cap reads as everyone's limit, not this player's, using the real thrown line", () => {
+  const retry = planningFailure(undefined, new BudgetError(`Site daily dollar budget reached. ${SITE_CAP_LINE}`), now);
+  expect(retry).toMatchObject({ kind: "cap", retryAt: Date.parse("2026-10-28T00:00:00Z") });
+  const [card] = plannerRestDeck([], retry, now);
+  expect(card).toMatchObject({ title: "Shippy is done thinking for today", why: "Shiptorio used today's AI for everyone. He's back at 00:00 UTC. You can keep shipping what's ready." });
+  const [own] = plannerRestDeck([], planningFailure(undefined, new BudgetError(`Account daily dollar budget reached. ${ACCOUNT_CAP_LINE}`), now), now);
+  expect(own.why).toBe("This account used today's five dollars of AI. He's back at 00:00 UTC. You can keep shipping what's ready.");
 });

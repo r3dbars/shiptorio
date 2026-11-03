@@ -82,21 +82,25 @@ try {
     pending.set(requestId, { resolve: v => { clearTimeout(timer); resolve(v); }, reject: e => { clearTimeout(timer); reject(e); } });
     profileSocket!.send(JSON.stringify({ id: requestId, method, params }));
   });
-  await cdp('Profiler.enable');
-  await cdp('Profiler.setSamplingInterval', { interval: cpuSamplingIntervalUs });
-  await cdp('Profiler.start');
-  const started = performance.now();
-  for (let round = 0; round < rounds; round++) {
+  const round = async (timed: boolean) => {
     const expected = new Map(repos.map(repo => [repo, Math.max(...clients.filter(c => c.repo === repo).map(c => c.tick)) + 1]));
     await Promise.all(repos.map(async repo => {
-      const start = performance.now(); sentAt.set(repo, start);
+      const start = performance.now(); if (timed) sentAt.set(repo, start);
       await post(`/__test/${repo}/tick`);
-      tickTimes.push(performance.now() - start);
+      if (timed) tickTimes.push(performance.now() - start);
     }));
     await waitFor(() => clients.every(c => c.tick >= expected.get(c.repo)!));
     sentAt.clear();
     if (failures.length) throw new Error(failures.join('\n'));
-  }
+  };
+  // The first tick of 51 cold factories takes ~3x a warm one. One round is exactly the
+  // top 5% of samples, so timing it put p95 on that cliff edge (4.1s or 6.4s, same code).
+  await round(false);
+  await cdp('Profiler.enable');
+  await cdp('Profiler.setSamplingInterval', { interval: cpuSamplingIntervalUs });
+  await cdp('Profiler.start');
+  const started = performance.now();
+  for (let i = 0; i < rounds; i++) await round(true);
   const elapsedMs = performance.now() - started;
   const { profile } = await cdp('Profiler.stop');
   if (!profile.samples?.length || profile.samples.length !== profile.timeDeltas?.length) throw new Error('Inspector returned no usable CPU samples');

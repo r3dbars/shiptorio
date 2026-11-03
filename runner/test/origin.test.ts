@@ -39,7 +39,7 @@ test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1")("CLI rejects an origin 
         });
         const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
         expect(code).not.toBe(0);
-        expect(stderr).toContain("another Shiptorio server");
+        expect(stderr).toContain("another factory");
         expect(stdout + stderr).not.toContain(token);
         expect(requests).toEqual([]);
       }

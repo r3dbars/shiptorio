@@ -3,7 +3,7 @@ import { authorizedDB, membershipCache, authorizedSocket, browserEnv, browserCoo
 import { describe, expect, it, mock } from "bun:test";
 import { FactoryState, type Item } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
-import { freshInspection, liveStations, migrateGauntlet, nextGate, parseVerdict, setStage, verifyFromDiff } from "../src/gauntlet";
+import { changedPaths, freshInspection, liveStations, migrateGauntlet, nextGate, parseVerdict, setStage, verifyFromDiff } from "../src/gauntlet";
 
 mock.module("cloudflare:workers", () => ({ DurableObject: class {
   ctx: unknown; env: unknown;
@@ -62,6 +62,27 @@ describe("gauntlet rules", () => {
     expect(verifyFromDiff(["docs/LOOP.md", "README.md"], false).passed).toBe(true);
     expect(verifyFromDiff([], true).passed).toBe(false);
   });
+  it("a docs fix sent back once still passes as docs, though the rework build attached a proof", () => {
+    const proof = { failsOnBase: false, passesOnHead: true, baseSha: "a".repeat(40), headSha: "b".repeat(40), command: "bun test", logTail: "" };
+    expect(verifyFromDiff(["docs/GLOSSARY.md"], true, proof)).toMatchObject({ passed: true, reason: "Docs-only change, nothing to reproduce." });
+    expect(verifyFromDiff(["src/cart.ts"], true, proof).passed).toBe(false);
+    expect(verifyFromDiff(["docs/guide.md", "docs/run.ts"], true, proof).passed).toBe(false);
+  });
+  it("requires proof for executable docs and MDX, while preserving plain prose", () => {
+    for (const files of [["docs/install.sh"], ["docs/App.mdx"], ["web/docs/a.ts", "server/docs/b.ts"], ["docs/config.json"], ["docs/guide.md", "docs/run.ts"]]) {
+      expect(verifyFromDiff(files, true).passed).toBe(false);
+    }
+    expect(verifyFromDiff(["README.md", "docs/guide.txt"], false).passed).toBe(true);
+    expect(verifyFromDiff(["docs/run.ts", "docs/run.test.ts"], true).passed).toBe(true);
+  });
+  it("proof exemptions include the old rename path without treating a removed test as attached proof", () => {
+    for (const previous_filename of ["src/code.ts", "server/test/old.test.ts", undefined]) {
+      const files = [{ filename: "docs/retired.md", previous_filename, status: "renamed" }];
+      expect(verifyFromDiff(files.map(f => f.filename), false, undefined, changedPaths(files)).passed).toBe(false);
+    }
+    const prose = [{ filename: "docs/new.md", previous_filename: "docs/old.md", status: "renamed" }];
+    expect(verifyFromDiff(prose.map(f => f.filename), false, undefined, changedPaths(prose)).passed).toBe(true);
+  });
   it("reads a review verdict defensively", () => {
     expect(parseVerdict('```json\n{"verdict":"pass","reason":"Fixes the null","findings":["ok"]}\n```')).toEqual({ verdict: "pass", reason: "Fixes the null", findings: ["ok"] });
     expect(parseVerdict('{"verdict":"maybe"}').verdict).toBe("rework");
@@ -92,25 +113,27 @@ describe("live gauntlet in the Factory", () => {
     const original = globalThis.fetch;
     const calls: string[] = [];
     let mergedWith: unknown = null, commentTries = 0;
+    let mergedWebhook: (() => Promise<void>) | undefined;
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       if (/\/comments\?per_page=100&page=/.test(url)) return Response.json([]);
       if (url.includes("/check-runs?")) return Response.json({ total_count: 1, check_runs: [{ name: "CI", app: { id: 15368 }, head_sha: new URL(url).pathname.split("/").at(-2), status: "completed", conclusion: "success" }] });
       if (url.includes("/status?")) return Response.json({ total_count: 0, statuses: [] });
+      if (url.includes("/git/trees/")) return Response.json({tree:[{path:"web/src/cart.ts",type:"blob"},{path:"web/src/cart.test.ts",type:"blob"}],truncated:false});
       calls.push(`${init?.method ?? "GET"} ${url.replace("https://api.github.com", "")}`);
       const json = (v: unknown) => Response.json(v);
       if (url.endsWith("/access_tokens")) return json({ token: "t" });
       if (url.includes("/pulls/99/files")) return json([{ filename: "web/src/cart.ts", status: "modified", patch: "-a\n+b" }, { filename: "web/src/cart.test.ts", status: "added", patch: "+test" }]);
       if (url.endsWith("/chat/completions")) return json({ choices: [{ message: { content: '{"verdict":"pass","reason":"Fixes the empty cart crash.","findings":[]}' } }] });
       if (url.endsWith("/issues/99/comments")) return ++commentTries <= 2 ? new Response("forbidden", { status: 403 }) : json({ id: 1 });
-      if (url.endsWith("/pulls/99/merge")) { mergedWith = JSON.parse(String(init?.body)); return json({ merged: true }); }
+      if (url.endsWith("/pulls/99/merge")) { mergedWith = JSON.parse(String(init?.body)); await mergedWebhook?.(); return json({ merged: true, sha:"merged-head" }); }
       if (url.endsWith("/pulls/99")) return json({ base: { ref: "main", sha: "base" }, head: { sha: head }, state: "open", draft: false, mergeable: true, mergeable_state: "clean", merged: false });
       throw new Error(`unexpected ${url}`);
     }) as typeof fetch;
     try {
       const state = base();
       state.items = [setStage(pr(), "ci", "passed", "All checks passed")];
-      const data = new Map<string, unknown>([["state", state], ["meta", { repo: "r3dbars/demo", installationId: 1 }]]);
+      const data = new Map<string, unknown>([["githubAccessCheckedAt", Date.now()], ["state", state], ["meta", { repo: "r3dbars/demo", installationId: 1 }]]);
       const events: { type: string; move?: { id: string; options: { id: string }[]; evidence?: unknown[] } }[] = [];
       let alarm: number | null = null;
       const storage = {
@@ -126,6 +149,7 @@ describe("live gauntlet in the Factory", () => {
       const f = new Factory(ctx as never, credentialEnv({ ...browserEnv, CACHE: membershipCache, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "test-meta-key-not-real", DB: { prepare: () => ({ bind: () => ({ first: async () => ({ token_version: 0, status: "active", installation_id: 1, id: 1, login: "test-player", user_id: 1, calls: 1, tokens: 100, next_at: Date.now(), failures: 0, enabled:1, runs_daily:20, count:1 }), all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } }) as never);
 
       const saved = () => data.get("state") as FactoryState;
+      mergedWebhook = () => f.onPullClosed(99, true, "merged-head");
 
       await f.alarm(); // verify → AI before the background comment retry
       expect(saved().items[0].inspection?.stages.find((s) => s.gate === "verify")?.state).toBe("passed");

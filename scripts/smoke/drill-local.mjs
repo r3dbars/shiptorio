@@ -17,7 +17,7 @@ const server = Bun.serve({
     if (broken && path === entry) return new Response('throw new Error("browser rollback drill: deliberately broken entry");', {
       headers: { 'content-type': 'application/javascript', 'cache-control': 'no-store' },
     });
-    const file = resolve(root, path === '/judge' || path === '/' ? 'index.html' : `.${path}`);
+    const file = resolve(root, path === '/judge' || path === '/' ? 'deck.html' : `.${path}`);
     if (relative(root, file).startsWith('..')) return new Response('Not found', { status: 404 });
     return new Response(Bun.file(file), { headers: { 'cache-control': 'no-store' } });
   },

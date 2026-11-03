@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { FactoryState, ServerToWeb } from "../../shared/src";
 import { connectSim } from "../../web/src/sim/engine";
-import { applyPatch } from "../../web/src/store";
+import { applyPatch } from "../../web/src/source/patch";
 import { Clock } from "../src/system";
 
 // ?source=sim&scenario=growth, played by someone who says yes to every suggested option.

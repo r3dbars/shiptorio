@@ -1,0 +1,555 @@
+{
+  "version": 1,
+  "provenance": "fixture",
+  "name": "Testing #16 → PR #27 · fixture sample",
+  "frames": [
+    {
+      "at": 0,
+      "message": {
+        "type": "snapshot",
+        "state": {
+          "repo": "r3dbars/Testing",
+          "baseBranch": "main",
+          "districts": [],
+          "machines": [],
+          "belts": [],
+          "items": [
+            {
+              "id": "gh-16",
+              "kind": "cleanup",
+              "source": "github_issue",
+              "title": "Explain the README checks",
+              "url": "https://github.com/r3dbars/Testing/issues/16",
+              "district": "/",
+              "state": "ore",
+              "attempts": 0,
+              "updatedAt": 1
+            }
+          ],
+          "power": [],
+          "science": {
+            "red": 0,
+            "green": 0,
+            "grey": 0,
+            "blue": 0
+          },
+          "trust": 0,
+          "tick": 0
+        }
+      }
+    },
+    {
+      "at": 2000,
+      "message": {
+        "type": "patch",
+        "patch": {
+          "pipeline": [
+            {
+              "id": "planner",
+              "state": "working",
+              "cause": "planning",
+              "itemIds": [
+                "gh-16"
+              ],
+              "moveIds": []
+            },
+            {
+              "id": "builder",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "checks",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "review",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "gate",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "launch",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            }
+          ],
+          "items": [
+            {
+              "id": "gh-16",
+              "kind": "cleanup",
+              "source": "github_issue",
+              "title": "Explain the README checks",
+              "url": "https://github.com/r3dbars/Testing/issues/16",
+              "district": "/",
+              "state": "queued",
+              "attempts": 0,
+              "updatedAt": 2
+            }
+          ]
+        }
+      }
+    },
+    {
+      "at": 6000,
+      "message": {
+        "type": "deck",
+        "deck": [
+          {
+            "id": "plan-16",
+            "title": "Start the README build?",
+            "why": "Sample replay of the README workflow. No action is sent.",
+            "options": [
+              {
+                "id": "continue",
+                "label": "Continue",
+                "recommended": true,
+                "actions": [
+                  {
+                    "tool": "approve_runner_job",
+                    "args": {
+                      "itemId": "gh-16"
+                    },
+                    "reason": "Sample"
+                  }
+                ]
+              }
+            ],
+            "itemId": "gh-16",
+            "createdAt": 1,
+            "kind": "build"
+          }
+        ]
+      }
+    },
+    {
+      "at": 9000,
+      "message": {
+        "type": "deck",
+        "deck": []
+      }
+    },
+    {
+      "at": 9000,
+      "message": {
+        "type": "patch",
+        "patch": {
+          "pipeline": [
+            {
+              "id": "planner",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "builder",
+              "state": "working",
+              "cause": "building",
+              "itemIds": [
+                "gh-16"
+              ],
+              "moveIds": []
+            },
+            {
+              "id": "checks",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "review",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "gate",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "launch",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            }
+          ],
+          "items": [
+            {
+              "id": "gh-16",
+              "kind": "cleanup",
+              "source": "github_issue",
+              "title": "Explain the README checks",
+              "url": "https://github.com/r3dbars/Testing/issues/16",
+              "district": "/",
+              "state": "working",
+              "attempts": 0,
+              "updatedAt": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "at": 69000,
+      "message": {
+        "type": "patch",
+        "patch": {
+          "pipeline": [
+            {
+              "id": "planner",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "builder",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "checks",
+              "state": "working",
+              "cause": "checking",
+              "itemIds": [
+                "gh-16"
+              ],
+              "moveIds": []
+            },
+            {
+              "id": "review",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "gate",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "launch",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            }
+          ],
+          "items": [
+            {
+              "id": "gh-16",
+              "kind": "cleanup",
+              "source": "github_issue",
+              "title": "Explain the README checks",
+              "url": "https://github.com/r3dbars/Testing/issues/16",
+              "district": "/",
+              "state": "inspecting",
+              "prNumber": 27,
+              "prUrl": "https://github.com/r3dbars/Testing/pull/27",
+              "attempts": 0,
+              "updatedAt": 4
+            }
+          ]
+        }
+      }
+    },
+    {
+      "at": 129000,
+      "message": {
+        "type": "patch",
+        "patch": {
+          "pipeline": [
+            {
+              "id": "planner",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "builder",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "checks",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "review",
+              "state": "working",
+              "cause": "reviewing",
+              "itemIds": [
+                "gh-16"
+              ],
+              "moveIds": []
+            },
+            {
+              "id": "gate",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "launch",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            }
+          ],
+          "items": [
+            {
+              "id": "gh-16",
+              "kind": "cleanup",
+              "source": "github_issue",
+              "title": "Explain the README checks",
+              "url": "https://github.com/r3dbars/Testing/issues/16",
+              "district": "/",
+              "state": "inspecting",
+              "prNumber": 27,
+              "prUrl": "https://github.com/r3dbars/Testing/pull/27",
+              "attempts": 0,
+              "updatedAt": 4,
+              "inspection": {
+                "headSha": "0338c1ed80a4af8c245913fdd6b2f50c6a8ca40c",
+                "state": "pending",
+                "stages": [
+                  {
+                    "gate": "ai",
+                    "state": "pending",
+                    "reason": "Fixture review"
+                  }
+                ],
+                "humanApproved": false
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "at": 189000,
+      "message": {
+        "type": "patch",
+        "patch": {
+          "pipeline": [
+            {
+              "id": "planner",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "builder",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "checks",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "review",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "gate",
+              "state": "waiting_player",
+              "cause": "gate_waiting",
+              "itemIds": [
+                "gh-16"
+              ],
+              "moveIds": []
+            },
+            {
+              "id": "launch",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            }
+          ],
+          "items": [
+            {
+              "id": "gh-16",
+              "kind": "cleanup",
+              "source": "github_issue",
+              "title": "Explain the README checks",
+              "url": "https://github.com/r3dbars/Testing/issues/16",
+              "district": "/",
+              "state": "on_pad",
+              "prNumber": 27,
+              "prUrl": "https://github.com/r3dbars/Testing/pull/27",
+              "attempts": 0,
+              "updatedAt": 5
+            }
+          ]
+        }
+      }
+    },
+    {
+      "at": 189000,
+      "message": {
+        "type": "deck",
+        "deck": [
+          {
+            "id": "ship-27",
+            "title": "Ship PR #27?",
+            "why": "Sample replay of the README workflow. No action is sent.",
+            "options": [
+              {
+                "id": "continue",
+                "label": "Continue",
+                "recommended": true,
+                "actions": [
+                  {
+                    "tool": "request_merge",
+                    "args": {
+                      "itemId": "gh-16"
+                    },
+                    "reason": "Sample"
+                  }
+                ]
+              }
+            ],
+            "itemId": "gh-16",
+            "createdAt": 1,
+            "kind": "ship"
+          }
+        ]
+      }
+    },
+    {
+      "at": 195000,
+      "message": {
+        "type": "deck",
+        "deck": []
+      }
+    },
+    {
+      "at": 196000,
+      "message": {
+        "type": "patch",
+        "patch": {
+          "pipeline": [
+            {
+              "id": "planner",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "builder",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "checks",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "review",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            },
+            {
+              "id": "gate",
+              "state": "done",
+              "cause": "gate_waiting",
+              "itemIds": [
+                "gh-16"
+              ],
+              "moveIds": []
+            },
+            {
+              "id": "launch",
+              "state": "idle",
+              "cause": "no_work",
+              "itemIds": [],
+              "moveIds": []
+            }
+          ],
+          "items": [
+            {
+              "id": "gh-16",
+              "kind": "cleanup",
+              "source": "github_issue",
+              "title": "Explain the README checks",
+              "url": "https://github.com/r3dbars/Testing/issues/16",
+              "district": "/",
+              "state": "launched",
+              "prNumber": 27,
+              "prUrl": "https://github.com/r3dbars/Testing/pull/27",
+              "attempts": 0,
+              "updatedAt": 6,
+              "orbit": {
+                "since": 6,
+                "until": 10000000000000,
+                "state": "watching"
+              }
+            }
+          ],
+          "metrics": {
+            "rockets": 1,
+            "bitersKilled": 0,
+            "escapedDefects": 0,
+            "customersAnswered": 0,
+            "usersUnblocked": 0,
+            "shipScore": 10
+          }
+        }
+      }
+    }
+  ]
+}

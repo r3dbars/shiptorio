@@ -10,8 +10,9 @@ export interface PlanningRetry { day: string; failures: number; retryAt: number;
 /** Read-only limit snapshots: waking on a raised cap must never reserve or refund a paid call. */
 export async function planningCapacity(env: BudgetEnv, account: string, repo: string): Promise<PlanningCapacity> {
   const limits = await accountBudgetLimits(env, account);
-  const spend = await factorySpend(env.DB!, repo);
-  return { calls: limits.calls, tokens: limits.tokens, spend: spend.dailyBudgetUsd };
+  const spend = await factorySpend(env.DB!, repo, Date.now(), account);
+  // The tighter dollar ceiling decides; raising either one wakes the planner.
+  return { calls: limits.calls, tokens: limits.tokens, spend: Math.min(spend.dailyBudgetUsd, spend.account?.dailyBudgetUsd ?? Infinity) };
 }
 export const planningCapacityRaised = (previous: PlanningCapacity, current: PlanningCapacity) =>
   current.calls > previous.calls || current.tokens > previous.tokens || current.spend > previous.spend;
@@ -58,13 +59,22 @@ export function planningHold(retry: PlanningRetry | undefined, now = Date.now())
   }
   return retry.retryAt > now ? retry : null;
 }
+/** A timeout or 429 is the planner being busy for a moment, not a broken station. */
+export const plannerBusy = (retry: { kind?: PlanningFailureKind } | null | undefined) => retry?.kind === "rate_limit" || retry?.kind === "timeout";
+export const PLANNER_BUSY_LINE = "Planner is thinking, back in a moment.";
 /** One informational card, with an absolute reset carried as data for browser-local display. */
 export function plannerRestDeck(deck: Move[], retry: PlanningRetry | undefined, now = Date.now()): Move[] {
   const cards = deck.filter(m => m.id !== "planner-rest");
   const hold = planningHold(retry, now);
   if (!hold) return cards;
-  return [...cards.slice(0, 11), { id: "planner-rest", title: `Planner is resting until ${new Date(hold.retryAt).toISOString().slice(11, 16)} UTC`,
-    why: "Planning resumes automatically. You can keep reviewing existing work.", kind: "unblock", createdAt: now,
+  // Only a short rest reads as "a moment"; a long one keeps its reset time.
+  const busy = plannerBusy(hold) && hold.retryAt - now <= 15 * 60000;
+  const until = new Date(hold.retryAt).toISOString().slice(11, 16);
+  // The $5/day account ceiling is a normal part of the day, not an outage: Shippy says so plainly.
+  const spent = hold.kind === "cap" && /(?:account|site) daily dollar budget/i.test(hold.reason);
+  const everyone = /site daily dollar budget/i.test(hold.reason);
+  return [...cards.slice(0, 11), { id: "planner-rest", title: busy ? PLANNER_BUSY_LINE : spent ? "Shippy is done thinking for today" : `Planner is resting until ${until} UTC`,
+    why: busy ? "It picks up on its own. You can keep reviewing existing work." : spent ? `${everyone ? "Shiptorio used today's AI for everyone" : "This account used today's five dollars of AI"}. He's back at ${until} UTC. You can keep shipping what's ready.` : "Planning resumes automatically. You can keep reviewing existing work.", kind: "unblock", createdAt: now,
     options: [{ id: "later", label: "Continue", recommended: true, actions: [] }],
     plan: [new Date(hold.retryAt).toISOString()] }];
 }

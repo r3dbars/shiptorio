@@ -29,7 +29,7 @@ export async function browserSmoke(base, out) {
           // A synchronous GPU readback every frame can starve the game itself.
           // Capture only when the assertion requests a sample.
           if (!window.__smokeCapture) return;
-          const canvas = document.querySelector('canvas.map');
+          const canvas = document.querySelector('canvas');
           if (!(canvas instanceof HTMLCanvasElement) || !canvas.width || !canvas.height) return;
           // Sample only the actual drawing buffer, never page text, plates or CSS background.
           const sample = document.createElement('canvas');
@@ -54,10 +54,11 @@ export async function browserSmoke(base, out) {
       });
       page.setDefaultTimeout(15_000);
       try {
+        // /judge is the public deck story on every host: no login, no live data.
         const response = await page.goto(new URL('/judge', base).href, { waitUntil: 'domcontentloaded', timeout: 20_000 });
         expect(response?.status()).toBe(200);
-        await page.locator('.judge-welcome button').click();
-        const canvas = page.locator('canvas.map');
+        await expect(page.locator('[data-deck-ready]')).toHaveCount(1);
+        const canvas = page.locator('canvas').first();
         await expect(canvas).toBeVisible();
         await expect.poll(async () => {
           result.pixels = await page.evaluate(() => {
@@ -66,7 +67,7 @@ export async function browserSmoke(base, out) {
             return pixels;
           });
           return !!result.pixels && result.pixels.colors >= 12 && result.pixels.lit / result.pixels.total >= 0.01;
-        }, { timeout: 30_000, message: `${name}: shaft must draw varied, non-black pixels` }).toBe(true);
+        }, { timeout: 30_000, message: `${name}: the deck must draw varied, non-black pixels` }).toBe(true);
         // Observe several more frames for deferred runtime/console failures.
         await page.waitForTimeout(1500);
         expect(errors, `${name}: browser errors`).toEqual([]);

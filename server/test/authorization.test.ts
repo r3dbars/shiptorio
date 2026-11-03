@@ -61,6 +61,9 @@ it('second allowed user cannot read state/jobs, pair a runner, send HTTP moves, 
     ['/api/repos/alice/private/factory', 'GET', { upgrade: 'websocket' }],
     ['/api/repos/alice/private/factory', 'POST', {}],
     ['/api/repos/alice/private/runner/jobs', 'GET', {}],
+    ['/api/repos/alice/private/issues', 'GET', {}],
+    ['/api/repos/alice/private/issues/16/start', 'POST', {}],
+    ['/api/repos/alice/private/review/retry', 'POST', {}],
     ['/api/repos/alice/private/runner/pair', 'POST', {}],
     ['/api/repos/alice/private/runner/jobs', 'POST', {}],
     ['/connect/sentry?repo=alice/private', 'GET', {}],
@@ -272,4 +275,18 @@ it('self-host first-install setup works through real middleware with only an own
   expect((await app.fetch(request('/setup', ''), env)).status).toBe(401);
   expect((await app.fetch(request('/api/repos'), env)).status).toBe(401);
   for (const path of ['/setup', '/setup/callback']) expect((await app.fetch(request(path), { ...env, GITHUB_APP_ID: '123' })).status).toBe(404);
+});
+
+it('pages repository discovery before authorization checks and rejects invalid pages', async () => {
+  const f = fixture();
+  for (let i = 0; i < 10; i++) {
+    f.repos.set(`alice/extra-${i}`, 11);
+    f.cache.set(`access:v2:11:alice/extra-${i}:11`, { expiresAt: Date.now() + 59000 });
+  }
+  const response = await f.send('/api/repos?page=2', 'alice');
+  expect(response.status).toBe(200);
+  const body = await response.json() as {repos:{fullName:string}[];nextPage:number};
+  expect(body.repos.map(r=>r.fullName)).toEqual(['alice/extra-2','alice/extra-3','alice/extra-4','alice/extra-5']);
+  expect(body.nextPage).toBe(3);
+  expect((await f.send('/api/repos?page=0', 'alice')).status).toBe(400);
 });

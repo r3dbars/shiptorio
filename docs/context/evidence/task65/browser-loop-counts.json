@@ -1,0 +1,149 @@
+{
+  "kind": "isolated Miniflare Stranger browser runs with fixture GitHub, Spark and runner; no real credentials or jobs",
+  "before": {
+    "total": 78,
+    "steps": [
+      {
+        "name": "front door: preview password",
+        "calls": 0
+      },
+      {
+        "name": "welcome tour shows, then skip",
+        "calls": 0
+      },
+      {
+        "name": "play first: the demo shop, no sign-in",
+        "calls": 0
+      },
+      {
+        "name": "sign in with GitHub (real, not the sandbox)",
+        "calls": 3
+      },
+      {
+        "name": "no repos yet: install the App",
+        "calls": 0
+      },
+      {
+        "name": "back in Shiptorio, repo is listed by itself",
+        "calls": 5
+      },
+      {
+        "name": "open the factory",
+        "calls": 5
+      },
+      {
+        "name": "real factory work reaches the agent handoff",
+        "calls": 0
+      },
+      {
+        "name": "the agent handoff reaches Power, not a dead end",
+        "calls": 0
+      },
+      {
+        "name": "signed issue arrives once, even on delivery retry",
+        "calls": 0
+      },
+      {
+        "name": "pair a fixture runner through device approval",
+        "calls": 0
+      },
+      {
+        "name": "Spark proposes a plan; no build before approval",
+        "calls": 10
+      },
+      {
+        "name": "runner publishes a PR with receipts on the approved head",
+        "calls": 4
+      },
+      {
+        "name": "stale green CI cannot advance the current PR",
+        "calls": 1
+      },
+      {
+        "name": "current-head CI, verify bay and Spark review pass",
+        "calls": 31
+      },
+      {
+        "name": "Launch card merges only after the player holds the red button",
+        "calls": 16
+      },
+      {
+        "name": "no silent provider fallback or browser errors",
+        "calls": 0
+      }
+    ]
+  },
+  "after": {
+    "total": 84,
+    "steps": [
+      {
+        "name": "front door: preview password",
+        "calls": 0
+      },
+      {
+        "name": "welcome tour shows, then skip",
+        "calls": 0
+      },
+      {
+        "name": "play first: the demo shop, no sign-in",
+        "calls": 0
+      },
+      {
+        "name": "sign in with GitHub (real, not the sandbox)",
+        "calls": 3
+      },
+      {
+        "name": "no repos yet: install the App",
+        "calls": 0
+      },
+      {
+        "name": "back in Shiptorio, repo is listed by itself",
+        "calls": 5
+      },
+      {
+        "name": "open the factory",
+        "calls": 2
+      },
+      {
+        "name": "real factory work reaches the agent handoff",
+        "calls": 0
+      },
+      {
+        "name": "the agent handoff reaches Power, not a dead end",
+        "calls": 0
+      },
+      {
+        "name": "signed issue arrives once, even on delivery retry",
+        "calls": 0
+      },
+      {
+        "name": "pair a fixture runner through device approval",
+        "calls": 0
+      },
+      {
+        "name": "Spark proposes a plan; no build before approval",
+        "calls": 10
+      },
+      {
+        "name": "runner publishes a PR with receipts on the approved head",
+        "calls": 4
+      },
+      {
+        "name": "stale green CI cannot advance the current PR",
+        "calls": 2
+      },
+      {
+        "name": "current-head CI, verify bay and Spark review pass",
+        "calls": 36
+      },
+      {
+        "name": "Launch card merges only after the player holds the red button",
+        "calls": 17
+      },
+      {
+        "name": "no silent provider fallback or browser errors",
+        "calls": 0
+      }
+    ]
+  }
+}

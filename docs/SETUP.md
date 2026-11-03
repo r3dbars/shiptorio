@@ -85,7 +85,7 @@ domain later, set the `PUBLIC_URL` var and update the App's URLs on GitHub.
    Add a demo repository only after choosing its exact name; don't select all repositories.
 4. After preview login, check `/api/setup/status`. Each credential field is a boolean;
    `github: true` requires all five GitHub secrets. `spark: true` is independent.
-5. Use `/auth/login?next=/?source=live%26repo=r3dbars/shiptorio` to sign in to the live map.
+5. Use `/auth/login?next=/?source=live%26repo=r3dbars/shiptorio` to sign in to the live deck.
 
 The canonical `PUBLIC_URL` is `https://shiptorio.com`, including when the `.dev` alias is visited.
 Phase A adds install/backfill, normalized ore and the gauntlet in subsequent small PRs.
@@ -125,11 +125,11 @@ Both are optional. Each one is a single paste on a page Shiptorio serves, no wra
 Keys land in the `CACHE` KV namespace (`cred:sentry`, `cred:posthog`), never in git, logs or
 factory state. Wrangler secrets with the same meaning win if set: `SENTRY_CLIENT_SECRET`,
 `POSTHOG_API_KEY` (+ vars `POSTHOG_PROJECT_ID`, `POSTHOG_HOST`, `POSTHOG_KEY_EVENT`).
-Each mine feeds one repo's map: the one you connected it from (`link:<kind>` in KV), or
+Each mine feeds one repo's factory: the one you connected it from (`link:<kind>` in KV), or
 `SENTRY_REPO` / `POSTHOG_REPO` if set.
 
 ### Justin does — Sentry
-1. Open the map, tap the Sentry mine (or go to https://shiptorio.com/connect/sentry?repo=OWNER/REPO).
+1. Open the deck, tap the Sentry mine (or go to https://shiptorio.com/connect/sentry?repo=OWNER/REPO).
 2. In Sentry: Settings → Developer Settings → Custom Integrations → Create New Integration →
    Internal Integration. Webhook URL `https://shiptorio.com/webhooks/sentry`, Alert Rule Action on,
    webhooks: issue + error, permissions Issue & Event: Read. Save.
@@ -157,10 +157,10 @@ Each mine feeds one repo's map: the one you connected it from (`link:<kind>` in 
 
 ### Fake mode
 - `FAKE_POSTHOG=1` in `server/.dev.vars`: the poller uses canned data (steady traffic, then
-  /checkout drops 70% with an error spike). Tap Connect PostHog on the local map.
+  /checkout drops 70% with an error spike). Tap Connect PostHog on the local deck.
 - `bun run fake:sentry [issue.created|issue.resolved|error.created] [issueId]` posts a signed
   webhook to localhost:8787 with `SENTRY_CLIENT_SECRET` from `server/.dev.vars`. Connect Sentry on
-  the map first so the mine is linked to your local repo.
+  the deck first so the mine is linked to your local repo.
 
 ## 3. Accounts: who can see which maps
 
@@ -183,7 +183,7 @@ Route code can use `requireUser` from `server/src/index.ts` and read `c.get("use
 sign-up. The shared `APP_PASSWORD` gate in front is separate: unset `APP_PASSWORD` handling in
 `server/src/access.ts` (`previewAccess`) when launching.
 
-Sentry and PostHog keys are per repo in KV (`cred:<kind>:<owner/name>`). Each map has its own
+Sentry and PostHog keys are per repo in KV (`cred:<kind>:<owner/name>`). Each factory has its own
 Sentry webhook URL, `/webhooks/sentry/<owner>/<repo>`. Keys saved before accounts (`cred:<kind>`)
 keep working for the repo in `link:<kind>`, and so does the bare `/webhooks/sentry` URL.
 

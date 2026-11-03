@@ -153,7 +153,7 @@ export interface Unlock {
   id: string;
   name: string;
   what: string; // one plain line
-  icon: string; // HUD pixel icon (web/src/ui/icons.tsx)
+  icon: string; // HUD pixel icon name (the old React HUD drew these)
   level?: number; // reach this level
   streak?: number; // or keep a streak this long
   cosmetic?: boolean; // can be switched on and off
@@ -167,15 +167,6 @@ export const UNLOCKS: Unlock[] = [
 ];
 
 const earned = (u: Unlock, level: number, best: number) => (u.level !== undefined && level >= u.level) || (u.streak !== undefined && best >= u.streak);
-
-/** The next thing you'll get, and how far off it is. */
-export function nextUnlock(p: Progress) {
-  const { level } = levelOf(p.xp);
-  const left = UNLOCKS.filter((u) => !p.unlocked.includes(u.id));
-  return left
-    .map((u) => ({ unlock: u, gap: u.level !== undefined ? `Level ${u.level}` : `${u.streak}-day streak`, dist: u.level !== undefined ? (u.level - level) * 3 : (u.streak ?? 0) - p.best }))
-    .sort((a, b) => a.dist - b.dist)[0];
-}
 
 // ---- folding in what happened ----
 
@@ -293,9 +284,6 @@ export function answered(p: Progress, now: number, left: number): Step {
 
 /** An achievement landed (shared/src/achievements.ts carries its xp). Counts as a real move for the streak. */
 export const achieved = (p: Progress, now: number, xp: number, text: string): Step => award(p, [{ reason: "achievement", xp, text }], now, 0);
-
-/** Just open the day (no XP): makes today's log with the deck you walked in to. */
-export const openDay = (p: Progress, now: number, deck: number) => today(p, now, deck)[0];
 
 // ---- the end-of-day summary ----
 

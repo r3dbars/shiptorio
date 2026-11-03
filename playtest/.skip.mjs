@@ -1,0 +1,10 @@
+import { chromium } from '@playwright/test';
+const b = await chromium.launch({executablePath:'/opt/pw-browsers/chromium'});
+const p = await b.newPage({ viewport: { width: 390, height: 844 } });
+p.on('pageerror', e => console.log('ERR', e.message));
+await p.goto('http://localhost:5191/deck.html?source=live');
+const c = p.locator('.ic-card:not(.ic-ghost)').first(); await c.waitFor();
+await c.locator('.later').click(); await p.waitForTimeout(2500);
+console.log(await p.locator('.ic-card:not(.ic-ghost)').evaluateAll(els => els.map(e => e.dataset.card + ' ' + e.innerText.replace(/\s+/g,' '))));
+await p.screenshot({ path: '/tmp/claude-0/live/skip.png' });
+await b.close();

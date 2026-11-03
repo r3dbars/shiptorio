@@ -1,5 +1,7 @@
 # BLACK IRON LINE — module contract
 
+> Historical prototype guidance (Oct 26, marked 2026-10-30). This is not the current game rulebook. The 2D pixel deck is the product; follow [VISION.md](../../VISION.md) and [pixel-deck.md](../../context/pixel-deck.md).
+
 You are one of several agents building ONE world in parallel: Justin's chosen "Black Iron" Cogworks factory,
 rebuilt as a **real, readable production line**. Read this whole file before writing code.
 

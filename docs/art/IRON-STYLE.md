@@ -1,5 +1,7 @@
 # Black Iron style guide (the whole game)
 
+> Historical prototype guidance (Oct 26, marked 2026-10-30). This is not the current game rulebook. The 2D pixel deck is the product; follow [VISION.md](../VISION.md) and [pixel-deck.md](../context/pixel-deck.md).
+
 Justin, Oct 26: the Black Iron look from PR #204 (`/art/black-iron.html`, source `docs/art/black-iron/`) is
 **the art style for the whole game**: the logo, the password gate, sign-in, landing, intro, tutorial, every
 sheet, card and panel, the HUD, the docs site, and the 3D map. This page is the rulebook. If a surface

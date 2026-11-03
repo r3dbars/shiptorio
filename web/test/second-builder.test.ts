@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { FactoryState, ServerToWeb } from "@shiptorio/shared";
 import { connectSim } from "../src/sim/engine";
-import { applyPatch } from "../src/store";
+import { applyPatch } from "../src/source/patch";
 
 // A second builder (docs/GAMEPLAY-PICKS.md r5-second A), played on the sim with hand-driven timers.
 let timers = new Map<number, { at: number; every?: number; fn: () => void }>();

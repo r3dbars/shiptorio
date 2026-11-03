@@ -13,7 +13,7 @@ test("persona GitHub fixture keeps its configured identity through issues and pe
 test("stranger Spark fixture distinguishes tool-based review from planning", async () => {
   const stub = sparkStub();
   const reply = await stub.outbound(new Request("https://fixture.meta/chat/completions", { method: "POST", body: JSON.stringify({ messages: [
-    { role: "developer", content: "You are Muse Spark at Shiptorio's AI review station, a hostile reviewer. Choose ONE tool per turn." },
+    { role: "developer", content: "You are Muse Spark at Shiptorio's Review station, a hostile reviewer. Choose ONE tool per turn." },
     { role: "user", content: "UNTRUSTED_DATA_BEGIN\n{}\nUNTRUSTED_DATA_END" },
   ] }) }));
   const result = await reply.json();

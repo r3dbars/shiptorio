@@ -2,13 +2,24 @@ import { assertLinuxSandbox, linuxSandbox } from "./sandbox-linux";
 import { mkdtemp, mkdir, realpath, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { museDirs } from "./policy";
 
+export interface AgentSandboxOptions { home: string; executable: string; readOnlyFiles?: string[] }
 export interface SandboxResult { code: number; out: string; err: string; timedOut?: boolean }
 export interface CheckSandbox {
-  run(args: string[], cwd?: string, options?: { install?: boolean; timeout?: number }): Promise<SandboxResult>;
+  run(args: string[], cwd?: string, options?: { install?: boolean; timeout?: number; input?: string }): Promise<SandboxResult>;
   close(): Promise<void>;
 }
 const quote = (value: string) => JSON.stringify(value);
+
+/** A supervisor timeout is a transport-style interruption: the saved build resumes on the next claim. */
+export function resumeOnTimeout(boundary: CheckSandbox, defaultCwd: string): CheckSandbox {
+  return { run: async (args, cwd = defaultCwd, options) => {
+    const result = await boundary.run(args, cwd, options);
+    if (result.timedOut) throw new TypeError("Supervisor interrupted or timed out; saved build will resume");
+    return result;
+  }, close: () => boundary.close() };
+}
 
 /** The repository and all child processes are untrusted. Env filtering alone is not isolation. */
 export async function verificationGit(): Promise<string> {
@@ -25,17 +36,19 @@ export async function assertVerificationPlatform(): Promise<void> {
   await verificationGit();
 }
 
-export async function checkSandbox(work: string, agent?: { home: string; executable: string }): Promise<CheckSandbox> {
-  if (process.platform === "linux") return linuxSandbox(work, agent);
+export async function checkSandbox(work: string, agent?: AgentSandboxOptions, options: { exactRoot?: boolean } = {}): Promise<CheckSandbox> {
+  if (process.platform === "linux") return linuxSandbox(work, agent, options);
 
   await assertVerificationPlatform();
   const directory = await realpath(work);
+  if (options.exactRoot && directory !== work) throw new Error("Verification root must be the assigned checkout");
   const privateRoot = await realpath(await mkdtemp(join(tmpdir(), "shiptorio-check-")));
   const home = agent ? await realpath(agent.home) : join(privateRoot, "home"), temp = join(privateRoot, "tmp");
   if (!agent) await mkdir(home); await mkdir(temp);
   const runtime = await realpath(process.execPath);
   const git = await verificationGit();
   const agentBinary = agent ? await realpath(agent.executable) : null;
+  const readOnlyFiles = await Promise.all((agent?.readOnlyFiles ?? []).map(path => realpath(path)));
   const bin = join(privateRoot, "bin"); await mkdir(bin);
   await symlink(runtime, join(bin, "bun"));
   const node = Bun.which("node");
@@ -46,7 +59,7 @@ export async function checkSandbox(work: string, agent?: { home: string; executa
     PATH: [dirname(git), bin, dirname(runtime), ...(nodeRuntime ? [dirname(nodeRuntime)] : []), "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(":"),
     LANG: "en_US.UTF-8", TERM: "dumb", CI: "true", SHIPTORIO_CHECK_SANDBOX: "1",
     BUN_INSTALL_CACHE_DIR: join(privateRoot, ".bun-cache"),
-    ...(agent ? { CODEX_HOME: join(home, ".codex"), CLAUDE_CONFIG_DIR: join(home, ".claude"), CLAUDE_CODE_TMPDIR: temp } : {}),
+    ...(agent ? { CODEX_HOME: join(home, ".codex"), CLAUDE_CONFIG_DIR: join(home, ".claude"), CLAUDE_CODE_TMPDIR: temp, ...museDirs(home) } : {}),
     GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_TERMINAL_PROMPT: "0",
   };
   const profile = (install: boolean) => `(version 1)
@@ -69,7 +82,7 @@ export async function checkSandbox(work: string, agent?: { home: string; executa
 (allow file-read* (literal "/") (subpath "/System") (subpath "/usr/bin") (subpath "/usr/lib") (subpath "/usr/share") (subpath "/usr/libexec") (subpath "/usr/sbin") (subpath "/bin") (subpath "/sbin")
   (subpath "/Library/Developer") (subpath "/Library/Apple") (subpath "/Applications/Xcode.app/Contents/Developer")
   (subpath "/private/etc") (literal "/dev/null") (literal "/dev/random") (literal "/dev/urandom")
-  (subpath "/dev/fd") (literal ${quote(runtime)}) ${nodeRuntime ? `(literal ${quote(nodeRuntime)})` : ""} (subpath ${quote(directory)}) (subpath ${quote(privateRoot)}) ${agentBinary ? `(subpath ${quote(dirname(agentBinary))}) (subpath ${quote(home)})` : ""})
+  (subpath "/dev/fd") (literal ${quote(runtime)}) ${nodeRuntime ? `(literal ${quote(nodeRuntime)})` : ""} (subpath ${quote(directory)}) (subpath ${quote(privateRoot)}) ${readOnlyFiles.map(path => `(literal ${quote(path)})`).join(" ")} ${agentBinary ? `(subpath ${quote(dirname(agentBinary))}) (subpath ${quote(home)})` : ""})
 (allow file-write* (subpath ${quote(directory)}) (subpath ${quote(privateRoot)}) ${agent ? `(subpath ${quote(home)})` : ""} (literal "/dev/null") (subpath "/dev/fd"))
 ${install || agent ? `(allow network-outbound (literal "/private/var/run/mDNSResponder") (remote tcp "*:443") (remote tcp "*:53") (remote udp "*:53"))
 (allow file-read* (literal "/private/var/run/resolv.conf"))
@@ -86,7 +99,7 @@ ${install || agent ? `(allow network-outbound (literal "/private/var/run/mDNSRes
       if (location !== directory && !location.startsWith(directory + "/")) throw new Error("Verification cwd escapes the assigned checkout");
       // Only the dependency installer may use the network-enabled profile, never scripts.
       if (options.install && !(await realpath(args[0]) === runtime && args.length === 4 && args[1] === "install" && args[2] === "--frozen-lockfile" && args[3] === "--ignore-scripts")) throw new Error("Only frozen dependency installation without lifecycle scripts can use network access");
-      const child = Bun.spawn(["/usr/bin/sandbox-exec", "-p", profile(!!options.install), ...(options.install ? [args[0], "--no-env-file", "--config=/dev/null", ...args.slice(1)] : args)], { cwd: location, env, stdin: "ignore", stdout: "pipe", stderr: "pipe", detached: true });
+      const child = Bun.spawn(["/usr/bin/sandbox-exec", "-p", profile(!!options.install), ...(options.install ? [args[0], "--no-env-file", "--config=/dev/null", ...args.slice(1)] : args)], { cwd: location, env, stdin: options.input === undefined ? "ignore" : new Blob([options.input]), stdout: "pipe", stderr: "pipe", detached: true });
       const stop = () => { try { process.kill(-child.pid, "SIGKILL"); } catch {} };
       let timedOut = false;
       const timer = setTimeout(() => { timedOut = true; stop(); }, options.timeout ?? 180000);

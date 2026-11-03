@@ -108,3 +108,43 @@ durable enqueue, delivery dedupe, and revocation without an installation ID.
 GitHub references: [webhook payloads](https://docs.github.com/en/webhooks/webhook-events-and-payloads),
 [installation tokens](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token-for-a-github-app),
 [permission updates](https://docs.github.com/en/apps/creating-github-apps/about-creating-github-apps/best-practices-for-creating-a-github-app).
+
+## Missed-delivery reconciliation and diagnostics (batch 1029, task 44)
+
+A factory checks its durable repository/installation record before processing queued work.
+An active factory also confirms its repository's App installation at most once every five
+minutes. A confirmed 404 or different installation archives that factory under the fixed
+reason `GitHub repository access unavailable`. A suspended installation pauses without
+retention expiry. Rate limits, invalid App credentials and transient API failures fail
+that wake; they are not interpreted as removal and do not delete progress.
+
+Once stopped, it makes no production GitHub calls. Only an explicit signed re-add,
+unsuspend or new installation lifecycle event restores access. Duplicate removals preserve
+the original retention deadline, and duplicate restoration preserves the existing items,
+card state and deduplicated backfill delivery. A delayed add/created event cannot revive a
+suspended or deleted installation. A re-add during suspension is recorded, but remains
+paused until unsuspend. A deleted installation ID is never revived by stale events;
+reinstall uses GitHub's new installation ID.
+
+The existing authenticated `/admin/data` response includes `pausedForAccess`; diagnostics
+shows the same count in its status line. It counts archived repositories and repositories
+whose installation is suspended/deleted, once per repository. Public health reveals no
+factory counts or names.
+
+**The 44 staging records:** this patch does not run a cleanup or change those records.
+Previously hand-paused records stay stopped. An authorized operator can inspect the
+count, replay the signed lifecycle reconciliation, or explicitly wake a selected record
+to reconcile its retained access state. Do not globally resume factories to test this.
+If a repository is still accessible, access restoration does not clear an independent
+admin pause. Testing remains a separate factory. A removed repository is archived on its
+next permitted wake; no coding job or PR merge is triggered by that reconciliation.
+
+An in-flight access lookup is tied to the installation's token generation. A signed
+restore or permission transition that arrives during the lookup invalidates its stale
+removal/suspension evidence, so it cannot re-pause newly restored access.
+
+A factory with retained metadata but no matching repository registry row is an orphan,
+not an implicitly authorized factory: its wake pauses with `GitHub repository is not
+installed` without making a provider call. The access count includes all `repos` archive
+rows because only GitHub lifecycle/access paths create those rows; independent admin
+pauses live in `admin_controls` and are not counted.

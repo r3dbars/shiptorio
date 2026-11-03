@@ -30,8 +30,10 @@ function frontmatter(raw: string): { meta: Record<string, string>; body: string 
   return { meta, body: raw.slice(m[0].length) };
 }
 
-const slugify = (text: string) => text.toLowerCase().replace(/<[^>]+>/g, "").replace(/&[a-z]+;|&#\d+;/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-const plain = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, " ").trim();
+// Strip tags until none are left (a removal can join "<scr" + "ipt>"). plain() decodes &amp; last so "&amp;lt;" stays "&lt;".
+const stripTags = (html: string, gap = " "): string => { const next = html.replace(/<[^>]*>?/g, gap); return next === html ? next : stripTags(next, gap); };
+const slugify = (text: string) => stripTags(text, "").toLowerCase().replace(/&[a-z]+;|&#\d+;/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+const plain = (html: string) => stripTags(html).replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 
 function render(slug: string, raw: string): DocPage {
@@ -147,7 +149,7 @@ ${icons}
       ${prev ? `<a class="prev" href="${href(prev.slug)}"><small>Previous</small>${esc(prev.title)}</a>` : "<span></span>"}
       ${next ? `<a class="next" href="${href(next.slug)}"><small>Next</small>${esc(next.title)}</a>` : "<span></span>"}
     </nav>
-    <footer>Shiptorio · built for the Meta AI Developer Hackathon · powered by Meta Muse Spark · <a href="https://github.com/r3dbars/shiptorio/edit/main/docs/site/${page.slug}.md" rel="noreferrer">Edit this page</a></footer>
+    <footer>Shiptorio · built for the Meta AI Developer Hackathon · powered by Meta Muse Spark · <a href="https://github.com/r3dbars/shiptorio/edit/dev/docs/site/${page.slug}.md" rel="noreferrer">Edit this page</a></footer>
   </main>
   ${toc}
 </div>

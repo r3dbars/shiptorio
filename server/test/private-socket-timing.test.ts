@@ -13,3 +13,12 @@ test("only an in-process symbol object enables fixed numeric timing phases", asy
   expect(response.headers.get("Server-Timing")).toBe('existing;dur=1, app_trace_auth;dur=130.0;desc="2 calls"');
   expect(await response.text()).toBe("body");
 });
+
+test("synchronous snapshot phases preserve return values and thrown failures", () => {
+  let at = 0;
+  const timing = new PrivateSocketTiming(() => at);
+  expect(timing.sync("do_redaction", () => { at = 2; return "frame"; })).toBe("frame");
+  expect(() => timing.sync("do_send", () => { at = 3; throw Error("send failed"); })).toThrow("send failed");
+  expect(timing.header()).toContain('do_redaction;dur=2.0');
+  expect(timing.header()).toContain('do_send;dur=1.0');
+});

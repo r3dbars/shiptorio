@@ -1,58 +1,42 @@
 ---
 title: Connect your machine
-description: Install the local runner, pair in your browser and power Spark's plans with your own agent.
+description: Install the local runner, pair in your browser and power Shippy's plans with your own agent.
 section: Start here
 order: 4
 ---
 # Connect your machine
 
-Spark makes the plan. Your local Claude Code or Codex builds it, using your own
+Shippy makes the plan. Your local Codex or Muse Code builds it, using your own
 subscription. Agent sign-ins stay on your computer; pairing never approves a build.
 
 ## Install
 
-macOS and Linux are supported. On Windows, use a glibc Linux distribution in WSL2
-and install your agent inside WSL.
+Use macOS or Linux; on Windows, use a glibc Linux distribution in WSL2. Install git and
+[Codex CLI](https://developers.openai.com/codex/cli) or [Meta Muse Code](https://dev.meta.ai),
+and sign in with your own subscription.
 
-1. Install git and either [Codex CLI](https://developers.openai.com/codex/cli) or
-   [Claude Code](https://code.claude.com/docs/en/setup).
-2. Run this in your terminal:
+1. On the deck, open **Connect your coding engine** and copy its install command into Terminal.
+   Use that factory's command so the runner connects to the same server.
+2. The installer downloads the runner and guides you through its dedicated agent sign-in.
+3. If browser pairing opens, compare its code with your terminal, sign in to Shiptorio and approve
+   the repo you selected. Only approve a code you requested on this computer.
+4. Keep the terminal open. Pick an open issue, read Shippy's plan and approve **Start build**.
+   Pairing alone does not approve a plan or start a build.
 
-   ```sh
-   curl -fsSL https://shiptorio.com/install.sh | sh
-   ```
+macOS needs Apple Command Line Tools (`xcode-select --install`). Linux needs bubblewrap
+(`sudo apt install bubblewrap`) and working unprivileged user namespaces. The runner refuses
+jobs when the OS sandbox is unavailable.
 
-3. Setup checks the agent and guides you through a dedicated local agent sign-in
-   if needed. This keeps your usual agent settings outside job sandboxes.
-4. Browser pairing opens. Sign in to Shiptorio, compare the code with your terminal,
-   enter a repository where the Shiptorio GitHub App is installed and you have write
-   access, then approve. Only approve a code you requested on this computer.
-5. The terminal confirms the repository. Keep it open. Open that factory, select an
-   open GitHub issue and request Spark's plan. Review the files and steps in the plan
-   card before approving a build.
-
-During browser approval, the runner retries dropped polling requests and temporary 429/5xx responses while the code remains valid. Authorization and expiry failures still stop pairing. Starting pairing and failures while reading a reply are outside this retry.
-
-macOS needs Apple Command Line Tools (`xcode-select --install`). Linux needs
-bubblewrap (`sudo apt install bubblewrap`) and working unprivileged user namespaces.
-The runner refuses jobs if the OS sandbox is unavailable.
-
-For a self-hosted factory, copy the command from that factory's **Power** panel.
-It downloads from your own origin and passes `SHIPTORIO_URL` to the installer, for example:
+For a self-hosted factory, use its own install command, for example:
 
 ```sh
 curl -fsSL 'https://factory.example/install.sh' | SHIPTORIO_URL='https://factory.example' sh
 ```
 
-The installer saves the server URL for later `pair`, `watch` and `doctor` commands.
-The installer and CLI refuse to reuse an installation configured for a different
-server, including a different `SHIPTORIO_URL`, so existing pairing tokens cannot be sent to the new endpoint. Use a separate installation or
-uninstall the previous one before switching servers.
-
-The installer places a private pinned Bun and standalone bundle in
-`~/.local/share/shiptorio/runner`, checks the bundle against its HTTPS checksum
-manifest, and creates `~/.local/bin/shiptorio-runner`. No repository checkout or
-manual token copying is required. Add `~/.local/bin` to PATH if desired.
+The installer saves the server URL. It refuses to reuse an installation configured for another
+server. Use separate data and install directories for separate servers, as the deck's command does.
+The default standalone install puts its bundle in `~/.local/share/shiptorio/runner` and its launcher
+in `~/.local/bin/shiptorio-runner`; no source checkout or manual token copying is needed.
 
 ## More repos and updates
 
@@ -68,13 +52,13 @@ replaces that repo's previous machine credential.
 **Runner code changes require a local reinstall.** Stop watch and rerun the installer to update. Existing pairings survive the update. A website update does not replace a running local helper. After closing
 the terminal, restart with `~/.local/bin/shiptorio-runner watch`.
 
-In the game, **Power → Connect your machine** shows online/offline, last seen,
+On the deck, tap the boilers at the back to open the engine card. It shows online/offline, last seen,
 detected agents and latest job. A newly selected live repo opens this card.
-Claude Code and Codex appear as separate power plants. Each shows ready, running or
+Codex and Muse Code appear separately. Each shows ready, running or
 offline. Subscription usage remaining is not measured here; your plan's limits still apply.
 
 Before each job the runner checks which subscriptions are signed in and idle. If
-Spark's preferred subscription is unavailable, the other can execute the same approved
+Shippy's preferred subscription is unavailable, the other can execute the same approved
 plan and files. One supervised build runs at a time across paired repos; a running or
 recovering job keeps its original provider. Local models keep their guarded routing.
 
@@ -85,18 +69,14 @@ recovering job keeps its original provider. Local models keep their guarded rout
 - **Offline:** keep the terminal open, check its error and your internet connection,
   then run `~/.local/bin/shiptorio-runner watch`.
 - **Agent sign-in:** run `~/.local/bin/shiptorio-runner doctor`. Use
-  `~/.local/bin/shiptorio-runner login codex` or `login claude` for the dedicated
+  `~/.local/bin/shiptorio-runner login codex` or `login muse` for the dedicated
   Shiptorio agent sign-in. Setup never copies your normal credential directory.
-- **Expired pairing:** tokens renew while online. After more than eight hours offline,
-  pair that repo again. Logout or lost repository access also revokes the grant.
+- **Expired pairing:** grants last up to seven days, capped by the approving sign-in.
+  The heartbeat renews with a day remaining; sleep and network failures retain a
+  valid pairing. Re-pair only when the runner reports a real expiry or revocation.
+  Logout or lost repository access also revokes the grant.
 - **No plan:** the first runner plan needs an open GitHub issue. Pairing alone does
-  not create an issue or start a build. Spark still asks for plan approval.
-- **Claude sign-in:** run `~/.local/bin/shiptorio-runner login claude`. This opens
-  Claude's subscription login and checks it finished. Login, status and builds share
-  Shiptorio's private Claude configuration, outside job checkouts. Keep the runner's
-  data location stable: the macOS Keychain login is scoped to that path. If you move
-  from a checkout to the legacy service, sign in again using the service's data root.
-  Your usual Claude home stays separate.
+  not create an issue or start a build. Shippy still asks for plan approval.
 
 ## Check a real file edit
 
@@ -106,6 +86,8 @@ explicit edit probe when startup passes but a build produces no changes:
 
 ```sh
 shiptorio-runner doctor --edit codex
+# Or, for Muse Code:
+shiptorio-runner doctor --edit muse
 ```
 
 The probe uses your dedicated Shiptorio sign-in and one small subscription inference
@@ -114,6 +96,12 @@ one constant in `example.ts`. Doctor checks the exact resulting bytes, the untou
 unapproved file and outside canary, and the final git scope. A successful process with
 no actual edit fails. The fixture is removed afterward; the probe never claims a factory
 job, touches its pairing, commits a product change or publishes a branch.
+
+Failed edit probes report a safe category such as authentication, usage limit,
+connection, configuration or file-edit verification. Provider messages, prompts and
+raw transcripts are withheld. A sign-in check can pass while the real edit fails;
+keep that failed result and investigate its category instead of assuming a build
+worked or repeatedly rerunning the probe.
 
 macOS rejects Codex applying a second Seatbelt profile inside the runner's existing OS
 sandbox. The runner preserves that outer boundary and Codex's read-only mode: Codex
@@ -132,11 +120,10 @@ keeps your normal home, unrelated repositories and supervisor GitHub credentials
 outside the agent and test processes. The agent can read its dedicated subscription
 sign-in and contact its inference provider; tests run without those credentials.
 
-Codex returns a structured edit proposal in read-only mode. After Codex exits, the
+Codex and Muse Code return structured edit proposals. After the agent exits, the
 supervisor applies only exact, unique replacements in approved regular files; new
 files require an explicit create proposal. Dirty checkouts, ambiguous matches and
-links are rejected. Claude Code and local-model adapters retain their existing edit
-flow.
+links are rejected. The agent never receives the supervisor's GitHub credentials.
 
 The supervisor runs the repository's checks and verifies the frozen patch before
 publication. You still approve the plan and decide when to merge.
@@ -154,29 +141,25 @@ then remove the standalone files and local pairings with:
 ```
 
 Pairings are owner-only files in `~/.local/share/shiptorio/runner/pairings/`.
-Uninstall does not delete your usual Claude/Codex settings or your repositories.
+Uninstall does not delete your usual coding-agent settings or your repositories.
 
 Legacy macOS service users should first run `bun run runner:service stop` from
 their checkout. That service has a separate install under
 `~/Library/Application Support/Shiptorio` and a launch agent at
-`~/Library/LaunchAgents/com.shiptorio.runner.plist`; after stopping it, remove those
-files to uninstall the legacy service.
+`com.shiptorio.runner.plist` in `~/Library/LaunchAgents/`; after stopping it, remove those
+files to uninstall the legacy service. To keep existing standalone pairings running
+in the background, run `bun run runner:service install` from a checkout. It imports
+unexpired same-server pairings without deleting their standalone copies or replacing
+a different service pairing. The service reuses its own dedicated agent sign-ins;
+run doctor using the service data root to check them.
 
 Approving a plan stays bound to that exact issue and plan even if another card moves to
 the top of the deck. If the issue changes before approval, request a fresh plan.
 
 If old alerts or governance choices fill the check-in, one existing build or plan-approval
 card stays reachable in a non-merge slot. Other decisions remain pending and return when
-space opens; their choices and defer counts are unchanged. Merge-gate cards keep priority.
+space opens; their choices and defer counts are unchanged. Gate cards keep priority.
 This only makes the decision visible; it does not approve a plan or start work.
-
-### macOS says signed in, then asks again
-
-The runner keeps a separate encrypted Keychain inside its private agent home. Older
-bundles could finish the browser step without a default Keychain to persist the
-credential. Reinstall the runner and repeat `login claude` once. Wait for the Terminal
-message `claude_code: installed and signed in for Shiptorio`. Your personal Claude
-credentials and macOS Keychain stay separate.
 
 ### Sleeping, reconnecting and expired pairing
 
@@ -190,15 +173,15 @@ your computer. A fresh pairing replaces the stopped connection. The factory's ru
 also reports when re-pairing is needed; a generic network error or unclassified 401 alone
 does not erase or stop the saved pairing.
 
-## Update a PR after main advances
+## Update a PR after its base advances
 
-If a factory PR falls behind main, choose **Plan update and verify again** in the
+If a factory PR falls behind its base branch, choose **Plan update and verify again** in the
 game. Review the fresh plan: it names the new base, existing PR and branch, and the
 exact old head that may be replaced. Approving rebuilds the fix on that base and
 replaces only that factory branch. A concurrent branch edit stops the update.
 
 Your local agent runs fresh regression proof and supervisor checks. The same PR goes
-through CI, verification and review again; you still choose **Launch** separately.
-If main moves during the build, the factory asks for another plan instead of treating
+through CI, verification and review again; you still hold **Ship it** at the Gate separately.
+If the base moves during the build, the factory asks for another plan instead of treating
 old evidence as current. Updating the installed runner may be needed for this new job
 format; an old runner cannot publish the refreshed branch with its normal push.

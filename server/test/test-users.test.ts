@@ -132,3 +132,19 @@ test("tester overview uses only the private fixture and rejects mutations and re
   expect((await f.app.request("https://shiptorio.com/api/empire", { headers: { cookie } }, env)).status).toBe(404);
   expect(calls).toBe(1); expect(f.calls()).toBe(0);
 });
+
+
+test("verified fixture persona may follow only the read-only GitHub App callback", async () => {
+  const f = fixture(); await seedTestUser(f.env, "test-midgame");
+  const user = { id: personaId("test-midgame"), login: "test-midgame" };
+  const cookie = (await createSession(f.env, user, "test")).split(";")[0] + "; " + await preview();
+  const request = (path: string, method = "GET", env = f.env) => f.app.request(`http://localhost:8787${path}`, { method, headers: { cookie } }, env);
+  expect((await request("/github/installed")).status).toBe(200);
+  expect(f.calls()).toBe(1);
+  expect((await request("/github/installed", "POST")).status).toBe(403);
+  expect((await request("/github/anything-else")).status).toBe(403);
+  expect((await f.app.request("https://shiptorio.com/github/installed", { headers: { cookie } }, { ...f.env, PUBLIC_URL: "https://shiptorio.com" })).status).toBe(404);
+  await f.env.DB.prepare("UPDATE users SET login=? WHERE id=?").bind("not-a-test-persona", user.id).run();
+  expect((await request("/github/installed")).status).toBe(403);
+  expect(f.calls()).toBe(1);
+});

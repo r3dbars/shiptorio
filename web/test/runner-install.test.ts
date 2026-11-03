@@ -13,3 +13,11 @@ test("one-paste join codes stay arguments to the self-host installer", () => {
   expect(runnerInstallCommand(origin, join)).toBe(`curl -fsSL '${origin}/install.sh' | SHIPTORIO_URL='${origin}' sh -s -- --join '${join}'`);
   expect(runnerInstallCommand(origin, "x'; touch /tmp/unexpected; '")).toContain("--join 'x'\\''; touch /tmp/unexpected; '\\''' ".trim());
 });
+
+test("staging setup uses its own data and binary folders so production stays connected", () => {
+  const command = runnerInstallCommand('https://shiptorio.dev', 'abc');
+  expect(command).toContain('SHIPTORIO_RUNNER_ROOT="$HOME/.local/share/shiptorio/runner-staging"');
+  expect(command).toContain('SHIPTORIO_RUNNER_BIN_DIR="$HOME/.local/bin/shiptorio-staging"');
+  expect(command).toContain("SHIPTORIO_URL='https://shiptorio.dev'");
+  expect(runnerInstallCommand('https://shiptorio.com')).not.toContain('RUNNER_ROOT');
+});

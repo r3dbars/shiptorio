@@ -1,5 +1,9 @@
 # Shiptorio product spec: Spark runs the factory
 
+> **Historical, 3D map era (marked 2026-10-29).** This page describes the old map, shaft or React UI, not the 2D deck
+> that is the product now. It stays here because code comments point at it. Where it disagrees with
+> [VISION.md](VISION.md), VISION wins.
+
 > Status: draft v2, 2026-10-26 (v2: Spark is the brain, never the coder; your subscriptions do the building; autonomy is earned). Owner: Justin. This sharpens `PLAN.md` and `docs/ARCHITECTURE.md`
 > (it doesn't replace them). Where this doc and those disagree on **product behavior**, this doc wins.
 > Stack is Cloudflare (see `AGENTS.md`). Open product calls are at the bottom, each with a recommendation.

@@ -6,8 +6,8 @@
 // `fonts: false` and fall back to a monospace stack with the same colors and plates.
 
 import { IRON_FONTS } from "./iron-page";
+import { escapeHtml as esc } from "./encode";
 
-const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 
 

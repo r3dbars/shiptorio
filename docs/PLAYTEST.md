@@ -1,5 +1,9 @@
 # Repeatable game playtests
 
+> **Historical, 3D map era (marked 2026-10-29).** This page describes the old map, shaft or React UI, not the 2D deck
+> that is the product now. It stays here because code comments point at it. Where it disagrees with
+> [VISION.md](VISION.md), VISION wins.
+
 Run `bun run playtest --check`. Every registered simulator scenario gets a seeded
 180-tick game journey and an early-disconnect journey. The driver uses the real
 simulator, shared schemas and frontend patch reducer; it chooses suggested moves,

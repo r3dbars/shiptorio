@@ -100,6 +100,13 @@ describe("live check-in deck", () => {
     pad.bottleneck = { ...s.bottleneck, stage: "inspect", stationId: "verify-1" };
     expect(buildDeck(pad, [], { now, buildMoving: true })).toHaveLength(1);
   });
+  it("adds no 'Review the bottleneck' card while Shippy is writing a plan (a Planner jam with a job running)", () => {
+    const s = state([item("a")]);
+    s.bottleneck = { stage: "triage", wip: 1, ageMs: 5_000, throughputPerHour: 0, valueAtRisk: 10, summary: "1 item waiting at Planner. Oldest wait: less than a minute." };
+    expect(buildDeck(s, [], { now, buildMoving: true })).toEqual([]);
+    // with nothing planning, a Planner jam is still worth a look
+    expect(buildDeck(s, [], { now })).toHaveLength(1);
+  });
   it("respects persisted scoped class rules and deferred ids including an implied card", () => {
     const s = state([item("i")]);
     const proposal = move("build", { kind: "build", itemId: "i" });

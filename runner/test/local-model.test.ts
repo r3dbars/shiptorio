@@ -1,8 +1,9 @@
+import { localBoundary } from "../src/local-files";
 import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, mkdir, rm, symlink, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { assertLocalEndpoint, assertResolvesLocal, detectLocalModel, localModelConfig, parseLocalEdits, runLocalAssembler, OLLAMA_URL } from "../src/local-model";
+import { assertLocalEndpoint, assertResolvesLocal, detectLocalModel, localModelConfig, parseLocalEdits, runLocalAssembler as assembleLocal, OLLAMA_URL } from "../src/local-model";
 import { fakeOllama, type FakeOllama } from "./fake-ollama";
 
 let server: FakeOllama | undefined;
@@ -64,10 +65,10 @@ test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1")("assembler refuses big 
   expect(server.requests).toHaveLength(0);
   await writeFile(join(outside, "secret.md"), "keep");
   await symlink(join(outside, "secret.md"), join(work, "link.md"));
-  await expect(runLocalAssembler({ plan: "x", allowedPaths: ["link.md"] }, work, config())).rejects.toThrow("regular file");
+  await expect(runLocalAssembler({ plan: "x", allowedPaths: ["link.md"] }, work, config())).rejects.toThrow("regular files");
   await mkdir(join(work, "real"));
   await symlink(outside, join(work, "real", "dir"));
-  await expect(runLocalAssembler({ plan: "x", allowedPaths: ["real/dir/secret.md"] }, work, config())).rejects.toThrow("regular directory");
+  await expect(runLocalAssembler({ plan: "x", allowedPaths: ["real/dir/secret.md"] }, work, config())).rejects.toThrow("regular directories");
   expect(await readFile(join(outside, "secret.md"), "utf8")).toBe("keep");
   server.stop();
   await writeFile(join(work, "same.md"), "same");
@@ -129,3 +130,8 @@ test("a local-looking name must resolve to a local address", async () => {
   await expect(assertResolvesLocal("http://gpu-box.local:8000/v1", async () => [{ address: "10.0.0.2" }, { address: "8.8.8.8" }])).rejects.toThrow("resolve");
   await expect(assertResolvesLocal("http://127.0.0.1:1/v1")).resolves.toBeUndefined();
 });
+
+async function runLocalAssembler(job: Parameters<typeof assembleLocal>[0], work: string, config: Parameters<typeof assembleLocal>[2], fetchImpl?: typeof fetch) {
+  const sandbox = await localBoundary(work);
+  try { return await assembleLocal(job, work, config, sandbox, fetchImpl); } finally { await sandbox.close(); }
+}

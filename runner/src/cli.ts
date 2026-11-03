@@ -1,28 +1,37 @@
+import { isProsePath } from "../../shared/src/prose";
+import { localBoundary } from "./local-files";
 import { fetchApprovedSource } from "./approved-source";
 import { runnerOrigin } from "./origin";
 import { freeSubscriptions, prepareAgentHome, subscriptionArgs, subscriptionSignedIn, subscriptionCredentialVersion } from "./subscriptions";
 import { assembleCodex } from "./codex-assembler";
+import { assembleMuse } from "./muse-assembler";
 import { probeAssemblerEdit } from "./edit-probe";
+import { codexDoctorFailure } from "./codex-diagnostic";
 import { mkdir, lstat, realpath, rm, mkdtemp } from "node:fs/promises";
 import { resolve } from "node:path";
 import { agentEnvironment, assemblerPrompt, assertCheckCommand, harnessArgs, validateChanges } from "./policy";
 import { TEST_PATH, resetVerifyBase, verifyRegression } from "./verify";
-import { assertVerificationPlatform, checkSandbox, type CheckSandbox, verificationGit } from "./sandbox";
+import { assertVerificationPlatform, checkSandbox, resumeOnTimeout, type CheckSandbox, verificationGit } from "./sandbox";
 import { assemblerContext, snapshotApproved, publishApproved } from "./publication";
 import { runnerHome, loadPairings, pairMachine, joinMachine, type Pairing } from "./pairing";
 import { loadConnections, persistRenewal, persistGrantRejection } from "./grant-store";
 
 
 import { atomicJson, Backoff, recoverWorkspace, replayReceipts, retryable } from "./recovery";
-import { AuthFailures, RunnerGrantRejected, runnerResponseError, maintainConnection, renewalDue, agentOffline, authExpired, diagnose, loginCommand, type Subscription } from "./health";
+import { AuthFailures, RunnerGrantRejected, runnerFailureSummary, runnerResponseError, maintainConnection, renewalDue, agentOffline, authExpired, usageLimited, RunnerExecutionFailure, diagnose, loginCommand, agentName, type Subscription } from "./health";
 import { tmpdir } from "node:os";
 const blocked = new Set<Subscription>();
 const authFailures = new AuthFailures();
 const rejectedGrants = new Map<string, string>();
 class SignInExpired extends Error {}
-import { responseSchemas, type Job } from "./messages";
+import { assertJobAssignment, responseSchemas, plainRunnerError, runnerCheckLabel, type Job } from "./messages";
 import { detectLocalModel, localModelConfig, runLocalAssembler } from "./local-model";
 import { redactText } from "../../server/src/redact";
+const verbose = process.argv.includes("--verbose");
+const showError = (error: unknown) => console.error(verbose ? redactText(error instanceof Error ? error.stack ?? error.message : String(error)) : plainRunnerError(error));
+const fail = (error: unknown) => { showError(error); process.exit(1); };
+process.on("uncaughtException", fail);
+process.on("unhandledRejection", fail);
 const root = process.env.SHIPTORIO_RUNNER_ROOT ? runnerHome() : process.env.SHIPTORIO_REPO ? resolve(import.meta.dir, "..") : runnerHome();
 // Resolve the installation origin before provider probes or authenticated runner calls.
 // Pre-self-host installations have no server-url file and belong to shiptorio.com.
@@ -38,15 +47,17 @@ const cleanEnv = agentEnvironment(process.env);
 let claudeKeychainUnavailable = false;
 const authHome = await prepareAgentHome(root, () => {
   claudeKeychainUnavailable = true;
-  console.error("Claude Code is unavailable: its private Keychain could not be unlocked. Codex can still run. Repair the private Keychain before signing in to Claude; credentials have been preserved.");
+  showError(new Error("private Keychain could not be unlocked"));
 });
-const harnessPath = (h: Exclude<Job["harness"], "local">) => Bun.which(h === "codex" ? "codex" : "claude");
+const harnessPath = (h: Exclude<Job["harness"], "local">) => Bun.which(h === "codex" ? "codex" : h === "muse_code" ? "muse" : "claude");
 const localFile = Bun.file(resolve(root, "local-model.json"));
 const local = localModelConfig(process.env, await localFile.exists() ? await localFile.json() : null);
 const localStatus = local ? await detectLocalModel(local) : null;
-const installedSubscriptions = (["codex", "claude_code"] as const).filter(h => harnessPath(h));
-const busySubscriptions = new Set<"codex" | "claude_code">();
-let available: Job["harness"][] = [...(["codex", "claude_code"] as const).filter(h => harnessPath(h)), ...(localStatus?.ok ? ["local" as const] : [])];
+// Players are offered Codex or Muse Code. Claude Code stays wired for development, behind an explicit opt-in.
+const offered: Subscription[] = ["codex", "muse_code", ...(process.env.SHIPTORIO_ENABLE_CLAUDE === "1" ? ["claude_code" as const] : [])];
+const installedSubscriptions = offered.filter(h => harnessPath(h) && (!process.argv.includes("--codex-only") || h === "codex"));
+const busySubscriptions = new Set<Subscription>();
+let available: Job["harness"][] = [...installedSubscriptions, ...(localStatus?.ok && !process.argv.includes("--codex-only") ? ["local" as const] : [])];
 
 if (process.argv[2] === "paths") {
   console.log(JSON.stringify({ root, checkout, harnesses: available }));
@@ -68,80 +79,88 @@ if (process.argv[2] === "geothermal") {
   if (!config) throw new Error("Usage: runner geothermal MODEL [URL], e.g. runner geothermal qwen2.5-coder:7b");
   const status = await detectLocalModel(config);
   await Bun.write(resolve(root, "local-model.json"), JSON.stringify({ model: config.model, url: config.baseUrl }, null, 2) + "\n");
-  console.log(status.ok ? `Geothermal online: ${config.model} at ${config.baseUrl}. Restart the runner to offer it.` : `Saved, but not ready yet: ${status.reason}`);
+  console.log(status.ok ? "Your local model is ready.\nshiptorio-runner watch" : "Your local model was saved but is not ready.\nshiptorio-runner doctor");
   process.exit(0);
 }
 async function signedInHarness(h: Job["harness"]) {
-  if (h === "claude_code" && claudeKeychainUnavailable) return false;
+  if ((h === "claude_code" || h === "muse_code") && claudeKeychainUnavailable) return false;
   if (h === "local") return localStatus?.ok === true;
   const executable = harnessPath(h);
   return executable ? subscriptionSignedIn(h, executable, authHome) : false;
 }
 async function loginHarness(h: Job["harness"]) {
-  if (h === "claude_code" && claudeKeychainUnavailable) throw new Error("Repair the private Keychain before signing in to Claude; no personal Keychain fallback is allowed.");
+  if ((h === "claude_code" || h === "muse_code") && claudeKeychainUnavailable) throw new Error(`Repair the private Keychain before signing in to ${h === "muse_code" ? "Muse Code" : "Claude"}; no personal Keychain fallback is allowed.`);
   if (h === "local") throw new Error("Local models do not need subscription login");
-  console.log(`Sign in to ${h === "codex" ? "Codex" : "Claude Code"} for Shiptorio. This dedicated local login keeps your normal agent home outside job sandboxes.`);
+  console.log(`Finish signing in to ${agentName(h)} in the window that opens.`);
   const child = Bun.spawn([harnessPath(h)!, ...subscriptionArgs(h, true)], { cwd: authHome, env: agentEnvironment(process.env, authHome), stdin: "inherit", stdout: "inherit", stderr: "inherit" });
-  if (await child.exited || !await signedInHarness(h)) throw new Error("Agent sign-in did not finish. Run shiptorio-runner login codex (or claude) and try again.");
+  const exited = await child.exited;
+  // Muse Code has no status command: a clean login exit is the evidence, recorded beside its credential file.
+  if (!exited && h === "muse_code") await Bun.write(resolve(authHome, ".config/muse/.shiptorio-login"), crypto.randomUUID(), { mode: 0o600 });
+  if (exited || !await signedInHarness(h)) throw new Error(`Agent sign-in did not finish. Run ${loginCommand(h)} and try again.`);
   // Keychain-only reauthentication need not change a credential file. Wake a watching runner's auth guard.
   if (h === "claude_code") await Bun.write(resolve(authHome, ".claude/.shiptorio-login"), crypto.randomUUID(), { mode: 0o600 });
 }
 if (process.argv[2] === "doctor") {
-  const args = process.argv.slice(3);
-  if (args.length && (args.length !== 2 || args[0] !== "--edit" || args[1] !== "codex")) throw new Error("Usage: shiptorio-runner doctor [--edit codex]");
+  const args = process.argv.slice(3).filter(arg => arg !== "--verbose");
+  if (args.length && (args.length !== 2 || args[0] !== "--edit" || !["codex", "muse"].includes(args[1]))) throw new Error("Usage: shiptorio-runner doctor [--edit codex|muse]");
   const realEdit = args.length > 0;
-  if (realEdit) console.log("Real edit probe: one small Codex subscription request in a disposable repository; no factory job is claimed.");
-  await mkdir(resolve(authHome, ".codex"), { recursive: true, mode: 0o700 });
+  const editAgent: "codex" | "muse_code" = args[1] === "muse" ? "muse_code" : "codex";
+  if (realEdit) console.log(`${agentName(editAgent)} will try one small test change without starting factory work.`);
   const checks = await diagnose({ harnesses: available, pairs: await connections(), auth: signedInHarness,
-    editHarness: realEdit ? "codex" : undefined,
+    editHarness: realEdit ? editAgent : undefined,
     edit: async () => {
+      let probeResult: import("./sandbox").SandboxResult | undefined;
       try {
         await probeAssemblerEdit(async context => {
-          const result = await assembleCodex({ root: context.root, work: context.work, home: authHome, executable: harnessPath("codex")!, timeout: 120000,
+          const assemble = editAgent === "muse_code" ? assembleMuse : assembleCodex;
+          const result = await assemble({ root: context.root, work: context.work, home: authHome, executable: harnessPath(editAgent)!, timeout: 120000,
             job: { plan: context.plan, allowedPaths: context.allowedPaths }, files: context.files, verification: context.verification });
-          if (result.code || result.timedOut) throw new Error(`Codex edit probe failed (${result.code}): ${redactText(result.err.slice(-2000))}`);
+          probeResult = result;
+          if (result.code || result.timedOut) throw new Error(`${agentName(editAgent)} provider did not complete the edit probe`);
         });
-      } catch (error) { console.error(redactText(error instanceof Error ? error.message : "Real edit probe failed")); throw error; }
+      } catch (error) {
+        const diagnostic = codexDoctorFailure(probeResult, error).replaceAll("Codex", agentName(editAgent));
+        throw new Error(diagnostic);
+      }
     },
     pairing: pair => api(pair, "renew", {}),
     sandbox: async h => {
-      if (h === "claude_code" && claudeKeychainUnavailable) throw new Error("Claude Code private Keychain unavailable; sandbox probe was not run.");
+      if ((h === "claude_code" || h === "muse_code") && claudeKeychainUnavailable) throw new Error("Agent private Keychain unavailable; sandbox probe was not run.");
       const dir = await mkdtemp(resolve(tmpdir(), "shiptorio-doctor-"));
       let boundary: CheckSandbox | undefined;
       try {
         boundary = await checkSandbox(dir, h ? { home: authHome, executable: harnessPath(h)! } : undefined);
         // Exercise CLI startup, managed preferences and HTTPS inside the agent boundary (#235), without inference.
-        const probe = h ? [harnessPath(h)!, ...subscriptionArgs(h)] : [process.execPath, "--no-env-file", "-e", "console.log('sandbox OK')"];
+        const probe = h ? [harnessPath(h)!, ...subscriptionArgs(h)] : [process.execPath, "--no-env-file", "--config=/dev/null", "-e", "console.log('sandbox OK')"];
         const result = await boundary.run(probe, dir, { timeout: 30000 });
-        if (result.code && !(h && authExpired(result.err + result.out))) { console.error(redactText(result.err.slice(-2000))); throw Error("Sandbox probe failed"); }
+        if (result.code && !(h && authExpired(result.err + result.out))) { if (verbose) console.error(redactText(result.err.slice(-2000))); throw Error("Sandbox probe failed"); }
         if (h) {
           if (process.platform === "darwin") {
             const preferences = await boundary.run(["/usr/bin/defaults", "read", "NSGlobalDomain"], dir, { timeout: 10000 });
             // An empty preference domain is valid; Seatbelt/config sync failures are not.
             if (/not permitted|failed to synchronize|sandbox.*deny/i.test(preferences.err)) throw Error("Managed preferences unavailable in sandbox");
           }
-          const network = await boundary.run([process.execPath, "--no-env-file", "-e", 'await fetch("https://shiptorio.com/api/version",{signal:AbortSignal.timeout(10000)});console.log("HTTPS OK")'], dir, { timeout: 15000 });
-          if (network.code) { console.error(redactText(network.err.slice(-2000))); throw Error("Sandbox HTTPS probe failed"); }
+          const network = await boundary.run([process.execPath, "--no-env-file", "--config=/dev/null", "-e", 'await fetch("https://shiptorio.com/api/version",{signal:AbortSignal.timeout(10000)});console.log("HTTPS OK")'], dir, { timeout: 15000 });
+          if (network.code) { if (verbose) console.error(redactText(network.err.slice(-2000))); throw Error("Sandbox HTTPS probe failed"); }
         }
       } finally { await boundary?.close(); await rm(dir, { recursive: true, force: true }); }
     } });
-  for (const check of checks) console.log(`${check.ok ? "PASS" : "FAIL"} ${check.check}: ${check.detail}`);
-  if (!realEdit) console.log("SKIP edit:codex: Not checked. Run shiptorio-runner doctor --edit codex for one real subscription edit.");
+  for (const check of checks) console.log(verbose ? `${check.ok ? "PASS" : "FAIL"} ${check.check}: ${redactText(check.detail)}` : check.ok ? `${runnerCheckLabel(check.check)} passed.` : check.check.startsWith("sandbox:") ? `${runnerCheckLabel(check.check)} could not complete its safety check.\nshiptorio-runner doctor` : plainRunnerError(new Error(check.detail)));
+  if (!realEdit) for (const h of installedSubscriptions.some(h => h === "muse_code") ? installedSubscriptions.filter(h => h !== "claude_code") : ["codex" as const]) console.log(`${agentName(h)} has not tried a test change yet.\nshiptorio-runner doctor --edit ${h === "muse_code" ? "muse" : "codex"}`);
   process.exit(checks.every(c => c.ok) ? 0 : 1);
 }
 if (["setup", "login"].includes(process.argv[2])) {
-  await mkdir(resolve(authHome, ".codex"), { recursive: true, mode: 0o700 });
-  if (!available.length) throw new Error(`Install Codex CLI or Claude Code first, then rerun the installer. See ${base}/docs/runner`);
+  if (!available.length) throw new Error(`Install Codex CLI or Muse Code first, then rerun the installer. See ${base}/docs/runner`);
   if (process.argv[2] === "login") {
-    const h = process.argv[3] === "claude" ? "claude_code" : process.argv[3] === "codex" ? "codex" : null;
-    if (!h || !available.includes(h)) throw new Error("Use login codex or login claude, with that CLI installed");
+    const h = ({ claude: "claude_code", codex: "codex", muse: "muse_code" } as const)[process.argv[3] as "claude" | "codex" | "muse"] ?? null;
+    if (!h || !available.includes(h)) throw new Error("Use login codex or login muse, with that CLI installed");
     await loginHarness(h);
   }
   let ready = false;
   for (const h of available) {
-    if (h === "local") { console.log(`local: ${local!.model} at ${local!.baseUrl} (geothermal power)`); ready = true; continue; }
+    if (h === "local") { console.log("Your local model is ready."); ready = true; continue; }
     const loggedIn = await signedInHarness(h);
-    console.log(`${h}: ${loggedIn ? "installed and signed in for Shiptorio" : "installed; needs dedicated sign-in (shiptorio-runner login " + (h === "codex" ? "codex" : "claude") + ")"}`);
+    console.log(loggedIn ? `${agentName(h)} is signed in and ready.` : `${agentName(h)} needs you to sign in.\n${loginCommand(h)}`);
     ready ||= loggedIn;
   }
   if (!ready && process.argv[2] === "setup") await loginHarness(available[0]);
@@ -156,13 +175,12 @@ if (action === "pair") {
   process.exit(0);
 }
 if (action === "uninstall") {
-  console.log("Stop other runner terminals first. Removing standalone runner and local pairings.");
-  const { rm } = await import("node:fs/promises");
+  console.log("Removing this runner; close any other runner windows first.");
   const { homedir } = await import("node:os");
   // Fixed install paths only; environment overrides must never become recursive delete targets.
   await rm(resolve(homedir(), ".local/bin/shiptorio-runner"), { force: true });
   await rm(resolve(homedir(), ".local/share/shiptorio/runner"), { recursive: true, force: true });
-  console.log("Removed. Disconnect this machine in each factory to revoke its credential.");
+  console.log("The runner is removed; disconnect this computer in each factory.");
   process.exit(0);
 }
 async function api(pair: Pairing, action: keyof typeof responseSchemas, body: unknown): Promise<any> {
@@ -181,7 +199,7 @@ async function renewPairing(pair: Pairing) {
 }
 async function execute(job: Job, pair: Pairing) {
   const repo = pair.repo;
-  if (job.repo !== repo || !/^[a-f0-9]{40}$/.test(job.baseSha) || (!job.reworkPr && job.branch !== `shiptorio/runner-${job.id}` || !!job.reworkPr && (!Number.isInteger(job.reworkPr) || job.reworkPr < 1 || !/^shiptorio\/runner-[a-f0-9-]{36}$/.test(job.branch))) || !/^[a-f0-9-]{36}$/.test(job.id) || job.deadline <= Date.now()) throw new Error("Invalid job assignment");
+  assertJobAssignment(job, repo);
   assemblerPrompt(job); // Validate before creating workspace or launching any child.
   const receiptFile = resolve(root, ".work", `${job.id}.receipt.json`);
   if (await Bun.file(receiptFile).exists()) {
@@ -199,11 +217,11 @@ async function execute(job: Job, pair: Pairing) {
   let summary = "";
   let sandbox: CheckSandbox | undefined;
   let agentSandbox: CheckSandbox | undefined;
+  let localSandbox: CheckSandbox | undefined;
   const checked = async (args: string[], install = false): Promise<string> => {
     if (!sandbox) throw new Error("Verification sandbox not prepared");
     if (job.deadline <= Date.now()) throw new Error("Build lease expired; approve a fresh attempt in the game");
     const result = await sandbox.run(args, work, { install, timeout: Math.min(180000, job.deadline - Date.now()) });
-    if (result.timedOut) throw new TypeError("Supervisor interrupted or timed out; saved build will resume");
     if (result.code) throw new Error(`Sandboxed ${args[0].split("/").at(-1)} ${args[1]} failed (${result.code}): ${(result.err || result.out).slice(-2000)}`);
     return result.out.trim();
   };
@@ -214,43 +232,40 @@ async function execute(job: Job, pair: Pairing) {
     const source = resolve(jobRoot, "source.git");
     if (!workspace.state.initialized) {
       await rm(source, { recursive: true, force: true }); await rm(work, { recursive: true, force: true });
-      await fetchApprovedSource(async (args, cwd = jobRoot) => command([await verificationGit(), "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", ...args], cwd, gitEnv), source, `https://github.com/${job.repo}.git`, [job.baseSha, ...(job.verifyBaseSha ? [job.verifyBaseSha] : [])], true);
-      await command([await verificationGit(), "-c", "core.hooksPath=/dev/null", "--git-dir", source, "worktree", "add", "--detach", work, job.baseSha], jobRoot, cleanEnv);
+      const git = await verificationGit();
+      await fetchApprovedSource((args, cwd = jobRoot) => command([git, "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", ...args], cwd, gitEnv), source, `https://github.com/${job.repo}.git`, [job.baseSha, ...(job.verifyBaseSha ? [job.verifyBaseSha] : [])], true);
+      await command([git, "-c", "core.hooksPath=/dev/null", "--git-dir", source, "worktree", "add", "--detach", work, job.baseSha], jobRoot, cleanEnv);
       await workspace.checkpoint("initialized");
     }
-    const boundary = await checkSandbox(jobRoot);
-    sandbox = { run: async (args, cwd = work, options) => {
-      const result = await boundary.run(args, cwd, options);
-      if (result.timedOut) throw new TypeError("Supervisor interrupted or timed out; saved build will resume");
-      return result;
-    }, close: () => boundary.close() };
+    sandbox = resumeOnTimeout(await checkSandbox(jobRoot), work);
+    if (job.harness === "local") localSandbox = resumeOnTimeout(await localBoundary(work), work);
     await resetVerifyBase(sandbox, work);
     await checked(["git", "checkout", "--detach", job.baseSha]);
     let output = "";
     if (!workspace.state.agentDone) {
       if (job.harness === "local") {
         // Geothermal: the model only returns text; the runner writes approved files, then the same supervisor runs.
-        console.log(`Running local model ${local!.model} in isolated checkout ${job.id}; geothermal power, Spark planned the task.`);
-        output = JSON.stringify(await runLocalAssembler(job, work, local!));
+        console.log("Your local model is working on the approved change.");
+        output = JSON.stringify(await runLocalAssembler(job, work, local!, localSandbox!));
       } else {
         const context = await assemblerContext(sandbox, job.allowedPaths);
-        console.log(`Running ${job.harness} in isolated checkout ${job.id}; Spark planned the task.`);
+        console.log(`${agentName(job.harness)} is working on the approved change.`);
         const executable = harnessPath(job.harness);
         if (!executable) throw new Error("Assigned harness is unavailable");
         const timeout = Math.max(1, Math.min(15 * 60 * 1000, job.deadline - Date.now()));
         let result;
         if (job.harness === "codex") result = await assembleCodex({ root: jobRoot, work, home: authHome, executable, timeout, job, files: context, verification: sandbox });
+        else if (job.harness === "muse_code") result = await assembleMuse({ root: jobRoot, work, home: authHome, executable, timeout, job, files: context, verification: sandbox });
         else {
           agentSandbox = await checkSandbox(jobRoot, { home: authHome, executable });
           result = await agentSandbox.run([executable, ...harnessArgs(job.harness, assemblerPrompt(job, context))], work, { timeout });
         }
         if (result.code) {
           // The redacted stderr tail stays on this Mac (service-error.log); the server only sees the generic failure.
-          console.error(`${job.harness} exited ${result.code}: ${redactText(result.err.trim().slice(-2000))}`);
-          if (authExpired(result.err + "\n" + result.out)) {
-            blocked.add(job.harness); authFailures.reject(job.harness, await subscriptionCredentialVersion(job.harness, authHome));
-            throw new SignInExpired(`Sign-in expired: ${loginCommand(job.harness)}. The build is saved while its lease remains valid.`);
-          }
+          if (verbose) console.error(`${job.harness} exited ${result.code}: ${redactText(result.err.trim().slice(-2000))}`);
+          if (authExpired(result.err + "\n" + result.out)) throw await signInExpired(job.harness, `Sign-in expired: ${loginCommand(job.harness)}. The build is saved while its lease remains valid.`);
+          const limited = usageLimited(result.err + "\n" + result.out);
+          if (limited) throw new RunnerExecutionFailure("limit", agentName(job.harness as Subscription), limited.until);
           if (result.timedOut || agentOffline(result.err + "\n" + result.out)) throw new TypeError("Agent connection interrupted or timed out; saved build will resume");
           throw new Error(`Agent failed (${result.code}); see the runner log for the agent's error`);
         }
@@ -260,7 +275,7 @@ async function execute(job: Job, pair: Pairing) {
       // Preserve local evidence; never forward raw agent output to the server/browser.
       await Bun.write(resolve(root, ".work", `${job.id}.agent.log`), output, { mode: 0o600 });
       if (job.harness === "claude_code" && JSON.parse(output).is_error) {
-        if (authExpired(output)) { blocked.add(job.harness); authFailures.reject(job.harness, await subscriptionCredentialVersion(job.harness, authHome)); throw new SignInExpired(`Sign-in expired: ${loginCommand(job.harness)}`); }
+        if (authExpired(output)) throw await signInExpired(job.harness, `Sign-in expired: ${loginCommand(job.harness)}`);
         if (agentOffline(output)) throw new TypeError("Agent connection interrupted; saved build will resume");
         throw new Error("Claude reported an agent error");
       }
@@ -276,20 +291,20 @@ async function execute(job: Job, pair: Pairing) {
     validateChanges(paths, job.allowedPaths, diff);
     const frozen = await snapshotApproved(sandbox, paths);
     await workspace.freeze(frozen);
-    const manifest = await sandbox.run([process.execPath, "--no-env-file", "-e", 'console.log(JSON.stringify(Object.keys((await Bun.file("package.json").json()).scripts ?? {})))'], work);
+    const manifest = await sandbox.run([process.execPath, "--no-env-file", "--config=/dev/null", "-e", 'console.log(JSON.stringify(Object.keys((await Bun.file("package.json").json()).scripts ?? {})))'], work);
     if (manifest.code) throw new Error("Cannot read repository scripts");
     const scripts = JSON.parse(manifest.out) as string[];
     const checkCommand = async (args: string[], install = false) => { assertCheckCommand(args, process.execPath, scripts); return checked(args, install); };
     try { await checkCommand([process.execPath, "install", "--frozen-lockfile", "--ignore-scripts"], true); }
     catch (error) { preserve = true; throw error; }
     const checks = ["typecheck", "test", "build"] as const;
-    for (const check of checks) { console.log(`Supervisor check: ${check}`); await checkCommand([process.execPath, "run", check]); }
+    for (const check of checks) { console.log(`Checking ${check === "typecheck" ? "types" : check === "test" ? "tests" : check}.`); await checkCommand([process.execPath, "run", check]); }
     const verifyPaths = [...new Set([...paths, ...(job.prTestFiles ?? [])])].filter(p => TEST_PATH.test(p));
-    const docsOnly = !job.reworkPr && paths.every(p => /\.(md|mdx|txt)$|(^|\/)docs\//i.test(p));
+    const docsOnly = !job.reworkPr && paths.every(isProsePath);
     const proof = docsOnly ? undefined : await verifyRegression(work, job.verifyBaseSha ?? job.baseSha, verifyPaths, cleanEnv, jobRoot);
     if (proof) {
       await Bun.write(resolve(root, ".work", `${job.id}.verify.log`), proof.logTail, { mode: 0o600 });
-      console.log(`Verify bay: base fails=${proof.failsOnBase}, head passes=${proof.passesOnHead}`);
+      console.log(proof.failsOnBase && proof.passesOnHead ? "The test confirms this change fixes the problem." : "The test did not confirm the fix; review it in Shiptorio.");
       if (job.refreshBase && (!proof.failsOnBase || !proof.passesOnHead)) throw new Error("Base refresh requires fresh base-failing and head-passing proof");
       if (verifyPaths.length && !proof.passesOnHead) throw new Error("Regression recipe failed on the fix commit");
     }
@@ -303,31 +318,36 @@ async function execute(job: Job, pair: Pairing) {
     summary = `Changed files: ${paths.join(", ")} (approved: ${job.allowedPaths.join(", ")}). Supervisor validated the scope and secret scan, then passed typecheck, tests and build. Agent output stays local.`;
     const receipt = { jobId: job.id, lease: job.lease, ok: true, sha, summary, checks, proof: proof ? { ...proof, headSha: sha } : undefined };
     await atomicJson(receiptFile, receipt);
-    console.log(JSON.stringify(await api(pair, "finish", receipt)));
+    const finished = await api(pair, "finish", receipt);
+    console.log("prUrl" in finished ? "Your pull request is ready to review in Shiptorio." : "The failed build has been reported to Shiptorio.");
     completed = true;
   } catch (error) {
     preserve ||= retryable(error) || error instanceof SignInExpired || await Bun.file(receiptFile).exists();
     if (!preserve) {
-      const receipt = { jobId: job.id, lease: job.lease, ok: false, summary: "Local runner stopped; inspect local evidence and approve another attempt.", checks: [] };
+      const receipt = { jobId: job.id, lease: job.lease, ok: false, summary: runnerFailureSummary(error), checks: [] };
       await atomicJson(receiptFile, receipt);
       try { await api(pair, "finish", receipt); completed = true; } catch { preserve = true; }
     }
     throw error;
-  } finally { await agentSandbox?.close(); await sandbox?.close(); if (completed) await workspace.close(); job.token = ""; gitEnv.GIT_CONFIG_VALUE_0 = ""; }
+  } finally { await localSandbox?.close(); await agentSandbox?.close(); await sandbox?.close(); if (completed) await workspace.close(); job.token = ""; gitEnv.GIT_CONFIG_VALUE_0 = ""; }
 
+}
+/** Stop offering a provider until its credentials change or a login succeeds. */
+async function signInExpired(h: Subscription, message: string) {
+  blocked.add(h); authFailures.reject(h, await subscriptionCredentialVersion(h, authHome));
+  return new SignInExpired(message);
 }
 function connectionStopped(pair: Pairing) { return !!pair.rejected || rejectedGrants.get(pair.repo) === pair.token; }
 async function stopRejectedConnection(pair: Pairing, error: unknown): Promise<boolean> {
   if (!(error instanceof RunnerGrantRejected)) return false;
   rejectedGrants.set(pair.repo, pair.token);
-  await persistGrantRejection(root, pair, error.code).catch(() => console.error(`${pair.repo}: could not save re-pairing status; this process will keep the rejected grant stopped.`));
-  console.error(`${pair.repo}: connection stopped (${error.code}). Run shiptorio-runner pair. Saved builds and receipts are preserved.`);
+  await persistGrantRejection(root, pair, error.code).catch(() => console.error("The runner could not save its connection status; this factory will stay stopped."));
+  console.error("This computer needs to reconnect; your saved work is safe.\nshiptorio-runner pair");
   return true;
 }
 async function connections() {
   return loadConnections(root, { SHIPTORIO_REPO: process.env.SHIPTORIO_REPO, SHIPTORIO_RUNNER_TOKEN: process.env.SHIPTORIO_RUNNER_TOKEN });
 }
-await mkdir(resolve(authHome, ".codex"), { recursive: true, mode: 0o700 });
 let pairs = await connections();
 if (!pairs.length) { await pinPairingOrigin(); await pairMachine(base, root); pairs = await connections(); }
 if (action === "retry") {
@@ -335,42 +355,48 @@ if (action === "retry") {
   const receipt = await Bun.file(resolve(root, ".work", `${id}.receipt.json`)).json();
   const repo = process.argv[4] ?? (pairs.length === 1 ? pairs[0].repo : "");
   const pair = pairs.find(p => p.repo === repo); if (!pair) throw new Error("Specify the receipt repository after the job UUID");
-  console.log(JSON.stringify(await api(pair, "finish", receipt)));
+  const finished = await api(pair, "finish", receipt);
+  console.log("prUrl" in finished ? "Your pull request is ready to review in Shiptorio." : "The failed build has been reported to Shiptorio.");
 } else {
   await assertVerificationPlatform();
-  console.log(`Local runner ready: ${available.join(", ") || "no installed agents"}. Watching ${pairs.map(p => p.repo).join(", ")}. Only approved jobs run. Ctrl-C to stop.`);
+  console.log("The runner is watching your factory; press Ctrl-C to stop.");
   const once = action !== "watch";
   const backoffs = new Map<string, Backoff>();
   const heartbeatBackoffs = new Map<string, Backoff>();
   let heartbeatBusy = false;
+  // The claim loop re-checks sign-ins right before every claim. While idle, the heartbeat reports
+  // that same result instead of spawning every provider's status CLI a second time each tick.
+  let authCheckedAt = 0;
   const refreshAuth = async () => {
     const next: Job["harness"][] = [];
     for (const h of available) {
       if (h === "local" ? await signedInHarness(h) : authFailures.ready(h, await signedInHarness(h), await subscriptionCredentialVersion(h, authHome))) { next.push(h); if (h !== "local") blocked.delete(h); }
       else if (h !== "local") blocked.add(h);
     }
+    authCheckedAt = Date.now();
     return next;
   };
   let ready = await refreshAuth();
+  const heartbeatOptions = { renew: renewPairing, heartbeat: (p: Pairing) => api(p, "heartbeat", { harnesses: ready, authRequired: [...blocked] }) };
   for (const pair of pairs) {
-    if (connectionStopped(pair)) { console.error(`${pair.repo}: connection needs re-pairing. Run shiptorio-runner pair.`); continue; }
-    try { await maintainConnection(pair, { renew: renewPairing, heartbeat: p => api(p, "heartbeat", { harnesses: ready, authRequired: [...blocked] }) }); }
+    if (connectionStopped(pair)) { console.error("This computer needs to reconnect to your factory.\nshiptorio-runner pair"); continue; }
+    try { await maintainConnection(pair, heartbeatOptions); }
     catch (error) { await stopRejectedConnection(pair, error); }
   }
   const heartbeat = setInterval(async () => {
     if (heartbeatBusy) return;
     heartbeatBusy = true;
     try {
-      ready = await refreshAuth();
+      if (Date.now() - authCheckedAt >= 5000) ready = await refreshAuth();
       for (const pair of await connections()) {
         if (connectionStopped(pair)) continue;
         const retry = heartbeatBackoffs.get(pair.repo) ?? new Backoff(); heartbeatBackoffs.set(pair.repo, retry);
         if (!retry.ready()) continue;
-        try { await maintainConnection(pair, { renew: renewPairing, heartbeat: p => api(p, "heartbeat", { harnesses: ready, authRequired: [...blocked] }) }); retry.reset(); }
-        catch (error) { if (await stopRejectedConnection(pair, error)) continue; retry.fail(); console.error(`${pair.repo}: heartbeat unavailable; retrying. ${error instanceof Error ? error.message : "Network error"}`); }
+        try { await maintainConnection(pair, heartbeatOptions); retry.reset(); }
+        catch (error) { if (await stopRejectedConnection(pair, error)) continue; retry.fail(); if (verbose) showError(error); else console.error("The factory connection was interrupted; retrying shortly."); }
       }
     }
-    catch (error) { console.error(error instanceof Error ? error.message : "Heartbeat failed"); }
+    catch (error) { showError(error); }
     finally { heartbeatBusy = false; }
   }, 5000);
   try {
@@ -389,15 +415,17 @@ if (action === "retry") {
             if (job.harness !== "local") busySubscriptions.add(job.harness);
             try { await execute(job, pair); }
             finally { if (job.harness !== "local") busySubscriptions.delete(job.harness); }
-          } else if (once) console.log(`${pair.repo}: no approved Spark job is ready.`);
+          } else if (once) console.log("No approved work is ready yet.");
           retry.reset();
         } catch (error) {
           if (await stopRejectedConnection(pair, error)) continue;
           const delay = retry.fail();
-          console.error(`${error instanceof Error ? error.message : "Runner request failed"}. Retrying in ${Math.ceil(delay / 1000)}s.`);
+          if (verbose) { showError(error); console.error(`Retrying in ${Math.ceil(delay / 1000)}s.`); }
+          else if (error instanceof SignInExpired) showError(error);
+          else console.error(`${plainRunnerError(error).split("\n")[0].replace(/\.$/, "")}; retrying shortly.`);
           if (error instanceof SignInExpired) {
             ready = ready.filter(h => !blocked.has(h as Subscription));
-            await api(pair, "heartbeat", { harnesses: ready, authRequired: [...blocked] }).catch(() => {});
+            await heartbeatOptions.heartbeat(pair).catch(() => {});
           }
           // Generic 401s may come from an upstream proxy: retain the grant and retry with backoff.
 

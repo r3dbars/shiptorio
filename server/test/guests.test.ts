@@ -29,7 +29,7 @@ test("first visit creates only an isolated signed guest save; reload retains pro
   const env = environment(); let outbound = 0;
   globalThis.fetch = (async () => { outbound++; throw Error("guest must not fetch a provider"); }) as unknown as typeof fetch;
   const first = await browser(env);
-  expect(await first.response.json()).toEqual({ login: null, guest: true, allowed: false, prefs: {}, installUrl: null });
+  expect(await first.response.json()).toEqual({ login: null, guest: true, allowed: false, prefs: {}, installUrl: null, githubConfigured: false });
   for (const part of ["HttpOnly", "Secure", "SameSite=Lax", "Path=/"]) expect(first.header).toContain(part);
   expect(await currentUser(env, first.cookie)).toBeNull();
   expect((await app.fetch(req("/api/me/progress", first.cookie, "PUT", JSON.stringify(progress())), env)).status).toBe(200);
@@ -115,7 +115,7 @@ test("account import consumes a guest once and preserves existing account progre
 });
 
 test("real OAuth callback imports the guest and remains idempotent on a repeated callback", async () => {
-  const env = environment(), guest = await createGuest(env), cookie = await guestCookie(env, guest.id);
+  const env = { ...environment(), GITHUB_CLIENT_ID: "fixture-client", GITHUB_CLIENT_SECRET: "fixture-secret" }, guest = await createGuest(env), cookie = await guestCookie(env, guest.id);
   await writeGuestProgress(env, guest, JSON.stringify(progress(28)));
   await writeGuestPrefs(env, guest, { intro: "complete" });
   globalThis.fetch = (async (input: RequestInfo | URL) => {

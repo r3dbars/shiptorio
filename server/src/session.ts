@@ -2,14 +2,14 @@
 // logins in ALLOWED_LOGINS get in while Shiptorio is private ("*" opens sign-up to everyone).
 // The cookie names a server-side session row (accounts.ts) so sign-out and revocation are real.
 
+import { hmacSigningKey } from "./hmac-key";
+
 const enc = new TextEncoder();
 const COOKIE = "shiptorio_session";
 const MAX_AGE = 60 * 60 * 24 * 14;
 
 async function hmac(secret: string, data: string): Promise<string> {
-  const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, [
-    "sign",
-  ]);
+  const key = await hmacSigningKey(secret);
   const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, enc.encode(data)));
   return btoa(String.fromCharCode(...sig)).replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
 }

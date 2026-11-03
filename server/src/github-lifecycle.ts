@@ -30,7 +30,7 @@ async function archive(env: RepositoryEnv, row: RepoRecord, reason: string, id?:
   await env.DB.prepare("DELETE FROM user_repos WHERE repo = ? AND installation_id = ?").bind(row.full_name, row.installation_id).run();
   await (await objectFor(env, row, id)).archiveGitHub(reason, at, row.full_name, row.installation_id);
 }
-async function upsert(env: RepositoryEnv, repo: GitHubRepository, installation: number) {
+async function upsert(env: RepositoryEnv, repo: GitHubRepository, installation: number, resume = true) {
   if (await factoryDeleted(env.DB, repo.full_name) || await factoryDeleted(env.DB, `installation:${installation}`)) throw new Error("Factory deleted");
   if (!repo.id) throw new Error("Lifecycle repository ID required");
   const collision = await env.DB.prepare("SELECT * FROM repos WHERE full_name = ? AND repo_id IS NOT NULL AND repo_id <> ?").bind(repo.full_name.toLowerCase(), repo.id).first<RepoRecord>();
@@ -45,7 +45,8 @@ async function upsert(env: RepositoryEnv, repo: GitHubRepository, installation: 
     await env.DB.prepare("UPDATE repos SET full_name = ? WHERE full_name = ?").bind(repo.full_name.toLowerCase(), old.full_name).run();
   }
   await env.DB.prepare("INSERT INTO repos (full_name, repo_id, installation_id, default_branch) VALUES (?, ?, ?, ?) ON CONFLICT(full_name) DO UPDATE SET repo_id = excluded.repo_id, installation_id = excluded.installation_id, default_branch = COALESCE(excluded.default_branch, repos.default_branch), archived_at = NULL, archive_reason = NULL").bind(repo.full_name.toLowerCase(), repo.id, installation, repo.default_branch ?? null).run();
-  await f.restoreGitHub(repo.full_name.toLowerCase(), installation, repo.id);
+  if (resume) await f.restoreGitHub(repo.full_name.toLowerCase(), installation, repo.id);
+  else await f.pauseGitHub("GitHub installation suspended");
   return f;
 }
 
@@ -89,7 +90,10 @@ export async function handleLifecycle(env: RepositoryEnv, event: string, p: GitH
     return;
   }
   const account = p.installation?.account;
-  const status = p.action === "deleted" ? "deleted" : p.action === "suspend" ? "suspended" : "active";
+  const stored = await env.DB.prepare("SELECT status FROM installations WHERE id = ?").bind(id).first<{ status: string }>();
+  // A delayed add/created delivery cannot resurrect an explicitly stopped installation.
+  if (stored?.status === "deleted" && p.action !== "deleted") return;
+  const status = p.action === "deleted" ? "deleted" : p.action === "suspend" || p.action !== "unsuspend" && stored?.status === "suspended" ? "suspended" : "active";
   if (event === "installation") {
     if (!["created", "deleted", "suspend", "unsuspend", "new_permissions_accepted"].includes(p.action ?? "")) return;
     await env.DB.prepare("INSERT INTO installations (id, account_login, status, permissions, account_type) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET account_login = excluded.account_login, status = excluded.status, permissions = COALESCE(excluded.permissions, installations.permissions), account_type = COALESCE(excluded.account_type, installations.account_type)").bind(id, account?.login ?? "", status, p.installation?.permissions ? JSON.stringify(p.installation.permissions) : null, account?.type ?? null).run();
@@ -112,8 +116,9 @@ export async function handleLifecycle(env: RepositoryEnv, event: string, p: GitH
     }
   }
   const added = p.repositories ?? p.repositories_added ?? [];
-  for (const repo of added) await upsert(env, repo, id);
-  if (Number.isSafeInteger(p.sender?.id) && added.length) await env.DB.batch([
+  const active = event === "installation" ? status === "active" : stored?.status !== "suspended";
+  for (const repo of added) await upsert(env, repo, id, active);
+  if (active && Number.isSafeInteger(p.sender?.id) && added.length) await env.DB.batch([
     env.DB.prepare("INSERT OR IGNORE INTO user_installations (user_id, installation_id, account_login) SELECT id, ?, ? FROM users WHERE id = ?").bind(id, account?.login ?? "", p.sender!.id!),
     ...added.map(repo => env.DB.prepare("INSERT OR REPLACE INTO user_repos (user_id, repo, installation_id) SELECT id, ?, ? FROM users WHERE id = ?").bind(repo.full_name.toLowerCase(), id, p.sender!.id!)),
   ]);
@@ -127,6 +132,7 @@ export async function handleLifecycle(env: RepositoryEnv, event: string, p: GitH
 export async function refreshInstallationPermissions(env: RepositoryEnv, id: number, p?: GitHubPayload): Promise<void> {
   const account = p?.installation?.account;
   const info = await env.DB.prepare("SELECT permissions, account_login, account_type, account_id, status FROM installations WHERE id = ?").bind(id).first<{ permissions: string | null; account_login: string; account_type: string; account_id: number | null; status: string }>();
+  if (info?.status && info.status !== "active") return;
   let permissions = info?.permissions ? JSON.parse(info.permissions) as Record<string, string> : p?.installation?.permissions;
   if (!permissions || !info?.account_id && info?.status === "active") {
     const { appJwt } = await import("./github");
@@ -143,4 +149,13 @@ export async function refreshInstallationPermissions(env: RepositoryEnv, id: num
     await f.setGitHubPermissions(source);
     if (source.state === "connected") await f.enqueueGitHub(`backfill-${id}-${row.repo_id}`, "shiptorio_install", { repository: { id: row.repo_id ?? undefined, full_name: row.full_name }, installation: p?.installation ?? { id } });
   }
+}
+
+
+/** Aggregate only: this belongs in authenticated diagnostics, never public health. */
+export async function pausedForGitHubAccess(db: D1Database): Promise<number> {
+  const row = await db.prepare(`SELECT COUNT(*) AS count FROM repos r
+    LEFT JOIN installations i ON i.id = r.installation_id
+    WHERE i.status IN ('suspended', 'deleted') OR r.archived_at IS NOT NULL`).first<{ count: number }>();
+  return row?.count ?? 0;
 }

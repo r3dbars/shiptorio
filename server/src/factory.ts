@@ -1,15 +1,15 @@
-import { PrivateSocketTiming, measureSocket, timingResponse } from "./private-socket-timing";
+import { PRIVATE_SOCKET_TIMING, PrivateSocketTiming, measureSocket, timingResponse } from "./private-socket-timing";
 import { assertRefreshItem, ownsRefreshPr, refreshTarget, RefreshBaseMoved } from "./runner-refresh";
 import { adminPaused, auditAdmin } from "./admin-control";
 import { activeAdminView, readAdminView, viewCookieValue } from "./admin-view";
 import { pruneExpiredDeliveryMarkers } from "./delivery-retention";
 import { accountIdentity } from "./account-identity";
 import { runnerAuthMove, type AuthHarness } from "./runner-health";
-import { planningFailure, planningHold, planningCapacity, planningCapacityRaised, planningFailureKind, planningDeadline, plannerRestDeck, PLANNING_DEADLINE_MS, PLANNER_REST_KEY, type PlanningRetry } from "./planning-retry";
+import { planningFailure, planningHold, planningCapacity, planningCapacityRaised, planningFailureKind, planningDeadline, plannerRestDeck, plannerBusy, PLANNER_BUSY_LINE, PLANNING_DEADLINE_MS, PLANNER_REST_KEY, type PlanningRetry } from "./planning-retry";
 import { availableJobHarness, syncRunnerPower } from "./runner-power";
 import { factoryDeleted } from "./account-data";
 import { pollDelay, RateLimitError } from "./rate-limit";
-import { factorySpend } from "./spend";
+import { dollarShare, factorySpend } from "./spend";
 import { BudgetError, budgetAccount, budgetLimits, budgetUsage } from "./budget";
 import { runQuotaStatus, runQuota } from "./signup";
 import * as Sentry from "@sentry/cloudflare";
@@ -34,7 +34,7 @@ import { pollDevice, type DeviceRecord, type JoinRecord } from "./device-pairing
 import { BrowserFrames, browserHeartbeat, browserSocketActive, browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv, type BrowserSocketAuth } from "./browser-socket";
 
 import { consumeBudget, rateLimit, type Budget, type LimitResult } from "./rate-limit";
-import { unlockMove, signalWeight, type Diagnosis } from "@shiptorio/shared";
+import { unlockMove, signalWeight, freshSignals, type Diagnosis } from "@shiptorio/shared";
 import {
   SCIENCE_FOR,
   WebToServer,
@@ -45,6 +45,7 @@ import {
   fallbackExperiment,
   insertCheck,
   researchBlocked,
+  projectPipeline,
   suggestResearch,
   techById,
   TECHS,
@@ -76,27 +77,27 @@ import {
 import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, freshIssueInput, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, pullRequestReadiness, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
 import { layoutMap } from "./map";
-import { initialFactoryState } from "./factory-initialization";
+import { initialFactoryState, reconcileFactoryGitHubAccess } from "./factory-initialization";
 import { inventoryCommand } from "./factory-inventory";
 import { gameMaster, heuristicTriage, readGoals, judgeOrbit, judgePermit, pickPower, pickResearch, pickFiles, planLocalTask, proposeExperiment, sparkConfigured, sparkModel, triage, writeFix, type GameMasterBrief, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
-import { emptyBrain, recordThought, scoreShip } from "./brain";
-import type { SparkStep, Toolbox } from "./spark-tools";
+import { projectLiveBottleneck, emptyBrain, recordThought, scoreShip } from "./brain";
+import { RepositoryReadUnavailable, type SparkStep, type Toolbox } from "./spark-tools";
 import { ciReport, codeSearch, factoryBrief, issueComments, signalsBrief, treePaths } from "./spark-context";
 import { issueRevision, RunnerHarness, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
 import { enforceRoute, geothermalGuard, harnessLabel, LOCAL_POWER_ID, looksSmall, ruleRoute } from "./geothermal";
 import { foldSignal, matchDistrict, oreWeight } from "./ore";
-import { canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, nextGate, prFiles, referencedFiles, researchMove, reviewComment, reviewDiff, reworkMove, runChecks, setStage, stageOf, stationsPassed, verifyFromDiff, withChecks } from "./gauntlet";
+import { changedPaths, canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, nextGate, prFiles, referencedFiles, researchMove, reviewComment, reviewDiff, reworkMove, runChecks, setStage, stageOf, stationsPassed, verifyFromDiff, withChecks } from "./gauntlet";
 import { autonomyView, emptyBook, laneOf, mayAutoLaunch, permitMove, permitReady, recordRework, recordShip, setPermit, snooze, earned, type PermitBook } from "./permits";
 import { escape, grantLevel, ladderOf, LEVEL_NAME, levelMove, levelReady, levelTap, lowerLevel, snoozeLevel } from "./levels";
-import { githubStatus, normalizeGitHub, type GitHubPayload } from "./sources/github";
+import { githubStatus, normalizeGitHub, TRUST_LABEL, type GitHubPayload } from "./sources/github";
 import type { Signal } from "./sources";
 import { buildDeck, moveScope, enrichMove } from "./deck";
 import { closeGone, loadTaps, offerCards, offeredRow, openCards, purgeTaps, recordOutcome, recordTap, tapBrief, tapsEnabled, tapsReport, type NeverReason, type TapAction, type TapContext, type TapOutcome } from "./taps";
 import { deriveBottleneck, stageForItem, type StageHistory, type StageMetrics } from "./bottleneck";
-import { emptyMemory as emptyBrainMemory, modelDiagnose, runDiagnose, tapBrain, type BrainMemory } from "./diagnose";
+import { eligible as brainEligible, emptyMemory as emptyBrainMemory, named as brainNamed, modelDiagnose, runDiagnose, tapBrain, type BrainMemory } from "./diagnose";
 import { collect, emptyCache as emptySignalCache, type SignalCache } from "./signals";
-import { dismissNote, resetLearn, forget, forgetOnComeback, freshWork, isLearned, learnedList, learnFromYes, learnKey, learnMeter, learnOption, noteAutoRun } from "./learn";
-import { beginCheckin, deferCard, emptyDeckBook, moveKey, noteYes, plannerFeedback, resetYes, suppressed, thirdDefer, yesKey, type DeckBook, type DeckRule } from "./deck-decisions";
+import { dismissNote, resetLearn, forget, forgetAll, forgetOnComeback, freshWork, isLearned, learnedList, learnFromYes, learnKey, learnMeter, learnOption, learnScope, noteAutoRun } from "./learn";
+import { CHECKIN_GAP_MS, hasDeferReceipt, beginCheckin, deferCard, emptyDeckBook, moveKey, noteYes, plannerFeedback, resetYes, suppressed, thirdDefer, yesKey, type DeckBook, type DeckRule } from "./deck-decisions";
 import { normalizeSentry, sentryStatus, type SentryPayload } from "./sources/sentry";
 import { recordSentryPulse, SENTRY_PULSES_KEY, type SentryPulse } from "./signals/sentry";
 import { analyze, fakePostHogRows, fetchRouteDays, POLL_MS, postHogStatus, type RouteDay } from "./sources/posthog";
@@ -131,6 +132,9 @@ const LOST_CLAIM_MS = 45_000;
 // Local runner planning/publication currently requires a real GitHub issue.
 const runnerIssue = (item: Item) => item.source === "github_issue" && /^gh-\d+$/.test(item.id);
 const proposesPlan = (move: Move) => move.options.some(o => o.actions.some(a => a.tool === "plan_runner_job"));
+/** The one plan slot belongs to new work. A send-back's "Try again" re-plans an item already at Gate; leaving it
+ * undecided (a dead "#57 failed twice") must not stop every other issue from getting its Plan card. */
+const holdsPlanSlot = (move: Move) => proposesPlan(move) && !move.options.some(o => o.id.startsWith("rework-"));
 const MINE_KIND: Record<Signal["source"], SourceKind | undefined> = { github_issue: "github", sentry: "sentry", posthog: "posthog", inbox: undefined, lint: undefined };
 // Where each mine's ore deposit sits on the live map, left of the splitter.
 const DEPOSIT_Y: Record<MineKind, number> = { sentry: -3, posthog: 3 };
@@ -152,6 +156,20 @@ const rollUpYes = (yes?: Record<string, number>) => {
   for (const [key, n] of Object.entries(yes ?? {})) out[key.split("|")[0]] = (out[key.split("|")[0]] ?? 0) + n;
   return out;
 };
+
+/** Player words for background work that failed (the card once showed "offerRunnerPlan failed"). */
+const RELIABILITY_WORDS = {
+  alarm: "The factory's clock", tick: "Background work", watchdog: "Checking for stuck work", orbitExpire: "Wrapping up a launch",
+  offerRunnerPlan: "Preparing the next plan", planRunnerJobs: "Preparing plans", planComment: "Posting the plan on GitHub",
+  reconcileGitHub: "Catching up with GitHub", reconcile: "Catching up with GitHub", retryReviewComments: "Posting review notes",
+  runGauntlet: "Running checks", offerGauntletMove: "Preparing the next check", runLearned: "Running work you taught it",
+  runLevel: "Running automatic work", autoLaunchPermitted: "An automatic launch", offerGoalMove: "Suggesting a goal",
+  offerLevelMove: "Suggesting the next level", offerPermitMove: "Suggesting a launch permit", offerResearchMove: "Suggesting research",
+  pollPostHog: "Reading PostHog", reconnectMines: "Reconnecting your sources", tickSupport: "Reading support messages",
+} as const;
+
+/** A red PR Shippy filed a fix for (`fixesPr:<issue>`): brought in once merged, confirmed once its checks finish. */
+type FixRecord = { pr: number; sameRepo: boolean; done?: boolean; fixedBy?: number; confirmed?: boolean };
 
 class FactoryBase extends DurableObject<FactoryEnv> {
   /** Dedicated probe object: storage read only, never initializes a repo or schedules work. */
@@ -267,13 +285,19 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     return this.ctx.storage.put(key, value);
   }
 
+  /** Every decision refresh lands here; most leave the stored JSON as it was, and storage stays the judge of that. */
+  private async accountPutChanged<T>(key: string, value: T) {
+    if (this.accountErased) throw new Error("Factory deleted");
+    if (JSON.stringify(await this.ctx.storage.get(key)) !== JSON.stringify(value)) await this.ctx.storage.put(key, value);
+  }
+
   private accountAlarm(at: number) {
     if (this.accountErased) throw new Error("Factory deleted");
     return this.ctx.storage.setAlarm(at);
   }
 
   async observedCall(method: string, args: unknown[], trace: Trace): Promise<any> {
-    const allowed = ["allowDeviceStart", "startDevice", "startJoin", "takeJoin", "approveDevice", "readyDevice", "pollDevice", "activateRunner", "recordRunnerGrant", "rejectRunnerGrant", "runnerStatus", "planningRetries", "heartbeatRunner", "revokeRunner", "ensure", "connectMine", "disconnectMine", "pairRunner", "runnerJobs", "isRunnerPaired", "enqueueRunner", "claimRunner", "finishRunner", "enqueueGitHub", "enqueueSentry", "enqueueSupport", "debugSnapshot", "adminControl", "exportState", "summary", "exportAccountData", "eraseAccountData", "accountConnectionStatus", "closeAccountSockets", "pruneAccountDeliveries"];
+    const allowed = ["allowDeviceStart", "startDevice", "startJoin", "takeJoin", "approveDevice", "readyDevice", "pollDevice", "activateRunner", "recordRunnerGrant", "rejectRunnerGrant", "runnerStatus", "planningRetries", "retryAIReview", "startInboxIssue", "heartbeatRunner", "revokeRunner", "ensure", "connectMine", "disconnectMine", "pairRunner", "runnerJobs", "isRunnerPaired", "enqueueRunner", "claimRunner", "finishRunner", "enqueueGitHub", "enqueueSentry", "enqueueSupport", "debugSnapshot", "adminControl", "exportState", "summary", "exportAccountData", "eraseAccountData", "accountConnectionStatus", "closeAccountSockets", "pruneAccountDeliveries"];
 
     if (!allowed.includes(method)) throw new Error("Unknown factory RPC");
     return inTrace(trace, this.env, task => this.ctx.waitUntil(task), async () => {
@@ -397,6 +421,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     this.openMoves = this.openMoves!.filter(move => {
       const item = move.itemId && s.items.find(i => i.id === move.itemId);
       if (move.itemId && (!item || item.state === "launched")) return false;
+      // Restored or delayed merge cards cannot acquire authority over a new commit.
+      if (move.options.some(o => o.actions.some(a => a.tool === "request_merge" && (!item || a.args.pr !== item.prNumber || typeof a.args.headSha !== "string" || !/^[a-f0-9]{40}$/.test(a.args.headSha) || a.args.headSha !== item.inspection?.headSha)))) return false;
       const boundHead = move.options.flatMap(o => o.actions).find(a => typeof a.args.headSha === "string")?.args.headSha;
       if (boundHead && item && boundHead !== item.inspection?.headSha) return false;
       const proposing = move.options.some(o => o.actions.some(a => a.tool === "plan_runner_job"));
@@ -414,7 +440,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     });
     // One plan card at a time, the oldest first (older factories dealt one per queued issue).
     let planCard = false;
-    this.openMoves = this.openMoves.filter(m => !proposesPlan(m) || suppressed(this.deckBook!, m) || (planCard ? false : (planCard = true)));
+    this.openMoves = this.openMoves.filter(m => !holdsPlanSlot(m) || suppressed(this.deckBook!, m) || (planCard ? false : (planCard = true)));
     this.openMoves = this.openMoves.filter(m => !m.id.startsWith("bottleneck:") || m.id === `bottleneck:${s.bottleneck?.stationId ?? s.bottleneck?.stage}`);
     const impliedMove = this.openMoves.find(m => m.id.startsWith("bottleneck:"));
     // docs/ATTENTION.md: behind the flag, the player's Continues in a row lift that class of card a little.
@@ -422,7 +448,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const learning = await flagEnabled(this.env, "learn");
     this.kickBrain(derived, now);
     const brainCard = await this.brainCard(derived);
-    const ranked = buildDeck(s, [...this.openMoves!.filter(m => !m.id.startsWith("bottleneck:") && !suppressed(this.deckBook!, m)), ...(brainCard && !suppressed(this.deckBook!, brainCard) ? [brainCard] : [])], { now, impliedMove, yes, buildMoving: jobs.some(j => ["planning", "ready", "running"].includes(j.status)), rules: this.deckRules!.map(r => ({ ...r, kind: r.kind as NonNullable<Move["kind"]> })) });
+    // With your machine online a Builder jam is a queued issue waiting on its plan card (dealt next), so no "Review the
+    // bottleneck" card flashes in between; offline, the jam is "resources" and its Connect card still shows.
+    const ranked = buildDeck(s, [...this.openMoves!.filter(m => !m.id.startsWith("bottleneck:") && !suppressed(this.deckBook!, m)), ...(brainCard && !suppressed(this.deckBook!, brainCard) ? [brainCard] : [])], { now, impliedMove, yes, buildMoving: presenceFresh || jobs.some(j => ["planning", "ready", "running"].includes(j.status)), rules: this.deckRules!.map(r => ({ ...r, kind: r.kind as NonNullable<Move["kind"]> })) });
     const offered = plannerRestDeck(resting ? ranked : this.applyGameMaster(ranked), resting ?? undefined);
     this.askGameMaster(ranked, metrics);
     for (const implied of offered.filter(m => m.id.startsWith("bottleneck:"))) {
@@ -431,22 +459,24 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     this.openMoves = this.openMoves!.filter(m => !m.id.startsWith("bottleneck:") || offered.some(card => card.id === m.id));
     const deck = offered.filter(m => !suppressed(this.deckBook!, m)).map(m => {
       const decision = this.deckBook!.decisions[moveKey(m)];
-      if (decision && decision.count >= 3) return thirdDefer(m);
+      // A "That's fixed" card is news, not a decision: past Hides on other wins (they share a key) don't wrap it.
+      if (decision && decision.count >= 3 && !m.id.startsWith("win:")) return thirdDefer(m);
       // Say out loud when the player's own taps put a card here, unless the game master already explained it.
       const streak = yes?.[yesKey(m.kind ?? "unblock", moveScope(m, s))] ?? 0;
       const card = streak >= 2 && !m.because ? { ...m, because: `You said yes to the last ${streak} like this.` } : m;
       // docs/LEARN.md: the dots. How many more yeses until the factory does this kind on its own.
-      const learn = learning ? learnMeter(this.deckBook!, m, moveScope(m, s), freshWork(m, s.items.find(i => i.id === m.itemId), jobs)) : undefined;
+      const learn = learning ? learnMeter(this.deckBook!, m, learnScope(m, moveScope(m, s), jobs), freshWork(m, s.items.find(i => i.id === m.itemId), jobs)) : undefined;
       return learn ? { ...card, learn } : card;
     });
     const previous = s.move;
     s.deck = deck; s.move = deck[0] ?? null;
     s.learned = learning ? learnedList(this.deckBook!) : [];
+    s.liveBottleneck = projectLiveBottleneck(s, jobs, now);
     await this.logDeck(deck);
-    await this.accountPut("openMoves", this.openMoves);
-    await this.accountPut("deckBook", this.deckBook);
+    await this.accountPutChanged("openMoves", this.openMoves);
+    await this.accountPutChanged("deckBook", this.deckBook);
     await this.save();
-    this.broadcast({ type: "patch", patch: { bottleneck: s.bottleneck, learned: s.learned } });
+    this.broadcast({ type: "patch", patch: { bottleneck: s.bottleneck, liveBottleneck: s.liveBottleneck, learned: s.learned, pipeline: projectPipeline(s, jobs, presenceFresh) } });
     // Unchanged decisions need no new transport frame. Every frame we do publish
     // retains broadcast's fresh session/membership checks; tick and queue telemetry
     // keep flowing even when the cards are unchanged.
@@ -458,20 +488,66 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     }
   }
 
+  /**
+   * A new check-in (Later'd cards come back) only after the player was away a while. A reload, a second tab
+   * or the phone joining mid-visit is the same visit, so Later still means later.
+   */
+  private async playerBack(now = Date.now()): Promise<boolean> {
+    const seen = await this.ctx.storage.get<number>("deckSeenAt");
+    await this.accountPut("deckSeenAt", now);
+    return seen === undefined || now - seen >= CHECKIN_GAP_MS;
+  }
+
   // ---------- the bottleneck brain (docs/BRAIN.md): collect signals, diagnose ONE bottleneck, deal ONE unlock ----------
 
   private brainBusy = false;
   private brainKickedAt = 0;
+  /** "Look now" (scripts/e2e/real-loop.ts look): the next pass re-reads every source and skips the half-hour wait. */
+  private brainForce = false;
+  private brainLookAt = 0;
+
+  /** One forced look every 20s at most; the day's run cap and budget stop still apply inside runDiagnose. */
+  private async brainLook() {
+    if (Date.now() - this.brainLookAt < 20_000) return;
+    this.brainLookAt = Date.now(); this.brainForce = true; this.brainKickedAt = 0;
+    await this.refreshDecisions();
+  }
 
   /** The brain's current card, from its stored memory. The "brain" flag (default off) gates it. */
   private async brainCard(derived: { bottleneck: FactoryState["bottleneck"] }): Promise<Move | null> {
     if (!await flagEnabled(this.env, "brain")) return null;
-    const cur = (await this.ctx.storage.get<BrainMemory>("brainMemory"))?.current;
+    const memory = await this.ctx.storage.get<BrainMemory>("brainMemory");
+    const cur = memory?.current, win = await this.winCard(memory);
+    // A fresh follow-up goes first, even over the next problem; an older one waits until the deck is quiet.
+    if (win && (!cur || Date.now() - win.createdAt < 30 * 60_000)) return win;
     if (!cur) return null;
     const move = unlockMove(cur.bottleneck, cur.unlock, cur.shownAt);
     // A queue-jam card stands on the jam's station, so the deck doesn't also deal the plain bottleneck card.
     const jam = derived.bottleneck;
     return cur.bottleneck.id.startsWith("factory:queue_jam") && jam ? { ...move, stage: jam.stage, focus: jam.stationId ?? jam.stage } : move;
+  }
+
+  /** Shippy's follow-up: the last unlock that worked, once, until the player taps it. */
+  private async winCard(memory: BrainMemory | undefined): Promise<Move | null> {
+    const seen = await this.ctx.storage.get<number>("brainWinSeen") ?? 0;
+    const open = (memory?.cleared ?? []).filter(c => c.clearedAt > seen && Date.now() - c.clearedAt <= 6 * 3_600_000);
+    // "#39 passes its checks now, with the fix from #43" says more than the plain CI clear that lands beside it.
+    const win = open.find(c => c.bottleneckId.startsWith("fix:")) ?? open[0];
+    if (!win) return null;
+    return {
+      id: `win:${win.bottleneckId}`, title: "That's fixed",
+      why: win.bottleneckId.startsWith("fix:") ? `Shippy checked again: ${win.title}.` : `Shippy checked again: "${win.title.replace(/\.$/, "")}" is clear now.`,
+      kind: "unblock", createdAt: win.clearedAt, attention: "suggest",
+      options: [{ id: "continue", label: "Nice", recommended: true, actions: [] }, { id: "later", label: "Hide", recommended: false, actions: [] }],
+    };
+  }
+
+  private async seeWin(card: Move) {
+    const cleared = (await this.ctx.storage.get<BrainMemory>("brainMemory"))?.cleared ?? [];
+    const win = cleared.find(c => card.id === `win:${c.bottleneckId}`);
+    // One follow-up per fix: seeing it also covers the clears that came with it.
+    if (win) await this.accountPut("brainWinSeen", Math.max(...cleared.filter(c => Math.abs(c.clearedAt - win.clearedAt) < 10 * 60_000).map(c => c.clearedAt)));
+    await this.refreshDecisions();
   }
 
   /**
@@ -481,6 +557,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   private kickBrain(derived: { bottleneck: FactoryState["bottleneck"]; stages: StageMetrics[] }, now: number) {
     if (this.brainBusy || now - this.brainKickedAt < 30_000 || !this.meta) return;
     this.brainBusy = true; this.brainKickedAt = now;
+    const force = this.brainForce; this.brainForce = false;
     const run = async () => {
       if (!await flagEnabled(this.env, "brain")) {
         if (this.state?.holdingBack) { this.state.holdingBack = null; await this.save(); this.broadcast({ type: "patch", patch: { holdingBack: null } }); }
@@ -489,30 +566,45 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const s = this.state!, meta = this.meta!;
       let token: Promise<string> | undefined;
       const { cache, errors } = await collect({
-        state: s, repo: meta.repo, env: this.env, jam: { bottleneck: derived.bottleneck ?? null, stages: derived.stages },
+        force, state: s, repo: meta.repo, env: this.env, jam: { bottleneck: derived.bottleneck ?? null, stages: derived.stages },
         storage: { get: key => this.ctx.storage.get(key) },
         githubToken: () => token ??= installationToken(this.env, meta.installationId),
         publicUrl: this.publicUrl(), yes: rollUpYes(this.deckBook?.yes),
         posthogCreds: async () => await this.ctx.storage.get<boolean>("posthogLinked") ? postHogCreds(this.env, this.credentialScope(), this.redactor) : {},
-      }, await this.ctx.storage.get<SignalCache>("brainSignals") ?? emptySignalCache(), now);
+      }, force ? emptySignalCache() : await this.ctx.storage.get<SignalCache>("brainSignals") ?? emptySignalCache(), now);
       for (const e of errors) this.log("warn", `Couldn't read ${e.source} signals: ${e.error.slice(0, 200)}`);
       await this.accountPut("brainSignals", cache);
       await this.decisionData();
-      const before = await this.ctx.storage.get<BrainMemory>("brainMemory") ?? emptyBrainMemory();
+      const stored = await this.ctx.storage.get<BrainMemory>("brainMemory") ?? emptyBrainMemory();
+      // A forced look forgets when it last looked and what it saw, so the throttle treats the picture as new.
+      const before = force ? { ...stored, lastAt: undefined, mainKey: undefined, quiet: false } : stored;
       const feedback = plannerFeedback(this.deckBook!, this.deckRules!);
       const budget = await this.brainBudget();
+      const steps: { tool: string; reason: string; result: string }[] = [];
       const permits = await this.ctx.storage.get<PermitBook>("permits");
       const result = await runDiagnose({
         signals: tiltByGoals(cache.signals, s.goals), memory: before, now, goal: s.goal, playerFeedback: feedback, ctx: { repo: meta.repo }, budget,
         think: sparkConfigured(this.env) ? brief => this.think("diagnose", { title: `${brief.signals.length} ${brief.signals.length === 1 ? "signal" : "signals"}, heaviest: ${brief.signals[0]?.title ?? "none"}`, target: derived.bottleneck?.stationId },
-          () => modelDiagnose(this.sparkEnv(), brief, { repo: meta.repo }, { factory: () => factoryBrief(s, undefined, permits, feedback) }),
-          out => "quiet" in out ? { outcome: "Nothing worth a card right now", reason: out.reason } : { outcome: `${out.bottleneck.title} → ${out.unlock.title}`, reason: out.reason }) : undefined,
+          () => modelDiagnose(this.sparkEnv(), brief, { repo: meta.repo }, { factory: () => factoryBrief(s, undefined, permits, feedback) }, async step => { steps.push(step); }),
+          out => ({ ...("quiet" in out ? { outcome: "Nothing worth a card right now", reason: out.reason } : { outcome: `${out.bottleneck.title} → ${out.unlock.title}`, reason: out.reason }), steps })) : undefined,
       });
+      result.memory = await this.confirmFixes(result.memory, now);
       await this.accountPut("brainMemory", result.memory);
       const main = result.memory.current && cache.signals.find(x => x.id === result.memory.current!.bottleneck.signalIds[0]);
       const holdingBack = result.memory.current ? { ...result.memory.current.bottleneck, severity: main ? Math.min(1, signalWeight(main, now)) : 0 } : null;
-      if (JSON.stringify(holdingBack) !== JSON.stringify(s.holdingBack ?? null)) { s.holdingBack = holdingBack; await this.save(); this.broadcast({ type: "patch", patch: { holdingBack } }); }
-      for (const c of result.cleared) this.log("info", `Unblocked: ${c.title}.`);
+      if (JSON.stringify(holdingBack) !== JSON.stringify(s.holdingBack ?? null)) {
+        s.holdingBack = holdingBack;
+        s.liveBottleneck = projectLiveBottleneck(s, await this.runnerJobs(), Date.now());
+        await this.save();
+        this.broadcast({ type: "patch", patch: { holdingBack, liveBottleneck: s.liveBottleneck } });
+      }
+      for (const c of result.cleared) this.log("success", `Unblocked: ${c.title.replace(/\.$/, "")}.`);
+      // A forced look says what it weighed, so a "why didn't he notice X" is answerable from the deck's log.
+      // Top four, plus any CI signal below them, since a red PR is what the Look button is usually for.
+      const seen = freshSignals(cache.signals, now), shown = [...seen.slice(0, 4), ...seen.slice(4).filter(x => x.source === "ci")];
+      // "set aside" marks what memory skips (Later, or acted on), so a pass over a heavy signal is readable.
+      const open = new Set(brainEligible(cache.signals, before, now).map(x => x.id));
+      if (force) this.log("info", `Shippy looked: ${shown.map(x => `${x.title.slice(0, 60)} (${signalWeight(x, now).toFixed(2)}${x.confidence < 1 ? `, ${Math.round(x.confidence * 100)}% sure` : ""}${open.has(x.id) ? "" : ", set aside"})`).join("; ") || "nothing to flag"}. ${result.why}`.slice(0, 600));
       if (result.decided) {
         const log = await this.ctx.storage.get<Diagnosis[]>("brainDiagnoses") ?? [];
         await this.accountPut("brainDiagnoses", [result.diagnosis, ...log].slice(0, 50));
@@ -523,7 +615,11 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const key = (m?: BrainMemory) => m?.current ? `${m.current.bottleneck.id}|${m.current.unlock.id}|${m.current.unlock.title}` : "";
       if (key(before) !== key(result.memory)) await this.refreshDecisions();
     };
-    void run().catch(error => this.log("error", `Bottleneck brain failed: ${String(error)}`)).finally(() => { this.brainBusy = false; });
+    void run().catch(error => this.log("error", `Bottleneck brain failed: ${String(error)}`)).finally(() => {
+      this.brainBusy = false;
+      // A Look pressed while this pass ran would otherwise wait for the next tick.
+      if (this.brainForce) { this.brainKickedAt = 0; void this.refreshDecisions().catch(() => {}); }
+    });
   }
 
   /** The day's model budget as one fraction (calls or tokens, whichever is further along); null with no ledger. */
@@ -531,8 +627,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const env = this.sparkEnv();
     if (!env.DB || !env.budgetAccount) return null;
     try {
-      const u = await budgetUsage(env, await env.budgetAccount());
-      return { used: Math.max(u.calls / Math.max(1, u.limits.calls), u.tokens / Math.max(1, u.limits.tokens)), limit: 1 };
+      const account = await env.budgetAccount();
+      const u = await budgetUsage(env, account);
+      // Dollars count too: a few big calls can spend half the $5 long before half the day's calls.
+      return { used: Math.max(u.calls / Math.max(1, u.limits.calls), u.tokens / Math.max(1, u.limits.tokens), await dollarShare(env.DB, this.meta!.repo, account)), limit: 1 };
     } catch { return null; }
   }
 
@@ -540,15 +638,105 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const memory = await this.ctx.storage.get<BrainMemory>("brainMemory");
     if (!memory) return;
     const signal = (await this.ctx.storage.get<SignalCache>("brainSignals"))?.signals.find(x => x.id === bottleneckId);
-    await this.accountPut("brainMemory", tapBrain(memory, bottleneckId, choice, signal ? signalWeight(signal, Date.now()) : 0, Date.now()));
+    // Parked at the weight the brain ranks it by (tilted by the player's goals), so "clearly worse" compares like with like.
+    await this.accountPut("brainMemory", tapBrain(memory, bottleneckId, choice, signal ? signalWeight(tiltByGoals([signal], this.state?.goals)[0], Date.now()) : 0, Date.now(), signal && brainNamed(signal)));
     this.brainKickedAt = 0; // the slot is free: look again on the next tick
+  }
+
+  /**
+   * Yes on a red PR: file one issue that says what's failing, and put it on the line. Its plan still waits for the
+   * player's yes. When the fix merges, onPullClosed brings it into the red PR so its checks run again.
+   */
+  private async fixFailingPr(args: Record<string, unknown>): Promise<boolean> {
+    const pr = Number(args.pr), workflow = String(args.workflow ?? "CI").slice(0, 80);
+    if (!this.meta || !Number.isSafeInteger(pr) || pr < 1) return false;
+    const repo = this.meta.repo;
+    try {
+      const token = await installationToken(this.env, this.meta.installationId);
+      const pull = await gh<{ state: string; title: string; html_url: string; head: { repo: { full_name: string } | null } }>(`/repos/${repo}/pulls/${pr}`, token);
+      if (pull.state !== "open") { this.log("info", `#${pr} isn't open anymore, so there's nothing to fix.`); return false; }
+      let issue = await this.ctx.storage.get<number>(`fixIssueFor:${pr}`);
+      // The trust label lets the planner take an issue the App filed itself (staging's App isn't shiptorio[bot]).
+      if (issue) await gh(`/repos/${repo}/issues/${issue}/labels`, token, { method: "POST", body: JSON.stringify({ labels: [TRUST_LABEL] }) });
+      else {
+        const url = typeof args.url === "string" && args.url.startsWith("https://github.com/") ? args.url : pull.html_url;
+        issue = (await gh<{ number: number }>(`/repos/${repo}/issues`, token, { method: "POST", body: JSON.stringify({
+          title: `Fix "${workflow}" failing on #${pr}`.slice(0, 200), labels: [TRUST_LABEL],
+          body: [`Shippy found the "${workflow}" check failing on #${pr} (${pull.title.slice(0, 120)}), so it can't ship.`, "", `Failing run: ${url}`, "",
+            `Make "${workflow}" pass on the default branch. Fix the code the check exercises; don't weaken or skip the check, and don't change what #${pr} is for.`].join("\n"),
+        }) })).number;
+        await this.accountPut(`fixIssueFor:${pr}`, issue);
+        await this.accountPut(`fixesPr:${issue}`, { pr, sameRepo: pull.head.repo?.full_name.toLowerCase() === repo.toLowerCase() });
+      }
+      const started = await this.startInboxIssue(issue, await this.runAccount() ?? "shippy");
+      if ("waitingFor" in started) { this.log("info", `Filed #${issue} for the red check on #${pr}. It starts once PR #${started.waitingFor} is done.`); return true; }
+      this.log("success", `Filed #${issue} to fix "${workflow}" on #${pr}. Approve its plan and the Builder fixes it.`, `gh-${issue}`);
+      return true;
+    } catch (error) {
+      this.log("warn", `Couldn't start the fix for #${pr}: ${String(error).slice(0, 160)}`);
+      return false;
+    }
+  }
+
+  /** A fix build for a red PR failed: forget the Continue, so Shippy can deal the red-PR card again now, not in 6h. */
+  private async reopenRedPrCard(itemId: string) {
+    const issue = Number(/^gh-(\d+)$/.exec(itemId)?.[1]);
+    if (!issue || !await this.ctx.storage.get(`fixesPr:${issue}`)) return;
+    const memory = await this.ctx.storage.get<BrainMemory>("brainMemory");
+    if (!memory) return;
+    const acted = Object.fromEntries(Object.entries(memory.acted).filter(([id]) => !id.startsWith("ci:ci_blocking:")));
+    if (Object.keys(acted).length !== Object.keys(memory.acted).length) await this.accountPut("brainMemory", { ...memory, acted });
+  }
+
+  /** The fix for a red PR merged: update that PR from the default branch so its checks run on the fix. */
+  private async bringFixInto(issue: number, fixPr: number) {
+    const target = await this.ctx.storage.get<FixRecord>(`fixesPr:${issue}`);
+    if (!target || target.done || !this.meta) return;
+    await this.accountPut(`fixesPr:${issue}`, { ...target, done: true, fixedBy: fixPr }); // a merge webhook and our own launch both land here
+    if (!target.sameRepo) { this.log("info", `The fix for #${target.pr} merged in #${fixPr}. #${target.pr} comes from a fork, so its author needs to update it.`); return; }
+    try {
+      const token = await installationToken(this.env, this.meta.installationId);
+      await gh(`/repos/${this.meta.repo}/pulls/${target.pr}/update-branch`, token, { method: "PUT", body: "{}" });
+      this.log("success", `The fix merged in #${fixPr}. Shippy brought it into #${target.pr}, and its checks are running again.`);
+      this.brainForce = true; this.brainKickedAt = 0; // look again soon; the check takes a few minutes
+    } catch (error) {
+      this.log("warn", `The fix merged in #${fixPr}, but #${target.pr} couldn't be updated: ${String(error).slice(0, 160)}`);
+    }
+  }
+
+  /**
+   * A fix Shippy brought into a red PR: once that PR's checks finish, he checks the result himself. Green is a win
+   * for the follow-up card; still red is said plainly. Two GitHub reads a pass, only while a fix is out.
+   */
+  private async confirmFixes(memory: BrainMemory, now: number): Promise<BrainMemory> {
+    if (!this.meta) return memory;
+    const out = [...(await this.ctx.storage.list<FixRecord>({ prefix: "fixesPr:" })).entries()].filter(([, f]) => f.done && !f.confirmed);
+    if (!out.length) return memory;
+    const token = await installationToken(this.env, this.meta.installationId);
+    let next = memory;
+    for (const [key, f] of out) {
+      try {
+        const pull = await gh<{ state: string; head: { sha: string } }>(`/repos/${this.meta.repo}/pulls/${f.pr}`, token);
+        const runs = (await gh<{ check_runs?: { status: string; conclusion: string | null }[] }>(`/repos/${this.meta.repo}/commits/${pull.head.sha}/check-runs?per_page=50`, token)).check_runs ?? [];
+        if (pull.state === "open" && (!runs.length || runs.some(r => r.status !== "completed"))) continue;
+        await this.accountPut(key, { ...f, confirmed: true });
+        if (pull.state !== "open") continue;
+        if (!runs.every(r => ["success", "neutral", "skipped"].includes(r.conclusion ?? ""))) { this.log("warn", `#${f.pr} still fails its checks after the fix in #${f.fixedBy}. It needs another look.`); continue; }
+        const title = `#${f.pr} passes its checks now${f.fixedBy ? `, with the fix from #${f.fixedBy}` : ""}`;
+        next = { ...next, cleared: [{ bottleneckId: `fix:${f.pr}`, play: "fix_blocking_check", title, clearedAt: now, heldMs: 0 }, ...next.cleared].slice(0, 10) };
+        this.log("success", `${title}.`);
+      } catch (error) { this.log("warn", `Couldn't check #${f.pr} after the fix: ${String(error).slice(0, 160)}`); }
+    }
+    return next;
   }
 
   /** Continue on an unlock card: run its one safe action (or the browser opens its link), and watch whether it worked. */
   private async chooseBrainMove(card: Move, option: Move["options"][number]): Promise<boolean> {
+    if (card.id.startsWith("win:")) { await this.seeWin(card); return true; }
     if (!card.id.startsWith("unlock:")) return false;
     if (option.id === "later") { await this.swipe(card, "defer"); return true; }
     const action = option.actions[0];
+    if (action?.tool === "fix_failing_pr" && !await this.fixFailingPr(action.args)) return true; // said why in the log; the card stays
     if (action?.tool === "connect_source" && (action.args.kind === "sentry" || action.args.kind === "posthog")) await this.connectMine(action.args.kind);
     else if (action?.tool === "inspect_bottleneck") this.log("info", card.why);
     else if (action?.tool === "ask_goal") { await this.publishGauntletMove(null); await this.offerGoalMove(true); }
@@ -594,8 +782,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const s = this.state!;
     if (!sparkConfigured(this.env) || !deck.length || this.state?.deck?.some(m => m.id === "planner-rest")) return;
     const key = Factory.deckKey(deck, s);
-    // Ranking is a nice-to-have next to planning and review: at most once a minute, backing off to 15 min while it fails.
-    const wait = Math.min(15 * 60_000, 60_000 * 2 ** this.gmFails);
+    // Ranking is a nice-to-have next to planning and review: at most every 5 min (a churning deck once burned
+    // a rank a minute for half an hour), backing off to 15 min while it fails.
+    const wait = Math.min(15 * 60_000, 5 * 60_000 * 2 ** this.gmFails);
     if (this.gm?.key === key || this.gmAsking || Date.now() - this.gmLastAt < wait) return;
     this.gmAsking = key; this.gmLastAt = Date.now();
     const brief = {
@@ -620,8 +809,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const env = this.sparkEnv();
     if (!env.DB || !env.budgetAccount) return true;
     try {
-      const u = await budgetUsage(env, await env.budgetAccount());
-      return u.calls < u.limits.calls / 2 && u.tokens < u.limits.tokens / 2;
+      const account = await env.budgetAccount();
+      const u = await budgetUsage(env, account);
+      return u.calls < u.limits.calls / 2 && u.tokens < u.limits.tokens / 2 && await dollarShare(env.DB, this.meta!.repo, account) < 0.5;
     } catch { return true; }
   }
 
@@ -630,7 +820,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (move) {
       move = enrichMove(move, this.state!);
       const item = this.state!.items.find(i => i.id === move!.itemId);
-      if (item?.inspection) move = { ...move, options: move.options.map(o => ({ ...o, actions: o.actions.map(a => ({ ...a, args: { ...a.args, headSha: item.inspection!.headSha, scarCount: item.scars?.length ?? 0 } })) })) };
+      if (item?.inspection) move = { ...move, options: move.options.map(o => ({ ...o, actions: o.actions.map(a => ({ ...a, args: { ...a.args, headSha: a.tool === "request_merge" ? a.args.headSha : item.inspection!.headSha, scarCount: item.scars?.length ?? 0 } })) })) };
       const key = moveKey(move);
       const previous = this.openMoves!.find(m => moveKey(m) === key);
       if (previous) move = { ...move, id: previous.id, createdAt: previous.createdAt };
@@ -713,14 +903,19 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     } catch (error) { this.tapsError(error); return undefined; }
   }
 
-  private async swipe(move: Move, why: "defer" | "once" | "kind" | "spark" | "wrong") {
+  private async swipe(move: Move, why: "defer" | "once" | "kind" | "spark" | "wrong", intent?: {id: string; userId: number; scope: string}) {
+    if (move.id.startsWith("win:")) return this.seeWin(move);
     await this.decisionData();
-    if (move.id.startsWith("unlock:")) await this.tapBrainCard(move.id.slice(7), "later");
+    if (why !== "defer" && move.id.startsWith("unlock:")) await this.tapBrainCard(move.id.slice(7), "later");
     const book = this.deckBook!, key = moveKey(move), before = book.decisions[key] && structuredClone(book.decisions[key]);
-    resetYes(book, move.kind ?? "unblock", moveScope(move, this.state!));
-    resetLearn(book, move.kind ?? "unblock", moveScope(move, this.state!));
-    if (why === "defer") deferCard(book, move);
+    const jobs = await this.runnerJobs();
+    const reset = () => { resetYes(book, move.kind ?? "unblock", moveScope(move, this.state!)); resetLearn(book, move.kind ?? "unblock", learnScope(move, moveScope(move, this.state!), jobs)); };
+    if (why === "defer") {
+      const counted = deferCard(book, move, intent);
+      if (counted) { reset(); if (move.id.startsWith("unlock:")) await this.tapBrainCard(move.id.slice(7), "later"); }
+    }
     else {
+      reset();
       const id = crypto.randomUUID(), scope = moveScope(move, this.state!);
       book.decisions[key] = { key, move, count: before?.count ?? 0, dismissed: true };
       const undo: DeckBook["undos"][number] = { id, expiresAt: Date.now() + 300000, key, before };
@@ -740,6 +935,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const labels = { once: "Card dismissed.", kind: "This kind of card is now muted here.", spark: "Your preference for the factory to decide these has been recorded.", wrong: "Correction saved for the next plan." };
       this.broadcast({ type: "log", level: "info", text: labels[why], actor: "player", actionId: id, at: Date.now() });
     }
+    // One durable book write contains both the parking effect and its receipt.
+    // A restart before/after this write can neither acknowledge an unapplied tap nor recount it.
+    if (intent) await this.accountPut("deckBook", book);
     await this.refreshDecisions();
   }
 
@@ -799,7 +997,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       `🧠 **Shiptorio planned this${job.reworkPr ? " rework" : ""}** with Meta Muse Spark (\`${sparkModel(this.env)}\`)`,
       triage ? `**Triage:** ${triage.outcome}. ${triage.reason}` : "",
       steps ? `**How it got there** (one tool call per turn, read-only):\n${steps}` : "",
-      `**Plan for ${job.harness === "codex" ? "Codex" : "Claude Code"}:**\n\n${job.plan}`,
+      `**Plan for ${harnessLabel(job.harness)}:**\n\n${job.plan}`,
       job.allowedPaths.length ? `**Allowed files:** ${job.allowedPaths.map(p => `\`${p}\``).join(", ")}` : "",
       job.needsApproval ? "_Nothing builds until the player approves this plan in Shiptorio._" : "",
     ].filter(Boolean).join("\n\n");
@@ -821,7 +1019,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const presence = await this.ctx.storage.get<{ harnesses: RunnerJob["harness"][]; seenAt: number }>("runnerPresence");
     if (!presence || Date.now() - presence.seenAt > 20000) return;
     // One plan card at a time: the next issue is dealt once this one is planned, built or set aside.
-    if (s.deck?.some(proposesPlan)) return;
+    if (s.deck?.some(holdsPlanSlot)) return;
     await this.decisionData();
     const parked = new Set(this.openMoves!.filter(m => proposesPlan(m) && suppressed(this.deckBook!, m)).map(m => m.itemId));
     // A base update is a separate explicit plan, never an automatic rework or a Launch shortcut.
@@ -834,7 +1032,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       await this.accountPut("runnerRefreshCursor", (cursor + 3) % refreshCandidates.length);
       for (const item of [...refreshCandidates.slice(cursor), ...refreshCandidates.slice(0, cursor)].slice(0, 3)) {
         if (await this.ctx.storage.get<number>(`runnerDeferred:${item.id}`) === item.updatedAt) continue;
-        const target = await refreshTarget(token, this.meta.repo, item.prNumber!, item.branch!, s.baseBranch);
+        // One PR that can't be read right now must not block dealing the next issue's plan below.
+        const target = await refreshTarget(token, this.meta.repo, item.prNumber!, item.branch!, s.baseBranch).catch((error: unknown) => { log("warn", "factory.refresh_target_skipped", { itemId: item.id, error: error instanceof Error ? error.message : String(error) }); return null; });
         if (!target || !ownsRefreshPr(jobs, item, this.meta.repo, target.headSha)) continue;
         const harness = presence.harnesses.includes("codex") ? "codex" : presence.harnesses.find(h => h !== "local");
         if (!harness) continue;
@@ -862,50 +1061,64 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   /** by: who let it through. The planner's own taps (autonomy levels, learned cards) are never recorded as the player's. */
-  private async chooseRunnerMove(move: Move, optionId: string, by: "player" | "autonomy" = "player"): Promise<void> {
+  private async chooseRunnerMove(move: Move, optionId: string, by: "player" | "autonomy" = "player"): Promise<boolean> {
     const moveId = move.id;
-    if (!move.itemId || !move.options.some(o => o.id === optionId) && optionId !== "decline") return;
+    if (!move.itemId || !move.options.some(o => o.id === optionId) && optionId !== "decline") return false;
     const item = this.state!.items.find(i => i.id === move.itemId);
     const refreshMove = move.options.some(o => o.actions.some(a => a.tool === "plan_runner_job" && a.args.refreshBase === true)) || (await this.runnerJobs()).some(j => j.approvalMoveId === moveId && !!j.refreshBase);
     const available = (candidate: Item) => refreshMove ? !!candidate.prNumber && ["on_pad", "passed", "inspecting", "rejected"].includes(candidate.state) : (!candidate.prNumber || candidate.state === "rejected") && ["ore", "queued", "rejected"].includes(candidate.state);
-    if (!item || !available(item)) return;
-    const job = (await this.runnerJobs()).find(j => j.approvalMoveId === moveId && j.itemId === move.itemId && j.repo === this.meta?.repo && j.status === "awaiting_approval");
+    if (!item || !available(item)) {
+      if (optionId === "approve") log("warn", "factory.runner_approval_refused", { reason: "item_unavailable", itemId: move.itemId, state: item?.state, hasPr: !!item?.prNumber, refreshMove });
+      return false;
+    }
+    // GitHub names are case-insensitive; a browser visit can refresh metadata casing after planning.
+    const job = (await this.runnerJobs()).find(j => j.approvalMoveId === moveId && j.itemId === move.itemId && j.repo.toLowerCase() === this.meta?.repo.toLowerCase() && j.status === "awaiting_approval");
     if (job) {
-      await this.ctx.blockConcurrencyWhile(async () => {
+      return this.ctx.blockConcurrencyWhile(async () => {
         const stored = await this.ctx.storage.get<RunnerJob>(`runnerJob:${job.id}`);
-        if (!stored || stored.status !== "awaiting_approval" || stored.approvalMoveId !== moveId || stored.itemId !== move.itemId || stored.repo !== this.meta?.repo) return;
+        if (!stored || stored.status !== "awaiting_approval" || stored.approvalMoveId !== moveId || stored.itemId !== move.itemId || stored.repo.toLowerCase() !== this.meta?.repo.toLowerCase()) {
+          if (optionId === "approve") log("warn", "factory.runner_approval_refused", { reason: "stored_job_mismatch", itemId: move.itemId, found: !!stored, status: stored?.status, sameCard: stored?.approvalMoveId === moveId, sameItem: stored?.itemId === move.itemId, sameRepo: stored?.repo.toLowerCase() === this.meta?.repo.toLowerCase() });
+          return false;
+        }
         const currentItem = this.state?.items.find(i => i.id === stored.itemId);
-        if (!currentItem || !available(currentItem)) return;
+        if (!currentItem || !available(currentItem)) {
+          if (optionId === "approve") log("warn", "factory.runner_approval_refused", { reason: "item_changed", itemId: move.itemId, state: currentItem?.state });
+          return false;
+        }
         if (stored.inputRevision !== await workRevision(currentItem)) {
           stored.status = "failed"; stored.error = "Issue changed; request a fresh plan.";
           await this.accountPut(`runnerJob:${stored.id}`, stored);
           await this.resolveRunnerMove(move);
           this.log("warn", stored.error, item.id);
-          return;
+          return false;
         }
         if (optionId === "approve") {
           if (stored.refreshBase) {
             try { assertRefreshItem(stored, currentItem); await refreshTarget(await installationToken(this.env, this.meta!.installationId), stored.repo, stored.reworkPr!, stored.branch, stored.baseBranch!, { headSha: stored.refreshBase.expectedHeadSha, baseSha: stored.baseSha!, baseBranch: stored.baseBranch! }); }
-            catch { stored.status = "failed"; stored.error = "Factory head or base changed; review a fresh plan."; await this.accountPut(`runnerJob:${stored.id}`, stored); await this.resolveRunnerMove(move); this.log("warn", stored.error, item.id); return; }
+            catch { stored.status = "failed"; stored.error = "Factory head or base changed; review a fresh plan."; await this.accountPut(`runnerJob:${stored.id}`, stored); await this.resolveRunnerMove(move); this.log("warn", stored.error, item.id); return false; }
           }
           stored.status = "ready"; stored.approvedAt = Date.now(); stored.approvedBy = by;
         }
         else if (optionId === "decline") { stored.status = "failed"; stored.error = "Player declined this plan."; await this.accountPut(`runnerDeferred:${currentItem.id}`, currentItem.updatedAt); }
-        else return;
+        else return false;
         await this.accountPut(`runnerJob:${stored.id}`, stored);
         await this.resolveRunnerMove(move);
         this.broadcast({ type: "log", level: "info", text: optionId === "approve" ? "Plan approved. Your local agent can now start." : "Plan set aside. No build started.", at: Date.now(), actor: by === "autonomy" ? "spark" : "player", tool: optionId === "approve" ? "approve_runner_job" : "decline_runner_job", approvedBy: by, reason: by === "autonomy" ? "Approved on its own: the planner's autonomy level or a kind of card you taught it" : "Decision from the game", itemId: item.id });
+        return true;
       });
-      return;
     }
-    if (optionId === "decline") { await this.accountPut(`runnerDeferred:${item.id}`, item.updatedAt); await this.resolveRunnerMove(move); return; }
+    if (optionId === "decline") { await this.accountPut(`runnerDeferred:${item.id}`, item.updatedAt); await this.resolveRunnerMove(move); return true; }
     const action = move.options.find(o => o.id === optionId)?.actions[0];
-    if (action?.tool !== "plan_runner_job" || !RunnerHarness.safeParse(action.args.harness).success) return;
+    if (action?.tool !== "plan_runner_job" || !RunnerHarness.safeParse(action.args.harness).success) {
+      if (optionId === "approve") log("warn", "factory.runner_approval_refused", { reason: "approval_job_missing", itemId: move.itemId, repo: this.meta?.repo });
+      return false;
+    }
     try {
       await this.enqueueRunner({ itemId: item.id, harness: action.args.harness as RunnerJob["harness"], allowedPaths: [], needsApproval: true, refreshBase: action.args.refreshBase === true });
       await this.resolveRunnerMove(move);
       this.log("info", "Reading the issue and code to prepare your plan. No build has started.", item.id);
-    } catch (error) { this.log("warn", error instanceof Error ? error.message : "Unable to plan this issue", item.id); }
+      return true;
+    } catch (error) { this.log("warn", error instanceof Error ? error.message : "Unable to plan this issue", item.id); return false; }
   }
 
   async allowDeviceStart() {
@@ -1084,6 +1297,39 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     return this.redactor.value([...rows.entries()].flatMap(([key, retry]) => key !== PLANNER_REST_KEY && planningHold(retry) ? [{ itemId: key.slice("planningRetry:".length), ...retry }] : []));
   }
 
+  /** Recheck the same rejected head; this cannot approve or merge it. */
+  async retryAIReview(itemId: string, expectedHead: string) {
+    if (!(await this.load()) || !this.meta || await this.githubStopped()) return false;
+    const item = this.state!.items.find(i => i.id === itemId);
+    if (!item?.prNumber || item.state !== "rejected" || item.inspection?.headSha !== expectedHead || stageOf(item, "ai")?.state !== "rework" || stageOf(item, "ci")?.state !== "passed" || stageOf(item, "verify")?.state !== "passed") return false;
+    if ((await this.runnerJobs()).some(j => j.itemId === itemId && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) return false;
+    const evidence = await inspectPullRequest(await installationToken(this.env, this.meta.installationId), this.meta.repo, item.prNumber, expectedHead, this.state!.baseBranch);
+    if (evidence.stale || evidence.state !== "passed" || !this.state!.items.some(i => i === item)) return false;
+    await this.patch({items:[{...item,state:"inspecting",failure:undefined,machineId:"review-1",updatedAt:Date.now(),inspection:{...item.inspection,state:"pending",humanApproved:false,stages:item.inspection.stages.map(s => s.gate === "ai" || s.gate === "human" ? {...s,state:"pending",reason:"Waiting for a fresh review of this commit"} : s)}}]});
+    await this.decisionData();
+    this.openMoves = this.openMoves!.filter(m => m.itemId !== itemId);
+    await this.refreshDecisions();
+    await this.scheduleTick();
+    this.log("info", "Review queued again for the same PR commit. Earlier review evidence is retained; nothing is approved or merged.", itemId);
+    return true;
+  }
+
+  /** Issue numbers already past Repo (anything but fresh ore or launched), so the inbox stops offering them. */
+  async lineIssues(): Promise<number[]> {
+    if (!(await this.load())) return [];
+    return this.state!.items.filter(i => !["ore", "launched"].includes(i.state)).map(i => Number(/^gh-(\d+)$/.exec(i.id)?.[1])).filter(n => n > 0);
+  }
+
+  async startInboxIssue(number: number, requestedBy: string) {
+    if (!(await this.load()) || !this.meta || !Number.isSafeInteger(number) || number < 1) throw new Error("Invalid issue selection");
+    const active = this.state!.items.find(i => i.prNumber && ["inspecting", "on_pad", "passed"].includes(i.state));
+    if (active) return { waitingFor: active.prNumber };
+    const signal = await freshIssueInput(await installationToken(this.env, this.meta.installationId), this.meta.repo, number);
+    await this.ingestSignal(signal);
+    const job = await this.enqueueRunner({ itemId: `gh-${number}`, harness: "codex", allowedPaths: [], needsApproval: true }, requestedBy);
+    return { jobId: job.id };
+  }
+
   async enqueueRunner(input: { itemId: string; harness: RunnerJob["harness"]; allowedPaths: string[]; needsApproval?: boolean; refreshBase?: boolean }, requestedBy?: string): Promise<RunnerJob> {
     if (await this.githubStopped()) throw new Error("GitHub factory is archived or paused");
 
@@ -1107,11 +1353,14 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) return new Error("This issue already has an active runner job; finish its plan or build first");
       if (this.env.SPARK_DISABLED === "1" || this.running.size + jobs.filter(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status)).length >= budgetLimits(this.env).jobs) return new Error("Factory job budget reached; finish the active runner job first");
       const hold = await this.plannerRest() ?? planningHold(await this.ctx.storage.get<PlanningRetry>(`planningRetry:${item.id}`));
-      if (hold) return new Error(`Planning paused after ${hold.failures} failed tries; retry at ${new Date(hold.retryAt).toISOString()}. ${hold.reason}`);
+      // A spent daily dollar cap is not a failed try: say the cap's own plain line (spend.ts), which the inbox shows.
+      const capLine = hold?.kind === "cap" ? /Shippy is done thinking for today.*$/.exec(hold.reason)?.[0] : undefined;
+      if (hold) return new Error(capLine ? `Planning paused. ${capLine}` : `Planning paused after ${hold.failures} failed tries; retry at ${new Date(hold.retryAt).toISOString()}. ${hold.reason}`);
       const account = await this.runAccount(requestedBy);
       if (!account) return new Error("Run quota owner unavailable");
       const quota = await runQuotaStatus(this.env, account);
-      if (quota.used >= quota.limit) return new Error(`Daily run quota reached; resumes at ${new Date(quota.resetsAt).toISOString()}`);
+      // Player copy (logged on the Plan tap): plain words, no raw timestamp. resetsAt is always the next 00:00 UTC.
+      if (quota.used >= quota.limit) return new Error("Daily run quota reached. Builds start again at 00:00 UTC.");
       const usage = await this.usage().catch(error => { if (error instanceof BudgetError) return error; throw error; });
       if (usage instanceof BudgetError) return usage;
       if (usage.limits.disabled || usage.calls >= usage.limits.calls || usage.tokens >= usage.limits.tokens) {
@@ -1156,7 +1405,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         if (!sparkConfigured(this.env)) throw new Error("No planner key");
         pick = await this.think("route", { title: item.title, itemId: item.id }, () => pickPower({ ...this.sparkEnv(), planningSignal: signal }, {
           title: item.title, kind: item.kind, plan: job.plan ?? "", files: job.allowedPaths,
-          plants: allowed.map(h => h === "local" ? { harness: h, name: "Geothermal (your computer)", cost: "free", strength: "small model, fine for docs and tiny fixes" } : { harness: h, name: `Solar (${h === "codex" ? "ChatGPT" : "Claude"})`, cost: "spends weekly subscription usage", strength: "strong coding agent" }),
+          plants: allowed.map(h => h === "local" ? { harness: h, name: "Geothermal (your computer)", cost: "free", strength: "small model, fine for docs and tiny fixes" } : { harness: h, name: `Solar (${h === "codex" ? "ChatGPT" : h === "muse_code" ? "Meta Muse Code" : "Claude"})`, cost: "spends weekly subscription usage", strength: "strong coding agent" }),
         }), out => ({ outcome: `Routed to ${harnessLabel(out.harness)}`, reason: out.why || guard.reason }));
       } catch { pick = ruleRoute(c, available); }
     }
@@ -1287,6 +1536,22 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
   async claimRunner(pairId: string, harnesses: RunnerJob["harness"][]) {
     if (await this.githubStopped()) throw new Error("GitHub factory is archived or paused");
+    if (!await this.isRunnerPaired(pairId)) throw new Error("Runner pairing revoked");
+    await this.load();
+    if (await adminPaused(this.env.DB, this.meta?.repo)) return null;
+    // Rendering offers and updating the player's deck can perform provider reads.
+    // They must never hold the DO's 30-second exclusive lock and reset an in-flight review.
+    await this.accountPut("runnerPresence", { harnesses, seenAt: Date.now() });
+    if (this.state) {
+      const power = syncRunnerPower(this.state.power, harnesses);
+      if (JSON.stringify(power) !== JSON.stringify(this.state.power)) await this.patch({ power });
+    }
+    await this.offerRunnerPlan();
+    // Reconnected/idle runners may be the next event after a plan is ready. Honor earned
+    // approvals here too, through the manual approval handler, before looking for a lease.
+    if (this.state) await this.runLearned();
+    await this.refreshDecisions();
+    await this.scheduleTick();
     const job = await this.ctx.blockConcurrencyWhile(async () => {
       if (await this.ctx.storage.get("runnerPair") !== pairId) throw new Error("Runner pairing revoked");
       if (await adminPaused(this.env.DB,this.meta?.repo ?? (await this.ctx.storage.get<Meta>("meta"))?.repo)) return null;
@@ -1305,17 +1570,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         return live;
       }
       if (live) return null;
-      await this.load();
       const stranded = this.state?.items.filter(i => i.state === "working" && expired.some(j => j.itemId === i.id)) ?? [];
-      if (stranded.length) await this.patch({ items: stranded.map(i => ({ ...i, state: "queued" as const, updatedAt: Date.now() })) });
-      await this.accountPut("runnerPresence", { harnesses, seenAt: Date.now() });
-      if (this.state) {
-        const power = syncRunnerPower(this.state.power, harnesses);
-        if (JSON.stringify(power) !== JSON.stringify(this.state.power)) await this.patch({ power });
-      }
-      await this.offerRunnerPlan();
-      await this.refreshDecisions();
-      await this.scheduleTick();
+      if (stranded.length) await this.patch({ items: stranded.map(i => ({ ...i, state: "queued" as const, updatedAt: Date.now() })) }, true);
       const jobs = await this.ctx.storage.list<RunnerJob>({ prefix: "runnerJob:" });
       const job = [...jobs.values()].find(j => j.status === "ready" && availableJobHarness(j.harness, harnesses));
       if (!job) return null;
@@ -1346,11 +1602,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       await this.accountPut(`runnerJob:${job.id}`, job);
       const item = this.state!.items.find(i => i.id === job.itemId)!;
       const machineId = `runner-${job.harness}`;
-      await this.clearRunnerMove();
-      await this.patch({ items: [{ ...item, state: "working", machineId, attempts: item.attempts + 1, updatedAt: Date.now() }], machines: [{ id: machineId, type: "assembler", x: 0, y: 6, harness: job.harness, powerId: job.harness === "local" ? LOCAL_POWER_ID : `solar-${job.harness}`, tier: 1, state: "working" }] });
+      await this.patch({ items: [{ ...item, state: "working", machineId, attempts: item.attempts + 1, updatedAt: Date.now() }], machines: [{ id: machineId, type: "assembler", x: 0, y: 6, harness: job.harness, powerId: job.harness === "local" ? LOCAL_POWER_ID : `solar-${job.harness}`, tier: 1, state: "working" }] }, true);
       this.log("info", job.harness === "local" ? "Your computer's local model picked up the plan (geothermal power)." : `Local ${job.harness} took the plan.`, item.id);
       return job;
     });
+    if (job) await this.clearRunnerMove();
+    await this.refreshDecisions();
     if (!job) return null;
     if (!this.meta) throw new Error("Missing repo");
     // Installation tokens go only to the runner supervisor, never to an agent child.
@@ -1379,9 +1636,11 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const item = this.state.items.find(i => i.id === job.itemId)!;
     if (job.refreshBase) assertRefreshItem(job, item);
     if (!receipt.ok) {
-      job.status = "failed"; job.error = "Local build failed; player must approve another attempt.";
+      // The runner's own plain reasons ("Codex is out of usage until ...") are worth showing; anything else stays generic.
+      job.status = "failed"; job.error = /^(?:Codex|Muse Code|Claude) (?:is out of usage|timed out|stopped)[\w ,.:'()/-]{0,200}$/.test(receipt.summary) ? receipt.summary : "Local build failed; player must approve another attempt.";
       await this.accountPut(`runnerJob:${job.id}`, job);
       await this.patch({ items: [{ ...item, state: "rejected", failure: job.error, updatedAt: Date.now() }], machines: this.state.machines.filter(m => m.id === item.machineId).map(m => ({ ...m, state: "blocked" as const })) });
+      await this.reopenRedPrCard(item.id);
       return { status: "failed" };
     }
     if (!receipt.sha || !["typecheck", "test", "build"].every(c => receipt.checks.includes(c as RunnerReceipt["checks"][number]))) throw new Error("Missing local check receipts");
@@ -1433,7 +1692,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (await this.ctx.storage.get("migratedTo")) throw new Error("Legacy factory migrated");
     if (!lifecycleEvents.includes(event) && await this.githubStopped()) return;
     if ((await this.ctx.storage.get<number>(`done:${key}`) ?? 0) > Date.now() || await this.ctx.storage.get(`failed:${key}`)) return;
-    if (!(await this.ctx.storage.get(key))) await this.accountPut(key, { event, payload, attempts: 0, trace: currentTrace() });
+    if (!(await this.ctx.storage.get(key))) await this.accountPut(key, { event, payload, attempts: 0, receivedAt: Date.now(), trace: currentTrace() });
 
     await this.scheduleTick();
   }
@@ -1444,13 +1703,15 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const key = `delivery:sentry-${deliveryId}`;
     await this.assertAccountActive(this.meta?.repo ?? "");
     if ((await this.ctx.storage.get<number>(`done:${key}`) ?? 0) > Date.now() || await this.ctx.storage.get(`failed:${key}`)) return;
-    if (!(await this.ctx.storage.get(key))) await this.accountPut(key, { source: "sentry", deliveryId, event: resource, payload, attempts: 0, trace: currentTrace() });
+    if (!(await this.ctx.storage.get(key))) await this.accountPut(key, { source: "sentry", deliveryId, event: resource, payload, attempts: 0, receivedAt: Date.now(), trace: currentTrace() });
 
     await this.scheduleTick();
   }
 
   private async processDeliveries(): Promise<void> {
-    const pending = await this.ctx.storage.list<{ trace?: Trace; source?: "sentry" | "support"; deliveryId?: string; event: string; payload: GitHubPayload; attempts: number; nextAt?: number }>({ prefix: "delivery:", limit: 100 });
+    const listed = await this.ctx.storage.list<{ trace?: Trace; source?: "sentry" | "support"; deliveryId?: string; event: string; payload: GitHubPayload; attempts: number; nextAt?: number; receivedAt?: number }>({ prefix: "delivery:", limit: 100 });
+    // Storage lists keys in delivery-GUID order; work through them in the order they arrived.
+    const pending = [...listed].sort(([, a], [, b]) => (a.receivedAt ?? 0) - (b.receivedAt ?? 0));
     let processed = 0;
 
     for (const [key, delivery] of pending) {
@@ -1487,13 +1748,13 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           await this.accountPut(`failed:${key}`, { ...delivery, attempts });
           await this.ctx.storage.delete(key);
           this.log("error", "Webhook retries exhausted; payload retained for operator replay.");
-          if (this.state) await this.publishDecision({ id: `failed:${key}`, title: "A source delivery needs attention", why: "Five processing attempts failed. The payload is retained for operator replay.", stage: "intake", kind: "unblock", createdAt: Date.now(), options: [{ id: "later", label: "Look later", recommended: true, actions: [] }] });
+          if (this.state) await this.publishDecision({ id: `failed:${key}`, title: "An incoming update didn't go through", why: "It failed five times in a row. It's saved so it can be replayed.", stage: "intake", kind: "unblock", createdAt: Date.now(), options: [{ id: "later", label: "Look later", recommended: true, actions: [] }] });
           continue;
         }
         await this.accountPut(key, { ...delivery, attempts, nextAt: Date.now() + Math.min(600000, 5000 * 2 ** Math.min(attempts, 7)) * (0.5 + Math.random()) });
         this.log("error", `${delivery.source === "sentry" ? "Sentry" : delivery.source === "support" ? "Support" : "GitHub"} delivery deferred (attempt ${attempts}); check App configuration and API availability.`);
-        await this.accountAlarm(Date.now() + Math.min(600000, 5000 * 2 ** Math.min(attempts, 7)));
-        break;
+        // One bad delivery waits out its own backoff; the rest of the queue keeps moving.
+        continue;
       }
     }
     const remaining = await this.ctx.storage.list<{ nextAt?: number }>({ prefix: "delivery:" });
@@ -1534,9 +1795,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     }
     if (!(await this.load())) return;
     if (event === "push" && p.ref === `refs/heads/${p.repository?.default_branch}`) await this.refreshDistricts();
-    const pr = p.pull_request as { number?: number; merged?: boolean; merge_commit_sha?: string; title?: string; body?: string | null; html_url?: string; head?: { sha: string; ref: string } } | undefined;
+    const pr = p.pull_request as { number?: number; merged?: boolean; merge_commit_sha?: string; title?: string; body?: string | null; html_url?: string; head?: { sha: string; ref: string }; base?: { ref: string } } | undefined;
     if (event === "pull_request" && p.action === "closed" && pr?.number) await this.onPullClosed(pr.number, !!pr.merged, pr.merge_commit_sha);
-    if (event === "pull_request" && pr && ["opened", "reopened", "closed"].includes(p.action ?? "") && (p.action !== "closed" || pr.merged)) await this.orbitRevert(pr);
+    if (event === "pull_request" && p.action === "closed" && pr) await this.orbitRevert(pr);
     const check = (p.check_run ?? p.check_suite) as { pull_requests?: { number: number }[]; head_sha?: string; conclusion?: string; name?: string; html_url?: string; app?: { name?: string } } | undefined;
     if (["check_run", "check_suite"].includes(event) && p.action === "completed" && check?.head_sha && ["failure", "timed_out", "startup_failure"].includes(check.conclusion ?? "")) await this.orbitDeploy(check.head_sha, check.name ?? check.app?.name ?? "CI", check.html_url);
     if (["check_run", "check_suite"].includes(event) && ["completed", "queued", "in_progress", "requested", "rerequested"].includes(p.action ?? "") && check) await this.onCheckSuite((check.pull_requests ?? []).map((pr) => pr.number), check.conclusion === "success", check.conclusion ?? "pending", check.head_sha);
@@ -1845,7 +2106,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   async enqueueSupport(deliveryId: string, message: SupportMessage): Promise<void> {
     await this.assertAccountActive(this.meta?.repo);
     const key = `delivery:support-${deliveryId}`;
-    if (!(await this.ctx.storage.get(key))) await this.accountPut(key, { source: "support", deliveryId, event: message.channel, payload: message, attempts: 0 });
+    if (!(await this.ctx.storage.get(key))) await this.accountPut(key, { source: "support", deliveryId, event: message.channel, payload: message, attempts: 0, receivedAt: Date.now() });
     await this.scheduleTick();
   }
 
@@ -2134,7 +2395,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (this.state) {
 
         this.state.stations = liveStations(this.state);
-        this.state.autonomy = autonomyView(await this.permitBook(), await flagEnabled(this.env, "autonomy"));
+        this.state.autonomy = autonomyView(await this.permitBook(), await this.autonomyFlags());
         this.state.brain = { ...(this.state.brain ?? emptyBrain(sparkModel(this.env), false)), model: sparkModel(this.env), online: sparkConfigured(this.env) };
       }
     }
@@ -2215,7 +2476,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
    * One Spark decision: the drone flies to what it's thinking about, and the call lands in the decision
    * log with Spark's own reason. A failed call is logged too, then rethrown so the caller's fallback runs.
    */
-  private async think<T>(decision: ThoughtDecision, about: { title: string; itemId?: string; target?: string }, ask: () => Promise<T>, explain: (out: T) => { outcome: string; reason: string }): Promise<T> {
+  private async think<T>(decision: ThoughtDecision, about: { title: string; itemId?: string; target?: string }, ask: () => Promise<T>, explain: (out: T) => { outcome: string; reason: string; steps?: Thought["steps"] }): Promise<T> {
     const start = Date.now();
     this.foreman(about.target ?? about.itemId, decision, true);
     try {
@@ -2225,7 +2486,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const explanation = explain(out);
       if (this.env.DB && this.env.META_API_KEY) {
         const usage = await this.usage();
-        const spend = await factorySpend(this.env.DB, this.meta!.repo);
+        const spend = await factorySpend(this.env.DB, this.meta!.repo, Date.now(), usage.account);
         explanation.reason += ` Planner: ~$${spend.estimatedUsd.toFixed(4)} / $${spend.dailyBudgetUsd.toFixed(2)} today. ${spend.explanation}`;
         explanation.reason += ` Budget: ${usage.calls}/${usage.limits.calls} calls, ${usage.tokens}/${usage.limits.tokens} tokens today (UTC).`;
       }
@@ -2257,7 +2518,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     ).catch(() => heuristicTriage(item.title, [], districts));
   }
 
-  private async patch(p: Patch) {
+  private async patch(p: Patch, deferDecisions = false) {
     const s = this.state!;
     if (p.research) s.research = p.research;
     // Researched checks join every PR that hasn't reached the verify bay yet.
@@ -2291,7 +2552,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     // an earlier frame. Never hold an atomic runner mutation behind that I/O.
     // broadcast preserves order and registers delivery with ctx.waitUntil.
     this.broadcast({ type: "patch", patch: p });
-    await this.refreshDecisions();
+    if (!deferDecisions) await this.refreshDecisions();
   }
 
   private async scheduleTick() {
@@ -2335,10 +2596,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   /** Creates the factory with districts from the repo and a starter line, if it doesn't exist yet. */
   private async ensureFactory(repo: string, installationId: number): Promise<void> {
     if (await this.githubStopped()) return;
-    await this.load();
+    const existing = await this.load();
     if (!validRepo(repo) || (this.meta && this.meta.repo.toLowerCase() !== repo.toLowerCase())) throw new Error("Repository mismatch");
 
-    if (await this.load()) {
+    if (existing) {
       if (await this.ctx.storage.get("githubNeedsInitialization")) {
         const tree = await repoTree(await installationToken(this.env, installationId), repo);
         if (await this.githubStopped()) return;
@@ -2351,7 +2612,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         this.meta = { repo, installationId };
         await this.accountPut("meta", this.meta);
       }
-      await this.autoConnectMines().catch(error => this.log("error", `Mine connection failed: ${String(error)}`));
+      // Optional provider discovery must not delay an already usable map. Persist
+      // the wake-up before returning so an eviction cannot lose the reconnect.
+      await this.accountPut("mineReconnectPending", { repo: this.meta!.repo, installationId, generation: crypto.randomUUID() });
       await this.scheduleTick();
       return;
     }
@@ -2362,6 +2625,20 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (await this.githubStopped()) return;
     this.state = initialFactoryState(repo, tree, this.env);
     await this.save();
+  }
+
+  /** Alarm-owned optional discovery; deletion/installation changes invalidate old work. */
+  private async reconnectMines(): Promise<void> {
+    const pending = await this.ctx.storage.get<Meta & { generation: string }>("mineReconnectPending");
+    if (!pending || await this.githubStopped()) return;
+    await this.assertAccountActive(pending.repo);
+    if (!this.meta || this.meta.repo !== pending.repo || this.meta.installationId !== pending.installationId) return;
+    await this.autoConnectMines();
+    // Keep the marker on failure, including partial connection, for the next alarm.
+    await this.ctx.storage.transaction(async tx => {
+      const current = await tx.get<Meta & { generation: string }>("mineReconnectPending");
+      if (current?.generation === pending.generation) await tx.delete("mineReconnectPending");
+    });
   }
 
   async refreshDistricts(): Promise<void> {
@@ -2398,7 +2675,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     for (const item of this.state!.items) {
       if (!["inspecting", "on_pad", "passed"].includes(item.state) || !item.prNumber || !(prNumbers.includes(item.prNumber) || (headSha && item.inspection?.headSha === headSha))) continue;
       const result = await inspectPullRequest(token, this.meta.repo, item.prNumber, headSha, this.state!.baseBranch);
-      if (result.stale) continue;
+      if (result.stale || !this.state!.items.some(current => current === item && current.state !== "launched")) continue;
       if (result.state === "pending") {
         if (item.state !== "inspecting" || stageOf(item, "ci")?.state === "passed" || item.inspection?.headSha !== result.headSha) {
           await this.patch({ items: [{ ...item, state: "inspecting", machineId: "ci-1", inspection: freshInspection(result.headSha), updatedAt: Date.now() }] });
@@ -2406,7 +2683,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         continue;
       }
       if (item.branch?.startsWith("shiptorio/runner-") && (!item.lane || item.inspection?.headSha !== result.headSha)) {
-        const lane = await prFiles(token, this.meta.repo, item.prNumber).then((files) => laneOf(files.map((f) => f.filename))).catch(error => { this.log("error", `Lane metadata unavailable: ${String(error)}`, item.id); return null; });
+        const lane = await prFiles(token, this.meta.repo, item.prNumber).then((files) => laneOf(changedPaths(files))).catch(error => { this.log("error", `Lane metadata unavailable: ${String(error)}`, item.id); return null; });
+        if (!this.state!.items.some(current => current === item && current.state !== "launched")) continue;
         item.lane = lane ?? undefined;
       }
       if (result.state === "passed") {
@@ -2415,21 +2693,21 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           if (stageOf(item, "ci")?.state === "passed" && result.headSha === item.inspection?.headSha) continue;
           const fresh = { ...item, state: "inspecting" as const, inspection: freshInspection(result.headSha) };
           await this.patch({ items: [setStage(fresh, "ci", "passed", result.summary)] });
-          this.log("success", `CI inspector passed PR #${item.prNumber}. On to the verify bay.`, item.id);
+          this.log("success", `Checks: CI passed PR #${item.prNumber}. Next, the proof check.`, item.id);
           await this.scheduleTick();
           continue;
         }
         const onPad = this.state!.machines.some((m) => m.type === "launch_pad");
         await this.patch({ items: [{ ...item, state: onPad ? "on_pad" : "passed", failure: undefined, updatedAt: Date.now() }] });
-        this.log("success", `Inspector passed PR #${item.prNumber}. Ready to launch.`, item.id);
+        this.log("success", `Checks passed PR #${item.prNumber}. Ready for Gate.`, item.id);
       } else if (item.branch?.startsWith("shiptorio/runner-")) {
         await this.patch({ items: [setStage(item, "ci", "rework", result.summary.split("\n")[0] || "CI failed")] });
-        this.log("warn", `CI inspector sent PR #${item.prNumber} back: ${result.summary.split("\n")[0]}`, item.id);
+        this.log("warn", `Checks: CI sent PR #${item.prNumber} back: ${result.summary.split("\n")[0]}`, item.id);
         await this.noteRework(item);
         await this.scheduleTick();
       } else {
         await this.patch({ items: [{ ...item, state: "rejected", failure: result.summary, updatedAt: Date.now() }] });
-        this.log("warn", `Inspector rejected PR #${item.prNumber}: ${result.summary}`, item.id);
+        this.log("warn", `Checks sent PR #${item.prNumber} back: ${result.summary}`, item.id);
         await this.scheduleTick();
       }
     }
@@ -2437,10 +2715,24 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
   async onPullClosed(prNumber: number, merged: boolean, mergeSha?: string): Promise<void> {
     if (!(await this.load())) return;
+    const fix = merged ? this.state!.items.find(i => i.prNumber === prNumber && i.id.startsWith("gh-")) : undefined;
+    try { await this.closePull(prNumber, merged, mergeSha); }
+    finally { if (fix) await this.bringFixInto(Number(fix.id.slice(3)), prNumber); }
+  }
+
+  private async closePull(prNumber: number, merged: boolean, mergeSha?: string): Promise<void> {
     const creditKey = `launchCredit:${prNumber}`;
     if (merged) {
       // An item's active PR changes on rework. Credit belongs to the merged PR forever.
-      if (await this.ctx.storage.get(creditKey)) { await this.scheduleOrbitDeadline(); return; }
+      const credit = await this.ctx.storage.get<{itemId: string; at: number; mergeSha?: string}>(creditKey);
+      if (credit) {
+        // Repair older stale writes without awarding another rocket or undoing an orbit regression.
+        const current = this.state!.items.find(i => i.id === credit.itemId && i.prNumber === prNumber);
+        if (current && current.state !== "launched" && current.orbit?.state !== "regressed") {
+          await this.patch({items:[startWatch({...current,state:"launched",updatedAt:credit.at},credit.at,credit.mergeSha ?? mergeSha)]});
+        }
+        await this.scheduleOrbitDeadline(); return;
+      }
       const previous = this.state!.items.find(i => i.orbit?.prNumber === prNumber || i.state === "launched" && i.prNumber === prNumber);
       if (previous) {
         // Seed watches shipped before this ledger, without changing their current work.
@@ -2473,7 +2765,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       return;
     }
     const candidate = item;
-    const levels = await flagEnabled(this.env, "autonomy");
+    const flags = await this.autonomyFlags();
     const committed = await this.ctx.blockConcurrencyWhile(async () => {
       const s = this.state!;
       const current = s.items.find(i => i.id === candidate.id);
@@ -2489,7 +2781,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         const book = recordShip(await tx.get<PermitBook>("permits") ?? emptyBook(), launchedItem, auto);
         const launched = startWatch({ ...launchedItem, state: "launched", updatedAt: now }, now, mergeSha);
         const items = s.items.some(i => i.id === launched.id) ? s.items.map(i => i.id === launched.id ? launched : i) : [...s.items, launched];
-        const next: FactoryState = { ...s, items, science: { ...s.science, [key]: s.science[key] + 1 }, trust: Math.min(1, s.trust + 0.05), autonomy: autonomyView(book, levels), brain: scoreShip(s.brain, launched.id) };
+        const next: FactoryState = { ...s, items, science: { ...s.science, [key]: s.science[key] + 1 }, trust: Math.min(1, s.trust + 0.05), autonomy: autonomyView(book, flags), brain: scoreShip(s.brain, launched.id) };
         next.stations = liveStations(next, now);
         await tx.put("state", next);
         await tx.put("permits", book);
@@ -2507,7 +2799,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.refreshDecisions();
     this.log("success", auto ? `Rocket launched on its own: PR #${prNumber} merged on the ${launched.lane} launch permit.` : `Rocket launched: PR #${prNumber} merged.`, launched.id);
     // A merge on GitHub doesn't wait for the gauntlet. Say which stations never got to look, so a missing review is explained.
-    const skipped = (launched.inspection?.stages ?? []).filter(st => st.gate !== "human" && st.state !== "passed").map(st => st.gate === "ai" ? "AI review" : st.gate === "ci" ? "CI" : "the verify bay");
+    const skipped = (launched.inspection?.stages ?? []).filter(st => st.gate !== "human" && st.state !== "passed").map(st => st.gate === "ai" ? "Review" : st.gate === "ci" ? "the CI check" : "the proof check");
     if (skipped.length) this.log("warn", `PR #${prNumber} was merged before ${skipped.join(" and ")} finished, so ${skipped.length === 1 ? "it" : "they"} never signed off.`, launched.id);
     if (this.state!.move?.itemId === launched.id) await this.publishGauntletMove(null);
   }
@@ -2540,6 +2832,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const gate = nextGate(item)!;
     let advanced: Item | undefined;
     if (gate === "ai" && !sparkConfigured(this.env)) return; // waits for Spark power; the station shows the pile
+    // A planner timeout or 429 parks the planner briefly; review waits it out instead of retrying every tick.
+    if (gate === "ai" && plannerBusy(await this.plannerRest())) return;
     this.gauntletRunning = true;
     const pr = item.prNumber!;
     const inspection = item.inspection!;
@@ -2558,8 +2852,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (jobs.some(j => j.refreshBase && j.headSha === headSha && j.status !== "completed") && !jobs.some(j => j.status === "completed" && j.headSha === headSha)) {
         return;
       }
-      const builder = job?.harness === "codex" ? "Codex" : job?.harness === "claude_code" ? "Claude Code" : job?.harness === "local" ? "Local model" : "the planner";
-      const lane = laneOf(files.map((f) => f.filename)) ?? undefined;
+      const builder = job?.harness === "codex" ? "Codex" : job?.harness === "muse_code" ? "Muse Code" : job?.harness === "claude_code" ? "Claude Code" : job?.harness === "local" ? "Local model" : "the planner";
+      const lane = laneOf(changedPaths(files)) ?? undefined;
       const currentInLane = async () => {
         if (!current()) return;
         const refreshed = await inspectPullRequest(token, this.meta!.repo, pr, headSha, this.state!.baseBranch);
@@ -2576,23 +2870,23 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         for (const r of ran) this.log(r.passed ? "success" : "warn", `${techById(r.id)?.name ?? r.id} ${r.passed ? "passed" : "sent back"} PR #${pr}: ${r.reason}`, item.id);
         if (checked.state === "rejected") await this.noteRework(checked);
       } else if (gate === "verify") {
-        const v = verifyFromDiff(files.map((f) => f.filename), !!job, job?.proof);
+        const v = verifyFromDiff(files.map((f) => f.filename), !!job, job?.proof, changedPaths(files));
         const now = await currentInLane();
         if (!now) return;
         advanced = setStage(now, "verify", v.passed ? "passed" : "rework", v.reason);
         await this.patch({ items: [advanced] });
-        this.log(v.passed ? "success" : "warn", `Verify bay ${v.passed ? "passed" : "sent back"} PR #${pr}: ${v.reason}`, item.id);
+        this.log(v.passed ? "success" : "warn", `Checks: proof ${v.passed ? "passed" : "sent back"} PR #${pr}: ${v.reason}`, item.id);
         if (!v.passed) await this.noteRework(now);
       } else {
-        this.log("info", `AI review is reading PR #${pr} (${builder} built it, a different model reviews).`, item.id);
+        this.log("info", `Review is reading PR #${pr} (${builder} built it, a different model reviews).`, item.id);
         // Docs that name code get that code, read at the PR head, so the reviewer can check the examples work.
         const context = (await Promise.all(referencedFiles(files).map(async path => {
-          const content = await fileContent(token, this.meta!.repo, path, headSha).catch(() => null);
+          const content = await fileContent(token, this.meta!.repo, path, headSha).catch(error => { throw new RepositoryReadUnavailable(error); });
           return { path, content: content === null ? undefined : redactText(content).slice(0, 6000) };
         })))
           .filter((c): c is { path: string; content: string } => typeof c.content === "string");
         // The reviewer can read, list and search the repo at the PR head, the issue thread and CI before it rules.
-        const box = await this.sparkToolbox(token, item, headSha, await treePaths(token, this.meta.repo, headSha).catch(() => files.map(f => f.filename)), { headSha, diff: async () => diffText(files) });
+        const box = await this.sparkToolbox(token, item, headSha, await treePaths(token, this.meta.repo, headSha).catch(error => { throw new RepositoryReadUnavailable(error); }), { headSha, diff: async () => diffText(files) });
         const record = async (step: SparkStep) => this.broadcast({ type: "log", level: "info", text: step.result, at: step.at, actor: "spark", tool: step.tool, reason: step.reason, itemId: item.id });
         const verdict = await this.think("review", { title: `PR #${pr}: ${item.title}`, itemId: item.id, target: "review-1" }, () => reviewDiff(this.sparkEnv(), { title: item.title, body: item.body ?? "", builder }, diffText(files), context, box, record),
           v => ({ outcome: `${v.verdict === "pass" ? `Passed ${builder}'s PR` : `Sent ${builder}'s PR back`}${v.steps?.length ? ` after ${v.steps.length - 1} ${v.steps.length === 2 ? "look" : "looks"} at the repo` : ""}`, reason: v.reason }));
@@ -2603,16 +2897,24 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         if (!afterComment) return;
         advanced = setStage(afterComment, "ai", verdict.verdict === "pass" ? "passed" : "rework", verdict.reason);
         await this.patch({ items: [advanced] });
-        this.log(verdict.verdict === "pass" ? "success" : "warn", `AI review ${verdict.verdict === "pass" ? "passed" : "sent back"} PR #${pr}: ${verdict.reason}`, item.id);
+        this.log(verdict.verdict === "pass" ? "success" : "warn", `Review ${verdict.verdict === "pass" ? "passed" : "sent back"} PR #${pr}: ${verdict.reason}`, item.id);
         if (verdict.verdict !== "pass") await this.noteRework(now);
       }
       await this.scheduleTick();
       return advanced;
     } catch (e) {
-      if (e instanceof BudgetError || e instanceof RateLimitError) {
-        if (e instanceof RateLimitError) this.githubRest(e.retryAt);
-        this.log("warn", `Station paused: ${e.message}`, item.id);
+      if (e instanceof BudgetError || e instanceof RateLimitError || e instanceof RepositoryReadUnavailable) {
+        const limit = e instanceof RepositoryReadUnavailable ? e.cause : e;
+        if (limit instanceof RateLimitError) this.githubRest(limit.retryAt);
+        // Say what is actually waiting, in player words: the AI cap pauses Review (not "reviews keep working"), GitHub's limit pauses the read.
+        const station = gate === "ai" ? "Review" : "Checks";
+        this.log("warn", e instanceof BudgetError ? `${station} is paused: Shippy is done thinking for today. PR #${pr} gets ${gate === "ai" ? "reviewed" : "checked"} at 00:00 UTC, on its own.`
+          : `${station} is waiting on GitHub for a moment. PR #${pr} picks up again on its own.`, item.id);
         return; // Keep pending proof; resource waiting is not a failed code review.
+      }
+      if (gate === "ai" && plannerBusy(await this.plannerRest()) && plannerBusy({ kind: planningFailureKind(e) })) {
+        this.log("info", PLANNER_BUSY_LINE, item.id);
+        return; // A slow or busy planner is not a failed code review; the same PR head is reviewed after the rest.
       }
       const latest = current();
       if (latest) {
@@ -2620,7 +2922,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         await this.patch({ items: [failed] });
         await this.noteRework(failed);
       }
-      this.log("warn", `The ${gate === "ai" ? "AI review" : gate === "checks" ? "researched checks" : "verify bay"} couldn't run on PR #${pr} (${e instanceof Error ? e.message : "unknown error"}). The player can approve another attempt.`, item.id);
+      this.log("warn", `${gate === "ai" ? "Review" : gate === "checks" ? "The researched checks" : "The proof check"} couldn't run on PR #${pr} (${e instanceof Error ? e.message : "unknown error"}). The player can approve another attempt.`, item.id);
     } finally {
       this.gauntletRunning = false;
     }
@@ -2633,14 +2935,14 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   private async postReviewComment(token: string, pr: number, body: string, itemId?: string, tries = 0): Promise<boolean> {
     try {
       await gh(`/repos/${this.meta!.repo}/issues/${pr}/comments`, token, { method: "POST", body: JSON.stringify({ body }) });
-      if (tries) this.log("success", `AI review comment posted on PR #${pr} after ${tries} ${tries === 1 ? "retry" : "retries"}.`, itemId);
+      if (tries) this.log("success", `Review comment posted on PR #${pr} after ${tries} ${tries === 1 ? "retry" : "retries"}.`, itemId);
       return true;
     } catch (e) {
       const why = e instanceof Error ? e.message : "unknown error";
       const queue = (await this.ctx.storage.get<PendingComment[]>("pendingReviewComments")) ?? [];
       const giveUp = tries + 1 >= REVIEW_COMMENT_TRIES;
       await this.accountPut("pendingReviewComments", [...queue.filter(c => c.pr !== pr), ...(giveUp ? [] : [{ pr, body, itemId, tries: tries + 1 }])]);
-      this.log(giveUp ? "error" : "warn", giveUp ? `AI review comment on PR #${pr} still won't post (${why}). Gave up after ${REVIEW_COMMENT_TRIES} tries; check the app's pull request and issue write permission.` : `AI review comment on PR #${pr} didn't post (${why}). Retrying.`, itemId);
+      this.log(giveUp ? "error" : "warn", giveUp ? `Review comment on PR #${pr} still won't post (${why}). Gave up after ${REVIEW_COMMENT_TRIES} tries; check the app's pull request and issue write permission.` : `Review comment on PR #${pr} didn't post (${why}). Retrying.`, itemId);
       await this.note({ decision: "review", by: "spark", ms: 0, itemId, title: `Comment on PR #${pr}`, outcome: giveUp ? "Verdict made, but the comment never reached GitHub" : "Verdict made, comment didn't post yet; retrying", reason: why });
       return false;
     }
@@ -2715,7 +3017,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         // A scarred job never goes back to geothermal: the retry takes a subscription.
         const subs = (await this.ctx.storage.get<{ harnesses: RunnerJob["harness"][] }>("runnerPresence"))?.harnesses.filter(h => h !== "local") ?? [];
         const builder = last !== "local" ? last : subs[0] ?? "codex";
-        await this.publishGauntletMove(reworkMove(item, now, builder as "codex" | "claude_code"));
+        await this.publishGauntletMove(reworkMove(item, now, builder as "codex" | "claude_code" | "muse_code"));
         continue;
       }
     }
@@ -2738,25 +3040,31 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const ready = optionId === "launch" && item.state === "on_pad" && item.inspection?.state === "passed" && stationsPassed(item.inspection);
     const overrule = optionId === "overrule" && item.state === "rejected";
     if (!ready && !overrule) return true;
-    await this.launch(item, overrule ? "overrule" : "player");
+    const action = move.options.find(o => o.id === optionId)?.actions.find(a => a.tool === "request_merge");
+    if (!action || action.args.pr !== item.prNumber || (action.args.overrule === true) !== overrule) return true;
+    await this.launch(item, overrule ? "overrule" : "player", action.args.headSha);
     return true;
   }
 
   /** Merges at the merge gate: the player's tap, an overrule, or a launch permit doing it on its own. */
-  private async launch(item: Item, by: "player" | "overrule" | "autonomy"): Promise<void> {
+  private async launch(item: Item, by: "player" | "overrule" | "autonomy", approvedHead: unknown): Promise<void> {
     if (by === "autonomy" && !(await flagEnabled(this.env, "permits"))) return;
     if (!item.prNumber || !this.meta) return;
-    const launchingInspection = this.state!.items.find(current => current.id === item.id)?.inspection;
+    const launchingItem = this.state!.items.find(current => current.id === item.id && current.prNumber === item.prNumber);
+    const launchingInspection = launchingItem?.inspection;
     try {
+      if (typeof approvedHead !== "string" || !/^[a-f0-9]{40}$/.test(approvedHead) || launchingItem !== item || launchingInspection?.headSha !== approvedHead) throw new Error("Current checks changed since this approval was offered.");
       const token = await installationToken(this.env, this.meta.installationId);
       const head = (await gh<{ head: { sha: string } }>(`/repos/${this.meta.repo}/pulls/${item.prNumber}`, token)).head.sha;
+      if (!launchingItem || !this.state!.items.some(current => current === launchingItem && current.inspection === launchingInspection)) throw new Error("Current checks changed while launch was being refreshed.");
+      if (approvedHead !== head) {
+        await this.patch({ items: [{ ...item, state: "inspecting", machineId: "ci-1", inspection: freshInspection(head), updatedAt: Date.now() }] });
+        throw new Error("The PR changed after its checks ran. It goes back through the gauntlet.");
+      }
       if (by !== "overrule") {
         if (!stationsPassed(item.inspection)) throw new Error("Current checks require complete station receipts.");
-        if (item.inspection?.headSha !== head) {
-          await this.patch({ items: [{ ...item, state: "inspecting", machineId: "ci-1", inspection: freshInspection(head), updatedAt: Date.now() }] });
-          throw new Error("The PR changed after its checks ran. It goes back through the gauntlet.");
-        }
         const checks = await inspectPullRequest(token, this.meta.repo, item.prNumber, head, this.state!.baseBranch);
+        if (!launchingItem || !this.state!.items.some(current => current === launchingItem)) throw new Error("Current checks changed while launch was being refreshed.");
         if (checks.stale) throw new Error("The PR changed while its checks were being refreshed.");
         if (checks.state !== "passed") {
           const current = checks.state === "failed" ? setStage(item, "ci", "rework", checks.summary) : { ...item, state: "inspecting" as const, machineId: "ci-1", inspection: freshInspection(head), updatedAt: Date.now() };
@@ -2769,7 +3077,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         // A permit belongs to a lane on this head, never an item's historical
         // classification. Bracket the file read with head checks; merge also
         // supplies the expected SHA so a subsequent push cannot win the race.
-        const lane = laneOf((await prFiles(token, this.meta.repo, item.prNumber)).map(f => f.filename)) ?? undefined;
+        const lane = laneOf(changedPaths(await prFiles(token, this.meta.repo, item.prNumber))) ?? undefined;
         const latestHead = (await gh<{ head: { sha: string } }>(`/repos/${this.meta.repo}/pulls/${item.prNumber}`, token)).head.sha;
         if (latestHead !== head) throw new Error("The PR changed while its launch permit was being checked.");
         if (lane !== item.lane || !mayAutoLaunch(await this.permitBook(), { ...item, lane })) {
@@ -2784,17 +3092,20 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         await this.offerGauntletMove();
         throw new Error(`Current checks: ${readiness.reason}`);
       }
-      if (by !== "overrule" && !this.state!.items.some(current => current.id === item.id && current.prNumber === item.prNumber && current.inspection === launchingInspection && current.inspection?.headSha === head && current.state === "on_pad" && stationsPassed(current.inspection))) {
+      if (!this.state!.items.some(current => current.id === item.id && current.prNumber === item.prNumber && current.inspection === launchingInspection && current.inspection?.headSha === approvedHead && (by === "overrule" ? current.state === "rejected" : current.state === "on_pad" && stationsPassed(current.inspection)))) {
         throw new Error("Current checks changed while launch was being refreshed.");
       }
       const mergeSha = await mergePullRequest(token, this.meta.repo, item.prNumber, head, item.title);
-      const reason = by === "overrule" ? "You overruled the gauntlet and merged." : by === "autonomy" ? `Launch permit: ${item.lane}. Every station passed on this commit.` : "You merged at the merge gate.";
+      const reason = by === "overrule" ? "You overruled the gauntlet and merged." : by === "autonomy" ? `Launch permit: ${item.lane}. Every station passed on this commit.` : "You merged at Gate.";
       const stages = (item.inspection?.stages ?? []).map((st) => (st.gate === "human" ? { ...st, state: "passed" as const, reason } : st));
-      await this.patch({ items: [{ ...item, inspection: item.inspection && { ...item.inspection, stages, humanApproved: by !== "autonomy" }, updatedAt: Date.now() }] });
+      // A merge webhook may already have launched this item. Add approval to the
+      // current state, never the old pad snapshot, before publishing our launch.
+      const current = this.state!.items.find(candidate => candidate.id === item.id && candidate.prNumber === item.prNumber);
+      if (current) await this.patch({ items: [{ ...current, inspection: item.inspection && { ...item.inspection, stages, humanApproved: by !== "autonomy" } }] }, true);
+      await this.onPullClosed(item.prNumber, true, mergeSha);
       this.broadcast({ type: "log", level: "success", text: by === "autonomy" ? `Launching #${item.prNumber} on its own.` : `Launching #${item.prNumber}.`, at: Date.now(), actor: by === "autonomy" ? "spark" : "player", tool: "request_merge", approvedBy: by === "autonomy" ? "autonomy" : "player", reason, itemId: item.id });
       if (this.state!.move?.itemId === item.id) await this.publishGauntletMove(null);
       if (this.state!.bottleneck?.stationId === "gate-1") await this.refreshDecisions();
-      await this.onPullClosed(item.prNumber, true, mergeSha);
     } catch (err) {
       if (by === "autonomy") {
         await this.ctx.storage.delete(`autoLaunch:${item.id}`);
@@ -2847,8 +3158,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     }
   }
 
-  /** Someone opened or merged a revert of a watched launch. */
-  private async orbitRevert(pr: { number?: number; title?: string; body?: string | null; html_url?: string }): Promise<void> {
+  /** Only a confirmed merge into the tracked branch can undo a watched launch. */
+  private async orbitRevert(pr: { number?: number; title?: string; body?: string | null; html_url?: string; merged?: boolean; base?: { ref: string } }): Promise<void> {
+    // Signed delivery authenticates GitHub, not the author's title/body claim.
+    if (pr.merged !== true || !pr.base?.ref || pr.base.ref !== this.state!.baseBranch) return;
     const reverted = this.meta && revertedPr(pr, this.meta.repo);
     const watched = reverted ? watchForRevert(this.state!.items, reverted) : undefined;
     if (watched) await this.orbitTrip(watched, "revert", `Revert PR #${pr.number} undoes it`, pr.html_url);
@@ -2876,7 +3189,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
   private async savePermits(book: PermitBook): Promise<void> {
     await this.accountPut("permits", book);
-    await this.patch({ autonomy: autonomyView(book, await flagEnabled(this.env, "autonomy")) });
+    await this.patch({ autonomy: autonomyView(book, await this.autonomyFlags()) });
+  }
+
+  /** Permits and levels are parked (src/flags.ts): the player's one trust meter is learned cards. */
+  private async autonomyFlags(): Promise<{ levels: boolean; permits: boolean }> {
+    return { levels: await flagEnabled(this.env, "autonomy"), permits: await flagEnabled(this.env, "permits") };
   }
 
   /** A station sent work back. Its lane's streak resets and any permit there is revoked. */
@@ -2900,7 +3218,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const book = await this.permitBook();
     for (const item of this.state?.items.filter((i) => mayAutoLaunch(book, i)) ?? []) {
       if ((await this.ctx.storage.get<string>(`autoLaunchFailed:${item.id}`)) === item.inspection?.headSha) continue;
-      await this.launch(item, "autonomy");
+      await this.launch(item, "autonomy", item.inspection?.headSha);
     }
   }
 
@@ -2993,7 +3311,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (await flagOptedOut(this.env, "autonomy")) return;
     for (const card of [...this.openMoves!]) {
       const optionId = learnOption(card);
-      const key = learnKey(card, moveScope(card, s));
+      const scope = learnScope(card, moveScope(card, s), await this.runnerJobs());
+      if (scope === null) continue;
+      const key = learnKey(card, scope);
       if (!optionId || !isLearned(book, key) || suppressed(book, card)) continue;
       // The player who taught it decides: their own opt-out of learning or autonomy stops it.
       const by = book.auto![key].by;
@@ -3026,7 +3346,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   /** The player wants to be asked again for this kind of card. */
   private async unlearn(key: string): Promise<void> {
     await this.decisionData();
-    if (!forget(this.deckBook!, key)) return;
+    if (!(key === "*" ? forgetAll(this.deckBook!) : forget(this.deckBook!, key))) return;
     await this.accountPut("deckBook", this.deckBook);
     this.log("info", "Got it. The factory asks you about these again.");
     await this.refreshDecisions();
@@ -3246,7 +3566,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (request.headers.get("origin") !== new URL(request.url).origin) return new Response("invalid origin", { status: 403 });
     const env = this.env as FactoryEnv & { TEST_USERS?: string; FIXTURE_INSTANCE?: string };
     const timing = env.PUBLIC_URL === "https://shiptorio.dev" && env.TEST_USERS === "on" && env.FIXTURE_INSTANCE === "shiptorio-fixture" ? new PrivateSocketTiming() : undefined;
-    const auth = await measureSocket(timing, "do_auth", () => browserSocketAuth(request, this.env));
+    const auth = await measureSocket(timing, "do_auth", () => browserSocketAuth(request, timing ? { ...this.env, [PRIVATE_SOCKET_TIMING]: timing } as FactoryEnv : this.env));
     const response = await inTrace({ requestId: request.headers.get("X-Request-ID") ?? crypto.randomUUID(), userId: auth?.userId === undefined ? undefined : accountIdentity(auth.userId) }, this.env, task => this.ctx.waitUntil(task), () => this.#socketFetch(request, auth, timing));
     return timing && auth?.user && auth.user.id < 0 ? timingResponse(response, timing) : response;
   }
@@ -3261,7 +3581,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await measureSocket(timing, "do_load", () => this.load());
     const adminView = await measureSocket(timing, "do_admin_view", () => readAdminView(this.env,request));
     if (viewCookieValue(request.headers.get("cookie")) && !adminView) return new Response("Admin view expired",{status:403});
-    if (!validRepo(repo) || repo !== this.meta?.repo.toLowerCase() || !(adminView?.repo === repo) && !await measureSocket(timing, "do_repo_access", () => repoAccess(this.env, user, repo))) return new Response("repository access denied", { status: 403 });
+    if (!validRepo(repo) || repo !== this.meta?.repo.toLowerCase() || !(adminView?.repo === repo) && !await measureSocket(timing, "do_repo_access", () => repoAccess(timing ? { ...this.env, [PRIVATE_SOCKET_TIMING]: timing } as FactoryEnv : this.env, user, repo))) return new Response("repository access denied", { status: 403 });
     Object.assign(auth, { repo, user, ...(adminView ? {adminView:adminView.idHash} : {}) });
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(server, ["web"]);
@@ -3270,13 +3590,19 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { server.close(1008, "Sign in again"); }
     else if (state) {
-      const snapshot = this.redactor.value(structuredClone({ type: "snapshot", state } satisfies ServerToWeb));
-      server.send(await measureSocket(timing, "do_frame", () => this.browserFrames.frame(snapshot, false)));
+      // Derived on reconnect from durable jobs, rather than a stored/optimistic step counter.
+      const [jobs, presence] = await measureSocket(timing, "do_projection", () => Promise.all([this.runnerJobs(), this.ctx.storage.get<{ harnesses: string[]; seenAt: number }>("runnerPresence")]));
+      const pipeline = projectPipeline(state, jobs, !!presence?.harnesses.length && Date.now() - presence.seenAt < 20000);
+      const redact = () => this.redactor.value(structuredClone({ type: "snapshot", state: { ...state, pipeline, liveBottleneck: projectLiveBottleneck(state, jobs, Date.now()) } } satisfies ServerToWeb));
+      const snapshot = timing ? timing.sync("do_redaction", redact) : redact();
+      const frame = await measureSocket(timing, "do_frame", () => this.browserFrames.frame(snapshot, false));
+      if (timing) timing.sync("do_send", () => server.send(frame));
+      else server.send(frame);
     }
     else server.send(JSON.stringify({ type: "log", level: "warn", text: "No factory yet. Is the GitHub App installed on this repo?", at: Date.now() }));
     // Restoring the map must not wait for a new planner turn (or provider latency).
     if (!adminView && state) this.ctx.waitUntil((async () => {
-      if (!(await this.githubStopped())) { await this.decisionData(); beginCheckin(this.deckBook!); await this.refreshDecisions(); }
+      if (!(await this.githubStopped())) { await this.decisionData(); if (await this.playerBack()) beginCheckin(this.deckBook!); await this.refreshDecisions(); }
     })());
     // The initial snapshot was authorized above. Other sockets may still be
     // revalidating queued frames; they must not hold this handshake open.
@@ -3328,13 +3654,25 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const s = this.state!;
     if (msg.type === "undo") { await this.undoDecision(msg.actionId); return; }
     if (msg.type === "unlearn") { await this.unlearn(msg.key); return; }
+    if (msg.type === "brain_look") { await this.brainLook(); return; }
     if (msg.type === "choose_move" || msg.type === "defer_move" || msg.type === "dismiss_move") {
       await this.decisionData();
+      await this.accountPut("deckSeenAt", Date.now());
       const card = (s.deck ?? (s.move ? [s.move] : [])).find(m => m.id === msg.moveId);
       if (!card) return; // stale or forged card ids never execute
       const original = card.id.endsWith(":deferred") ? this.openMoves!.find(m => `${m.id}:deferred` === card.id) ?? Object.values(this.deckBook!.decisions).find(d => `${d.move.id}:deferred` === card.id)?.move : card;
       if (!original) return;
-      if (msg.type === "defer_move") { await this.logTap(card, "later"); await this.swipe(original, "defer"); return; }
+      if (msg.type === "defer_move") {
+        const apply = async () => {
+          const current = (s.deck ?? (s.move ? [s.move] : [])).find(m => m.id === msg.moveId);
+          if (!current) return;
+          const intent = msg.intentId ? {id: msg.intentId, userId: auth.user!.id, scope: await issueRevision(original.id, JSON.stringify([original.plan, original.locked, original.options]))} : undefined;
+          if (!intent || !hasDeferReceipt(this.deckBook!, original, intent)) await this.logTap(current, "later");
+          await this.swipe(original, "defer", intent);
+        };
+        if (msg.intentId) await this.ctx.blockConcurrencyWhile(apply); else await apply();
+        return;
+      }
       if (msg.type === "dismiss_move") { await this.logTap(card, "never", undefined, msg.why); await this.swipe(original, msg.why); return; }
       const option = card.options.find(o => o.id === msg.optionId);
       if (!option) return;
@@ -3346,6 +3684,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       await this.logTap(card, option.recommended ? "continue" : "other", option.id);
       s.move = card;
       const action = option.actions[0];
+      if (action?.tool === "approve_runner_job") log("info", "factory.runner_approval_received", { itemId: card.itemId });
       if (action?.tool === "research" && !(await flagEnabled(this.env, "research", auth.login))) return;
       if (card.kind === "automate" && msg.optionId === "allow" && !(await flagEnabled(this.env, "permits", auth.login))) return;
       if (action?.tool === "run_missing_check") {
@@ -3359,17 +3698,20 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         // docs/LEARN.md: only first-time work counts toward teaching the factory; judged before the tap changes it.
         const fresh = freshWork(card, s.items.find(i => i.id === card.itemId), jobsBefore);
         const handled = await this.chooseBrainMove(card, option) || await this.chooseSupportMove(card, option, (tool, ticketId, draftHash) => tool === "send_customer_reply" ? playerTap(ticketId, draftHash, playerLogin(auth)) : null) || await this.chooseResearchMove(msg.moveId, msg.optionId) || await this.chooseGoalMove(msg.moveId, msg.optionId) || await this.chooseLevelMove(msg.moveId, msg.optionId) || await this.choosePermitMove(msg.moveId, msg.optionId) || await this.chooseGauntletMove(msg.moveId, msg.optionId);
-        if (!handled) await this.chooseRunnerMove(card, msg.optionId);
-        const consumed = !this.openMoves!.some(m => m.id === card.id) || before !== JSON.stringify(await this.runnerJobs());
+        const runnerConsumed = handled ? false : await this.chooseRunnerMove(card, msg.optionId);
+        // Only the invocation that committed a runner transition may teach approval.
+        // Another socket can observe that transition too; observation is not a second tap.
+        const consumed = handled ? !this.openMoves!.some(m => m.id === card.id) || before !== JSON.stringify(await this.runnerJobs()) : runnerConsumed;
+        if (!consumed && action?.tool === "approve_runner_job") log("warn", "factory.runner_approval_not_applied", { itemId: card.itemId, handledElsewhere: handled });
         if (consumed && option.recommended) {
           await this.recordApproval(card.kind ?? "unblock", moveScope(card, s));
           noteYes(this.deckBook!, card.kind ?? "unblock", moveScope(card, s));
-          if (await flagEnabled(this.env, "learn", playerLogin(auth)) && learnFromYes(this.deckBook!, card, moveScope(card, s), Date.now(), fresh, playerLogin(auth)))
+          if (await flagEnabled(this.env, "learn", playerLogin(auth)) && learnFromYes(this.deckBook!, card, learnScope(card, moveScope(card, s), jobsBefore), Date.now(), fresh, playerLogin(auth)))
             this.broadcast({ type: "log", level: "success", text: "Learned. The factory does these on its own now.", at: Date.now(), itemId: card.itemId, actor: "player", reason: "You said yes 3 times in a row. Turn it off in Make it yours." });
           await this.accountPut("deckBook", this.deckBook);
         } else if (consumed && learnOption(card)) {
           // Edit: the player changed the suggestion, so the streak starts over.
-          resetLearn(this.deckBook!, card.kind ?? "unblock", moveScope(card, s));
+          resetLearn(this.deckBook!, card.kind ?? "unblock", learnScope(card, moveScope(card, s), jobsBefore));
           await this.accountPut("deckBook", this.deckBook);
         }
       }
@@ -3488,7 +3830,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   private async reliabilityFailure(operation: string, error: unknown, itemId?: string): Promise<void> {
     this.log("error", `${operation}: ${String(error)}`, itemId);
     await this.accountPut(`reliabilityFailure:${operation}`, { at: Date.now(), error: String(error).slice(0, 500), itemId });
-    if (this.state && this.meta) await this.publishDecision({ id: `reliability:${operation}`, itemId, title: "Factory work needs attention", why: `${operation} failed. Check the connection or worker before trying again.`, stage: "inspect", kind: "unblock", createdAt: Date.now(), options: [{ id: "later", label: "Look later", recommended: true, actions: [] }] });
+    if (this.state && this.meta) await this.publishDecision({ id: `reliability:${operation}`, itemId, title: "Factory work needs attention", why: `${RELIABILITY_WORDS[operation.split(":")[0] as keyof typeof RELIABILITY_WORDS] ?? "Background work"} failed. Check your connections and engine, then try again.`, stage: "inspect", kind: "unblock", createdAt: Date.now(), options: [{ id: "later", label: "Look later", recommended: true, actions: [] }] });
   }
 
   private async watchdog(): Promise<void> {
@@ -3549,8 +3891,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     for (const item of batch) {
       try {
         const pr = await gh<{ state: string; merged: boolean; merge_commit_sha?: string; head: { sha: string } }>(`/repos/${this.meta.repo}/pulls/${item.prNumber}`, token);
-        if (pr.merged) await this.onPullClosed(item.prNumber!, true, pr.merge_commit_sha);
-        else if (pr.state === "closed") await this.onPullClosed(item.prNumber!, false);
+        // A confirmed merge belongs to this immutable PR number even if another
+        // tick refreshed the item while GitHub replied. onPullClosed rechecks the
+        // current PR and durable launch credit; only open-PR results need identity.
+        if (pr.merged) { await this.onPullClosed(item.prNumber!, true, pr.merge_commit_sha); continue; }
+        if (!this.state!.items.some(current => current === item && current.state !== "launched")) continue;
+        if (pr.state === "closed") await this.onPullClosed(item.prNumber!, false);
         else {
           if (item.inspection && item.inspection.headSha !== pr.head.sha) await this.patch({ items: [{ ...item, lane: undefined, state: "inspecting", machineId: "ci-1", inspection: freshInspection(pr.head.sha), updatedAt: now }] });
           await this.onCheckSuite([item.prNumber!], false, "Periodic GitHub reconciliation", pr.head.sha);
@@ -3603,6 +3949,15 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       return;
     }
     try { await this.load(); } catch (error) { if (this.accountErased) return; throw error; }
+    if (this.meta) {
+      const access = await reconcileFactoryGitHubAccess(this.env, this.meta, await this.ctx.storage.get<number>("githubAccessCheckedAt"));
+      if (access.stopped) {
+        if (access.archivedAt !== undefined) await this.archiveGitHub(access.reason, access.archivedAt);
+        else await this.pauseGitHub(access.reason);
+        return;
+      }
+      if (access.checkedAt !== undefined) await this.accountPut("githubAccessCheckedAt", access.checkedAt);
+    }
     return inTrace({ requestId: crypto.randomUUID(), repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), async () => {
       try { await this.tick(); } catch (error) { report(error, "factory.alarm_failed"); throw error; }
     });
@@ -3613,9 +3968,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     this.batchingDecisions = true;
     try {
     await this.load();
+    // Paused factories retain queued deliveries without spending provider calls.
+    if (await adminPaused(this.env.DB,this.meta?.repo)) { await this.accountAlarm(Date.now()+TICK_MS); return; }
     await this.processDeliveries();
     if (await this.githubStopped()) return;
-    if (await adminPaused(this.env.DB,this.meta?.repo)) { await this.accountAlarm(Date.now()+TICK_MS); return; }
     if (!(await this.load())) return;
     await this.githubGuard("runGauntlet", () => this.runGauntletBurst());
     await this.guard("pollPostHog", () => this.pollPostHog());
@@ -3623,6 +3979,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.githubGuard("retryReviewComments", () => this.retryReviewComments());
     await this.guard("planRunnerJobs", () => this.planRunnerJobs());
     await this.githubGuard("reconcileGitHub", () => this.reconcileGitHub());
+    await this.guard("reconnectMines", () => this.reconnectMines());
     await this.guard("watchdog", () => this.watchdog());
     const s = this.state!;
     await this.patch({ tick: s.tick + 1 });
@@ -3635,7 +3992,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         // Without Spark, a keyword guess shouldn't override a stack frame or route a mine already placed.
         const district = (!t?.reason && item.district !== "/" ? item.district : t?.district) ?? item.district;
         await this.patch({ items: [{ ...item, kind: t?.kind ?? item.kind, district, state: "queued", updatedAt: now }] });
-        this.broadcast({ type: "log", level: "info", text: `Splitter sorted "${item.title}" as ${t?.kind ?? item.kind} → ${district}`, at: Date.now(), itemId: item.id, ...(t?.reason ? { actor: "spark" as const, tool: "triage", reason: t.reason } : {}) });
+        this.broadcast({ type: "log", level: "info", text: `Planner sorted "${item.title}" as ${t?.kind ?? item.kind} → ${district}`, at: Date.now(), itemId: item.id, ...(t?.reason ? { actor: "spark" as const, tool: "triage", reason: t.reason } : {}) });
       } else if (item.state === "rejected") {
         if (item.attempts >= MAX_ATTEMPTS) continue; // stays rejected until a human steps in
         if (item.branch?.startsWith("shiptorio/runner-")) continue; // local builds rework only with player approval
@@ -3667,7 +4024,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
         });
         if (!s.move) {
-          s.move = { id: crypto.randomUUID(), title: "Your computer writes the code. Plug it in to start building.", why: "The factory plans the work. Claude Code or Codex on your computer writes the code: paste one line, once.", stage: "resources", itemId: item.id, createdAt: now, options: [{ id: "connect", label: "Connect a local agent", recommended: true, actions: [{ tool: "connect_source", args: { kind: "claude" }, reason: "No subscription builder is connected." }] }] };
+          s.move = { id: crypto.randomUUID(), title: "Your computer writes the code. Plug it in to start building.", why: "The factory plans the work. Codex or Meta Muse Code on your computer writes the code: paste one line, once.", stage: "resources", itemId: item.id, createdAt: now, options: [{ id: "connect", label: "Connect a local agent", recommended: true, actions: [{ tool: "connect_source", args: { kind: "claude" }, reason: "No subscription builder is connected." }] }] };
           await this.publishDecision(s.move);
         }
         continue;
@@ -3747,7 +4104,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const task = { title: item.title, body: item.body ?? "", district: item.district, failure: item.failure };
       const ref = item.branch ?? s.baseBranch;
 
-      this.log("info", `Assembler ${machineId} is reading the code`, itemId);
+      this.log("info", `Builder ${machineId} is reading the code`, itemId);
       const wanted = await pickFiles(this.sparkEnv(), task, inDistrict.length ? inDistrict : paths);
       const files = (
         await Promise.all(wanted.map(async (path) => ({ path, content: await fileContent(token, this.meta!.repo, path, ref) })))
@@ -3759,7 +4116,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       buildStarted = true;
       await this.ctx.storage.delete(`planningRetry:${itemId}`);
       await this.patch({ items: [{ ...get(), attempts: get().attempts + 1, updatedAt: Date.now() }] });
-      this.log("info", `Assembler ${machineId} is writing a fix`, itemId);
+      this.log("info", `Builder ${machineId} is writing a fix`, itemId);
       const fix = await writeFix(this.sparkEnv(), task, files);
       const bad = fix.changes.find((c) => !SAFE_PATH.test(c.path));
       if (bad) throw new Error(`refused to write ${bad.path}`);
@@ -3775,7 +4132,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           head: branch,
           base: s.baseBranch,
           title: fix.title,
-          body: `${fix.summary}\n\n${issueNumber ? `Closes #${issueNumber}\n\n` : ""}_Built by a Muse Spark assembler in Shiptorio._`,
+          body: `${fix.summary}\n\n${issueNumber ? `Closes #${issueNumber}\n\n` : ""}_Built by Muse Spark at Builder in Shiptorio._`,
         });
         prNumber = pr.number;
         prUrl = pr.html_url;
@@ -3784,7 +4141,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         items: [{ ...get(), state: "inspecting", branch, prNumber, prUrl, updatedAt: Date.now() }],
         machines: machine() ? [{ ...machine()!, state: "idle" }] : [],
       });
-      this.log("success", `PR #${prNumber} is on the belt to the inspector`, itemId);
+      this.log("success", `PR #${prNumber} is on the belt to Checks`, itemId);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (!buildStarted) {
@@ -3795,7 +4152,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         items: [{ ...get(), state: buildStarted ? "rejected" : "queued", failure: msg, updatedAt: Date.now() }],
         machines: machine() ? [{ ...machine()!, state: "idle" }] : [],
       });
-      this.log("error", `Assembler ${machineId} failed: ${msg}`, itemId);
+      this.log("error", `Builder ${machineId} failed: ${msg}`, itemId);
     } finally {
       this.running.delete(itemId);
       await this.scheduleTick();

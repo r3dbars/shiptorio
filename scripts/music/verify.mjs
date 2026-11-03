@@ -28,7 +28,7 @@ try {
     console.log('Enable music');
     await page.getByRole('button',{name:'MUSIC OFF',exact:true}).click();
     await page.waitForTimeout(4000);
-    const engineUrl=requests.find(u=>u.includes('/src/sound/engine.ts'));
+    const engineUrl=requests.find(u=>u.includes('/src/deck2d/sound/engine.ts'));
     const state=()=>page.evaluate(async url=>{const {sound}=await import(url);return {...sound.musicState(),settings:sound.settings};},engineUrl);
     const playing=await state();
     if(!playing.attached || playing.scheduledNotes<=0) throw Error(`Music did not start: ${JSON.stringify(playing)}`);
@@ -60,7 +60,7 @@ try {
   await legacyPage.locator('canvas').first().waitFor();
   await legacyPage.mouse.click(10,10);
   await legacyPage.waitForTimeout(500);
-  const legacy=await legacyPage.evaluate(async url=>{const {sound}=await import(url);return sound.musicState();},legacyRequests.find(u=>u.includes('/src/sound/engine.ts')));
+  const legacy=await legacyPage.evaluate(async url=>{const {sound}=await import(url);return sound.musicState();},legacyRequests.find(u=>u.includes('/src/deck2d/sound/engine.ts')));
   if(legacy.version!==1 || legacy.state!=='legacy' || !legacy.attached || legacyRequests.some(u=>/foundry(Player|Score)/.test(u))) throw Error('Old score comparison failed');
   results.legacy={version:legacy.version,state:legacy.state,attached:legacy.attached,noFoundryRequest:true};
   await legacyContext.close();
@@ -70,7 +70,7 @@ try {
   // Render the exact score/instruments offline and write a standard mono PCM WAV.
   console.log("Rendering audition");
   const pcm=await page.evaluate(async()=>{
-    const {renderFoundryPreview}=await import('/src/sound/foundryScore.ts');
+    const {renderFoundryPreview}=await import('/src/deck2d/sound/foundryScore.ts');
     const buffer=await renderFoundryPreview();
     const data=buffer.getChannelData(0); let peak=0,energy=0;
     const pcm=new Int16Array(data.length);
@@ -91,7 +91,7 @@ try {
   // Profile the music in isolation at 4x CPU, avoiding 3D map cost in attribution.
   await page.route('**/music-bench?*',r=>r.fulfill({contentType:'text/html',body:'<button>Start music</button>'}));
   await page.goto(`${base}/music-bench?quality=2`);
-  await page.evaluate(async()=>{const {sound}=await import('/src/sound/engine.ts');window.musicProbe=sound;sound.install();sound.set({muted:false,music:true,musicVolume:0.8});sound.setMusic({moving:15,working:4,stationsBusy:5,rejected:4,bottleneck:{stage:'build',wip:8,ageMs:30000000}});});
+  await page.evaluate(async()=>{const {sound}=await import('/src/deck2d/sound/engine.ts');window.musicProbe=sound;sound.install();sound.set({muted:false,music:true,musicVolume:0.8});sound.setMusic({moving:15,working:4,stationsBusy:5,rejected:4,bottleneck:{stage:'build',wip:8,ageMs:30000000}});});
   await page.getByRole('button',{name:'Start music',exact:true}).click();
   await page.waitForTimeout(500);
   const cdp=await page.context().newCDPSession(page);
@@ -104,7 +104,7 @@ try {
   for(let i=0;i<profile.samples.length;i++) if(ids.has(profile.samples[i])) attributedUs+=profile.timeDeltas[i];
   const musicPercent=attributedUs/(profile.endTime-profile.startTime)*100;
   if(musicPercent>=1) throw Error(`Music scheduling exceeded 1%: ${musicPercent}`);
-  results.phoneMusicProfile={cpuThrottle:4,musicSelfTimePercent:musicPercent,seconds:(profile.endTime-profile.startTime)/1e6,decodedPCMBytes:0,state:await page.evaluate(async()=>{const {sound}=await import('/src/sound/engine.ts');return sound.musicState();})};
+  results.phoneMusicProfile={cpuThrottle:4,musicSelfTimePercent:musicPercent,seconds:(profile.endTime-profile.startTime)/1e6,decodedPCMBytes:0,state:await page.evaluate(async()=>{const {sound}=await import('/src/deck2d/sound/engine.ts');return sound.musicState();})};
   // Exercise real scheduler transitions as well as the pure score audition.
   const waitState=state=>page.waitForFunction(state=>window.musicProbe.musicState().state===state,state,{timeout:18000});
   await waitState('blocked');

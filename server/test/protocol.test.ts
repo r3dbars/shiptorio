@@ -124,3 +124,9 @@ describe("gauntlet contract", () => {
     expect(FactoryState.safeParse({ ...base, stations: [{ id: "x", kind: "lint", name: "x", wip: 0, caughtThisWeek: 0 }] }).success).toBe(false);
   });
 });
+
+test("Later intent correlation is optional for old clients and validates as a bounded UUID", () => {
+  expect(WebToServer.safeParse({type:"defer_move",moveId:"card"}).success).toBe(true);
+  expect(WebToServer.safeParse({type:"defer_move",moveId:"card",intentId:"11111111-1111-4111-8111-111111111111"}).success).toBe(true);
+  for(const intentId of ["not-a-uuid", "x".repeat(10000), 42]) expect(WebToServer.safeParse({type:"defer_move",moveId:"card",intentId}).success).toBe(false);
+});

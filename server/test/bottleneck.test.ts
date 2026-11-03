@@ -52,6 +52,7 @@ describe("real bottleneck engine", () => {
     expect(deriveBottleneck(factory(), { now }).bottleneck).toBeNull();
     expect(deriveBottleneck(factory([item({ state: "ore" })]), { now }).bottleneck?.stage).toBe("intake");
     expect(deriveBottleneck(factory([item()]), { now }).bottleneck?.stage).toBe("resources");
+    expect(deriveBottleneck(factory([item({ priority: "park" })]), { now }).bottleneck).toBeNull(); // set aside: nobody's pile
     const state = factory([item()]);
     state.power.push({ id: "codex", name: "ChatGPT", kind: "solar", level: 0, online: true });
     expect(deriveBottleneck(state, { now }).bottleneck?.stage).toBe("power");

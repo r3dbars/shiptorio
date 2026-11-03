@@ -1,0 +1,242 @@
+[
+ {
+  "i": 0,
+  "name": "soot",
+  "hex": "#0a0604"
+ },
+ {
+  "i": 1,
+  "name": "iron-0",
+  "hex": "#181211"
+ },
+ {
+  "i": 2,
+  "name": "iron-1",
+  "hex": "#291b17"
+ },
+ {
+  "i": 3,
+  "name": "iron-2",
+  "hex": "#432f29"
+ },
+ {
+  "i": 4,
+  "name": "iron-3",
+  "hex": "#6b5360"
+ },
+ {
+  "i": 5,
+  "name": "iron-4",
+  "hex": "#8f6f62"
+ },
+ {
+  "i": 6,
+  "name": "steel-0",
+  "hex": "#121e2b"
+ },
+ {
+  "i": 7,
+  "name": "steel-1",
+  "hex": "#273349"
+ },
+ {
+  "i": 8,
+  "name": "steel-2",
+  "hex": "#3d4d6a"
+ },
+ {
+  "i": 9,
+  "name": "steel-3",
+  "hex": "#7d8ea3"
+ },
+ {
+  "i": 10,
+  "name": "copper-0",
+  "hex": "#713e30"
+ },
+ {
+  "i": 11,
+  "name": "copper-1",
+  "hex": "#a04430"
+ },
+ {
+  "i": 12,
+  "name": "copper-2",
+  "hex": "#cd4f27"
+ },
+ {
+  "i": 13,
+  "name": "copper-3",
+  "hex": "#e28059"
+ },
+ {
+  "i": 14,
+  "name": "copper-4",
+  "hex": "#f2b48c"
+ },
+ {
+  "i": 15,
+  "name": "brass-0",
+  "hex": "#422616"
+ },
+ {
+  "i": 16,
+  "name": "brass-1",
+  "hex": "#6d370c"
+ },
+ {
+  "i": 17,
+  "name": "brass-2",
+  "hex": "#a36915"
+ },
+ {
+  "i": 18,
+  "name": "brass-3",
+  "hex": "#c98115"
+ },
+ {
+  "i": 19,
+  "name": "brass-4",
+  "hex": "#fdc727"
+ },
+ {
+  "i": 20,
+  "name": "brass-5",
+  "hex": "#fdec9a"
+ },
+ {
+  "i": 21,
+  "name": "plate-0",
+  "hex": "#351705"
+ },
+ {
+  "i": 22,
+  "name": "plate-1",
+  "hex": "#5a3521"
+ },
+ {
+  "i": 23,
+  "name": "plate-2",
+  "hex": "#834621"
+ },
+ {
+  "i": 24,
+  "name": "plate-3",
+  "hex": "#ae6237"
+ },
+ {
+  "i": 25,
+  "name": "plate-4",
+  "hex": "#b48254"
+ },
+ {
+  "i": 26,
+  "name": "sun-0",
+  "hex": "#652203"
+ },
+ {
+  "i": 27,
+  "name": "sun-1",
+  "hex": "#bc3c0b"
+ },
+ {
+  "i": 28,
+  "name": "sun-2",
+  "hex": "#e44e1b"
+ },
+ {
+  "i": 29,
+  "name": "sun-3",
+  "hex": "#f6601f"
+ },
+ {
+  "i": 30,
+  "name": "sun-4",
+  "hex": "#fc8717"
+ },
+ {
+  "i": 31,
+  "name": "sun-5",
+  "hex": "#fdad1e"
+ },
+ {
+  "i": 32,
+  "name": "sun-6",
+  "hex": "#f9c47a"
+ },
+ {
+  "i": 33,
+  "name": "haze-0",
+  "hex": "#623a3a"
+ },
+ {
+  "i": 34,
+  "name": "haze-1",
+  "hex": "#82525a"
+ },
+ {
+  "i": 35,
+  "name": "haze-2",
+  "hex": "#c0988e"
+ },
+ {
+  "i": 36,
+  "name": "haze-3",
+  "hex": "#eed3c5"
+ },
+ {
+  "i": 37,
+  "name": "white",
+  "hex": "#fdfaec"
+ },
+ {
+  "i": 38,
+  "name": "energy-0",
+  "hex": "#28545a"
+ },
+ {
+  "i": 39,
+  "name": "energy-1",
+  "hex": "#0ea0ac"
+ },
+ {
+  "i": 40,
+  "name": "energy-2",
+  "hex": "#41f3f7"
+ },
+ {
+  "i": 41,
+  "name": "energy-3",
+  "hex": "#bcf6f6"
+ },
+ {
+  "i": 42,
+  "name": "ok-0",
+  "hex": "#1c450f"
+ },
+ {
+  "i": 43,
+  "name": "ok-1",
+  "hex": "#1ab004"
+ },
+ {
+  "i": 44,
+  "name": "ok-2",
+  "hex": "#81f381"
+ },
+ {
+  "i": 45,
+  "name": "jam-0",
+  "hex": "#6a0d0d"
+ },
+ {
+  "i": 46,
+  "name": "jam-1",
+  "hex": "#c8231b"
+ },
+ {
+  "i": 47,
+  "name": "jam-2",
+  "hex": "#ff5b4a"
+ }
+]

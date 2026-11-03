@@ -55,7 +55,7 @@ test("signing out deletes the session row, so the same cookie stops working", as
   const login = await signedInCookie(env, "r3dbars", ["r3dbars/shiptorio"]);
   const cookie = `${login}; ${await preview()}`;
   expect((await get(env, "/api/repos", cookie)).status).toBe(200);
-  expect((await get(env, "/auth/logout", cookie)).status).toBe(302);
+  expect((await app.fetch(new Request("https://shiptorio.com/auth/logout", { headers: { cookie, "sec-fetch-site": "same-origin" } }), env as never)).status).toBe(302);
   expect((await get(env, "/api/repos", cookie)).status).toBe(401);
 });
 

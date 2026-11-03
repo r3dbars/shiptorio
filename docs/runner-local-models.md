@@ -39,7 +39,7 @@ LM Studio, MLX servers, vLLM.
    for the background helper, which copies `local-model.json` along). `bun run runner doctor`
    shows `local: <model> at <url> (geothermal power)` when it's ready.
 
-A geothermal plant ("Your computer") appears on the map next to your solar plants. If the
+A geothermal plant ("Your computer") appears on the deck next to your other power. If the
 model isn't loaded or the server is down, the runner simply doesn't offer it.
 
 ## How a job gets routed

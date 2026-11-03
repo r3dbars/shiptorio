@@ -1,4 +1,5 @@
-import { privateSocketTiming, measureSocket, timingResponse } from "./private-socket-timing";
+import { issueInbox } from "./issue-inbox";
+import { privateSocketTiming, measureSocket } from "./private-socket-timing";
 import { configuredAdmin } from "./admin-policy";
 import { auditAdmin } from "./admin-control";
 import { godRoutes } from "./admin-god";
@@ -29,14 +30,15 @@ import { testUserRoutes } from "./test-users";
 
 import { Hono, type Context, type Next } from "hono";
 import { ops } from "./ops";
-import { starterIssue } from "./starterIssue";
+import { plannerRoom, starterIssue } from "./starterIssue";
+import { askSpark, suggestFirstIssue } from "./first-issue";
 import { authCallback, login, logout, ownerSession, publicUrl, setupCallback, setupPage } from "./auth";
 import { Factory, type FactoryEnv } from "./factory";
 import { appJwt, gh, registerGithubCredential, repoInstallationId } from "./github";
 import { currentUser, MAX_PROGRESS_BYTES, readPrefs, readProgress, reposFor, writePrefs, writeProgress, type User } from "./accounts";
 
-import { isAllowed } from "./session";
 import { isJudgeAsset, isPublicDocs, previewAccess, publicRoute, secureTransport, selfhostSetupAccess } from "./access";
+import { deckFrontDoor } from "./redirect";
 import { joinWaitlist } from "./waitlist";
 import { judgePage, landingPage, publicFile } from "./landing";
 
@@ -51,12 +53,14 @@ import { ensureInboundToken, isOperatorSupport, intercomWebhookUrl, normalizeEma
 import type { GitHubPayload } from "./sources/github";
 import { pairToken, readRunnerToken, expiredRunnerGrant, runnerGrantExpiry, type RunnerIdentity } from "./runner-auth";
 import { EnqueueRunner, RunnerHarness, RunnerReceipt } from "./runner-job";
+import { AUTH_HARNESSES, type AuthHarness } from "./runner-health";
 import { installationToken } from "./github";
-import { CODE_RE, DEVICE_TTL, JOIN_RE, newJoinCode, normalizeCode, secretHash, htmlEscape, runnerPage } from "./device-pairing";
+import { CODE_RE, DEVICE_TTL, JOIN_RE, newJoinCode, normalizeCode, secretHash, runnerPage } from "./device-pairing";
+import { escapeHtml as htmlEscape } from "./encode";
 import { validProgress, emptyIsland, type Empire, type IslandSummary } from "@shiptorio/shared";
 import { browserCacheControl, browserMutationAllowed, securityHeaders } from "./security";
 
-import { ipSubject, rateLimit, requestBudget } from "./rate-limit";
+import { ipSubject, rateLimit, RateLimitError, requestBudget } from "./rate-limit";
 
 
 export { Factory };
@@ -73,6 +77,7 @@ export interface Env extends FactoryEnv, SignupEnv {
   GITHUB_CLIENT_ID: string;
   GITHUB_CLIENT_SECRET: string;
   SESSION_SECRET: string;
+  E2E_OWNER_KEY?: string; // staging only: a second owner-script key for scripts/e2e/real-loop.ts (auth.ts ownerSession)
   APP_PASSWORD?: string;
   SELFHOST_SETUP?: string; // opt-in owner-password bootstrap; disabled once GITHUB_APP_ID is set
   BUILD_SHA?: string;
@@ -102,9 +107,17 @@ const factory = async (env: Env, repo: string, repoId?: number) => {
 };
 
 
-const signedIn = (c: { env: Env; req: { header(name: string): string | undefined; url: string } }) => measureSocket(privateSocketTiming(c.env), "app_signed_in", () => currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url)));
+// Hono creates this context per request. Reuse only the URL-aware lookup here;
+// scoped resolveUser/repoAccess and the Durable Object retain independent checks.
+const signedIn = (c: Context<AppEnv>): Promise<User | null> => {
+  const existing = c.get("signedInLookup");
+  if (existing) return existing;
+  const fresh = measureSocket(privateSocketTiming(c.env), "app_signed_in", () => currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url)));
+  c.set("signedInLookup", fresh);
+  return fresh;
+};
 
-type AppEnv = { Bindings: Env; Variables: { user: User; runner: RunnerIdentity; artNonce: string; gateResponse: boolean; guest: Guest } };
+type AppEnv = { Bindings: Env; Variables: { user: User; runner: RunnerIdentity; artNonce: string; gateResponse: boolean; guest: Guest; signedInLookup?: Promise<User | null> } };
 const app = new Hono<AppEnv>();
 testUserRoutes(app);
 export const requireUser = async (c: Context<AppEnv>, next: Next) => {
@@ -124,10 +137,10 @@ app.use("*", async (c, next) => {
   return inTrace(trace, c.env, task => c.executionCtx.waitUntil(task), async () => {
     c.header("X-Request-ID", trace.requestId);
     const timing = privateSocketTiming(c.env);
-    const user = await measureSocket(timing, "app_trace_auth", () => currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url)));
+    const user = await measureSocket(timing, "app_trace_auth", () => signedIn(c));
     if (user) { trace.userId = accountIdentity(user.id); Sentry.setUser({ id: accountIdentity(user.id) }); }
     await next();
-    if (timing) c.res = timingResponse(c.res, timing);
+    if (timing) c.header("Server-Timing", timing.header(), { append: true });
     // A response can be replaced by auth, assets, or a websocket upgrade.
     c.header("X-Request-ID", trace.requestId);
     // A paired runner polls every 5s. Successful polls go to the console only, so they don't burn KV writes.
@@ -210,7 +223,8 @@ app.use("*", async (c, next) => {
     return response;
   }
   const publicDocs = isPublicDocs(c.req.path) && ["GET", "HEAD"].includes(c.req.method);
-  const denied = publicDocs ? null : signupMode(c.env) === "password" ? await previewAccess(c.req.raw, c.env) : await signupGate(c.req.raw, c.env);
+  // The public deck (access.ts isPublicDeck) runs the normal app path: deckFrontDoor's redirect, then the static asset.
+  const denied = publicDocs || open === "deck" ? null : signupMode(c.env) === "password" ? await previewAccess(c.req.raw, c.env) : await signupGate(c.req.raw, c.env);
   if (denied) { c.set("gateResponse", true); return denied; }
   await next();
   // Docs are public static content; authenticated build assets retain their private immutable policy.
@@ -218,11 +232,17 @@ app.use("*", async (c, next) => {
     ? "public, max-age=300" : browserCacheControl(c.req.raw, c.res.status));
 });
 
-app.onError((err, c) => {
+export const appError = (err: Error, c: Context) => {
+  // A GitHub cooldown is a wait, not a crash: say when to come back so runners and clients pace themselves.
+  if (err instanceof RateLimitError) {
+    c.header("Retry-After", String(Math.max(1, Math.ceil((err.retryAt - Date.now()) / 1000))));
+    return c.json({ error: "GitHub is busy. Try again shortly.", retryAt: err.retryAt, requestId: currentTrace()?.requestId }, 503);
+  }
   report(err, "http.exception");
   return c.json({ error: "Something broke. Please reload.", requestId: currentTrace()?.requestId }, 500);
 
-});
+};
+app.onError(appError);
 
 app.use("*", async (c, next) => {
   if (!browserMutationAllowed(c.req.raw, c.req.path)) return c.json({ error: "invalid origin" }, 403);
@@ -317,7 +337,7 @@ app.get("/auth/logout", async (c) => {
 });
 // The App's Setup URL: GitHub sends a player here after they install it. The install webhook has
 // already given them the repo, so send them back to the repo picker (new-user-path.md, snag 3).
-app.get("/github/installed", (c) => c.redirect("/?onboard=repo&source=live", 302));
+app.get("/github/installed", (c) => c.redirect(new URL(c.req.url).hostname === "shiptorio.dev" ? "/deck?source=live" : "/?onboard=repo&source=live", 302));
 app.post("/auth/owner-session", (c) => ownerSession(c.req.raw, c.env));
 app.get("/setup", (c) => setupPage(publicUrl(new URL(c.req.url), c.env), c.env));
 app.get("/setup/callback", (c) => setupCallback(new URL(c.req.url), c.env));
@@ -335,10 +355,10 @@ app.get("/api/me", async (c) => {
       await touchGuest(c.env, guest);
       c.header("Set-Cookie", await guestCookie(c.env, guest.id));
     }
-    return c.json({ login: null, guest: true, allowed: false, prefs: guest.save.prefs, installUrl: null });
+    return c.json({ login: null, guest: true, allowed: false, prefs: guest.save.prefs, installUrl: null, githubConfigured: !!(c.env.GITHUB_CLIENT_ID && c.env.GITHUB_CLIENT_SECRET) });
   }
   const view = await readAdminView(c.env,c.req.raw);
-  return c.json({ login: user.login, allowed: true, admin: configuredAdmin(c.env,user.login), viewingAs: view && {login:view.login,repo:view.repo,writable:view.writable}, prefs: await readPrefs(c.env, view ? {id:view.userId,login:view.login} : user), installUrl: await installUrl(c.env) });
+  return c.json({ login: user.login, allowed: true, githubConfigured: !!(c.env.GITHUB_CLIENT_ID && c.env.GITHUB_CLIENT_SECRET), admin: configuredAdmin(c.env,user.login), viewingAs: view && {login:view.login,repo:view.repo,writable:view.writable}, prefs: await readPrefs(c.env, view ? {id:view.userId,login:view.login} : user), installUrl: await installUrl(c.env) });
 });
 
 // Settings that follow the player across browsers (intro seen, guide progress, achievements).
@@ -526,13 +546,9 @@ app.on(["GET", "POST"], "/connect/support", async (c) => {
 const device = (env: Env, code: string) => env.FACTORY.get(env.FACTORY.idFromName(`device:${code.toLowerCase()}`));
 async function deviceRepoAccess(env: Env, user: import("./authorization").AccessUser, repo: string): Promise<number | null> {
   if (!REPO_RE.test(repo) || repo.split("/").some(p => p === "." || p === "..")) return null;
-  const installation = await repoAccess(env, user, repo);
-  if (!installation) return null;
-  try {
-    const token = await installationToken(env, installation);
-    const permission = await gh<{ permission: string; user: { id: number } }>(`/repos/${repo}/collaborators/${encodeURIComponent(user.login)}/permission`, token);
-    return permission.user?.id === user.id && ["write", "maintain", "admin"].includes(permission.permission) ? installation : null;
-  } catch { return null; }
+  // The shared authority check already verifies this exact user's current GitHub role.
+  // Do not repeat the call or turn a transient provider failure into a permission denial.
+  return repoAccess(env, user, repo, "write", true);
 }
 app.post("/api/runner-device/start", async c => {
   const bucket = await secretHash(c.req.header("cf-connecting-ip") ?? "local");
@@ -585,8 +601,8 @@ app.on(["GET", "POST"], "/runner/pair", async c => {
   if (!CODE_RE.test(code)) return c.html(runnerPage("Connect your machine", "<p>Start the installer on your computer to get a fresh pairing code. <a href='/docs/runner'>Runner instructions</a>.</p>"), 400, headers);
   if (c.req.method === "POST") {
     if (c.req.header("origin") !== new URL(c.req.url).origin) return c.text("invalid origin", 403);
-    const raw = await c.req.text();
-    if (raw.length > 1024) return c.text("too large", 413);
+    const raw = await boundedBody(c.req.raw, 1024);
+    if (raw === null) return c.text("too large", 413);
     const repo = String(new URLSearchParams(raw).get("repo") ?? "").trim().toLowerCase();
     const installation = await deviceRepoAccess(c.env, user, repo);
     if (!installation) {
@@ -615,7 +631,7 @@ app.on(["GET", "POST"], "/runner/pair", async c => {
   const install = await installUrl(c.env).catch(() => null);
   const options = reachable.map(r => `<option value="${htmlEscape(r)}"></option>`).join("");
   const hint = reachable.length ? `<p><small>Pick one of your ${reachable.length} connected repos or type another.${install ? ` Not listed? <a href="${htmlEscape(install)}" target="_blank" rel="noopener">Install the app on it</a>.` : ""}</small></p>` : install ? `<p><small>No repos connected yet. <a href="${htmlEscape(install)}" target="_blank" rel="noopener">Install the app on a repo</a> first.</small></p>` : "";
-  return c.html(runnerPage("Connect your machine", `<p>Check that your terminal shows this exact code:</p><h2><code>${code}</code></h2><p>Only approve a code you just requested on your own computer.</p><form method="post"><label>Repository (owner/name)<input name="repo" required list="pair-repos" autocomplete="off" pattern="[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+" value="${htmlEscape(wanted)}" placeholder="you/your-repo"></label><datalist id="pair-repos">${options}</datalist>${hint}<button>Connect this repo</button></form><p>This replaces the previous machine for that repo. Pair again to add another repo to this machine. Your Claude and Codex sign-ins stay on your computer.</p>`), 200, headers);
+  return c.html(runnerPage("Connect your machine", `<p>Check that your terminal shows this exact code:</p><h2><code>${code}</code></h2><p>Only approve a code you just requested on your own computer.</p><form method="post"><label>Repository (owner/name)<input name="repo" required list="pair-repos" autocomplete="off" pattern="[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+" value="${htmlEscape(wanted)}" placeholder="you/your-repo"></label><datalist id="pair-repos">${options}</datalist>${hint}<button>Connect this repo</button></form><p>This replaces the previous machine for that repo. Pair again to add another repo to this machine. Your Codex and Muse Code sign-ins stay on your computer.</p>`), 200, headers);
 });
 app.get("/api/repos/:owner/:repo/runner/status", async c => {
   const user = await resolveUser(c.req.raw, c.env);
@@ -676,17 +692,90 @@ app.on(["GET", "POST"], "/connect/:kind", async (c) => {
   return c.html(connectPage({ kind, repo, connected: true, webhookUrl, saved: true }));
 });
 
+// Same repository authorization as the factory; fetching the inbox never starts a job.
+app.post("/api/repos/:owner/:repo/review/retry", async c => {
+  if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({error:"invalid origin"},403);
+  const input = await c.req.json().catch(() => null);
+  if (!input || typeof input.itemId !== "string" || typeof input.head !== "string" || !/^[a-f0-9]{40}$/.test(input.head)) return c.json({error:"invalid review target"},400);
+  const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
+  const f = await factory(c.env, repo);
+  const queued = await f.retryAIReview(input.itemId,input.head);
+  return queued ? c.json({queued:true},202) : c.json({error:"The PR changed or is not ready for review again."},409);
+});
+app.post("/api/repos/:owner/:repo/issues/:number/start", async c => {
+  if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
+  const number = Number(c.req.param("number"));
+  if (!Number.isSafeInteger(number) || number < 1) return c.json({ error: "invalid issue" }, 400);
+  const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
+  const f = await factory(c.env, repo);
+  await f.ensure(repo, await installationFor(c.env, repo));
+  let result: Awaited<ReturnType<typeof f.startInboxIssue>>;
+  try { result = await f.startInboxIssue(number, c.get("user").login); }
+  catch (error) {
+    // A spent daily cap or run quota is a normal end of the day, not a crash: the inbox shows a 409's own words.
+    const message = error instanceof Error ? error.message : "";
+    if (/^Planning paused\. Shippy is done thinking for today|^Daily run quota reached\./.test(message)) return c.json({ error: message }, 409);
+    // So is a second Plan tap, or an issue closed on GitHub while its card was up: plain words, not "Something broke".
+    const denial = planDenial(message);
+    if (denial) return c.json({ error: denial }, 409);
+    throw error;
+  }
+  return 'waitingFor' in result ? c.json({ error: `Finish PR #${result.waitingFor} before starting another issue.` }, 409) : c.json(result, 202);
+});
+// Errors cross the Factory RPC as plain Errors, so these match on the message.
+function planDenial(message: string): string | null {
+  if (/^GitHub issue is no longer open|^GitHub GET \/repos\/[^ ]+\/issues\/\d+ failed \((?:404|410)\)/.test(message)) return "That issue was closed on GitHub.";
+  if (/^This issue already has an active runner job|^Item is not available to build/.test(message)) return "Shippy is already on this one.";
+  if (/^Issue changed while reading feedback/.test(message)) return "That issue just changed on GitHub. Try again.";
+  if (/^Planning paused after \d+ failed tries/.test(message)) return "Shippy couldn't plan this one a few times in a row. He'll try again later.";
+  if (/^GitHub factory is archived or paused/.test(message)) return "This repo is archived or paused on GitHub.";
+  if (/^Issue author isn't a collaborator|^Issue feedback exceeds the bounded planning window/.test(message)) return message;
+  return null;
+}
+app.get("/api/repos/:owner/:repo/issues", async c => {
+  const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
+  const page = Number(c.req.query("page") ?? 1);
+  if (!Number.isInteger(page) || page < 1 || page > 1000) return c.json({ error: "invalid page" }, 400);
+  const installationId = await installationFor(c.env, repo);
+  if (!installationId) return c.json({ error: "GitHub App is not connected to this repository" }, 403);
+  const token = await installationToken(c.env, installationId, { repositories: [c.req.param("repo")], permissions: { issues: "read", metadata: "read" } });
+  // Shippy's first pick: fixed rules always answer; Meta Muse Spark may choose among the safe ones (cached per repo).
+  const suggest = (rows: Parameters<typeof suggestFirstIssue>[1]) => suggestFirstIssue(repo, rows, {
+    plannerRoom: () => plannerRoom(c.env, repo),
+    ask: askSpark({ ...c.env, budgetRepo: repo, budgetAccount: () => budgetAccount(c.env.DB, repo) }),
+    cache: c.env.CACHE,
+  });
+  const onLine = new Set(await (await factory(c.env, repo)).lineIssues().catch(() => [] as number[]));
+  return c.json(await issueInbox(repo, token, page, undefined, suggest, onLine));
+});
+
 app.get("/api/repos", async (c) => {
-  const user = await resolveUser(c.req.raw, c.env);
-  if (!user) return c.json({ error: "login required" }, 401);
-  const repos = { results: await reposFor(c.env, user) };
-  // Preserve the legacy database fields while serving the browser's repo-card contract.
-  // Issue counts are not available from this query; omit them rather than inventing zero.
-  return c.json({ repos: (await Promise.all(repos.results.map(async repo => await repoAccess(c.env, user, repo.full_name) ? repo : null))).filter((repo): repo is NonNullable<typeof repo> => !!repo).map(repo => ({
-    ...repo,
-    fullName: repo.full_name,
-    blurb: repo.default_branch ? `Default branch: ${repo.default_branch}` : "Connected GitHub repository",
-  })) });
+  try {
+    const user = await resolveUser(c.req.raw, c.env);
+    if (!user) return c.json({ error: "login required" }, 401);
+    const repos = { results: await reposFor(c.env, user) };
+    const pageParam = c.req.query("page");
+    const page = Number(pageParam ?? 1), size = 4;
+    if (!Number.isSafeInteger(page) || page < 1) return c.json({ error: "invalid page" }, 400);
+    const candidates = pageParam ? repos.results.slice((page - 1) * size, page * size) : repos.results;
+    const visible = [];
+    // The GitHub client permits only eight queued calls per credential. Revalidate in small
+    // batches, and let the deck page its results instead of flooding that shared queue.
+    for (let i = 0; i < candidates.length; i += size) {
+      const batch = await Promise.all(candidates.slice(i, i + size).map(async repo => await repoAccess(c.env, user, repo.full_name, "read", true) ? repo : null));
+      visible.push(...batch.filter((repo): repo is NonNullable<typeof repo> => !!repo));
+    }
+    return c.json({ repos: visible.map(repo => ({
+      ...repo,
+      fullName: repo.full_name,
+      blurb: repo.default_branch ? `Default branch: ${repo.default_branch}` : "Connected GitHub repository",
+    })), ...(pageParam ? { nextPage: page * size < repos.results.length ? page + 1 : null } : {}) });
+  } catch (error) {
+    if (error instanceof RateLimitError) throw error;
+    log("warn", "github.repositories_unavailable", { error });
+    c.header("Retry-After", "5");
+    return c.json({ error: "Could not load your repositories. Try again shortly.", code: "repository_discovery_unavailable" }, 503);
+  }
 });
 
 // The empire overview: one small summary per repo this player can reach (shared/src/empire.ts).
@@ -762,7 +851,7 @@ app.post("/api/runner/:owner/:repo/claim", async (c) => {
   const body = await c.req.text();
   if (body.length > 1024) return c.json({ error: "too large" }, 413);
   const raw = JSON.parse(body);
-  if (!Array.isArray(raw.harnesses) || raw.harnesses.length > 3 || raw.harnesses.some((h: unknown) => !RunnerHarness.safeParse(h).success)) return c.json({ error: "invalid harnesses" }, 400);
+  if (!Array.isArray(raw.harnesses) || raw.harnesses.length > 4 || raw.harnesses.some((h: unknown) => !RunnerHarness.safeParse(h).success)) return c.json({ error: "invalid harnesses" }, 400);
   return c.json({ job: await (await factory(c.env, identity.repo)).claimRunner(identity.pairId, raw.harnesses) });
 
 });
@@ -772,11 +861,11 @@ app.post("/api/runner/:owner/:repo/heartbeat", async c => {
   const body = await c.req.text();
   if (body.length > 1024) return c.json({ error: "too large" }, 413);
   let raw: { harnesses?: unknown; authRequired?: unknown }; try { raw = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
-  if (!Array.isArray(raw?.harnesses) || raw.harnesses.length > 3 || raw.harnesses.some((h: unknown) => !RunnerHarness.safeParse(h).success)) return c.json({ error: "invalid harnesses" }, 400);
+  if (!Array.isArray(raw?.harnesses) || raw.harnesses.length > 4 || raw.harnesses.some((h: unknown) => !RunnerHarness.safeParse(h).success)) return c.json({ error: "invalid harnesses" }, 400);
   const f = await factory(c.env, identity.repo);
   if (!await f.isRunnerPaired(identity.pairId)) return c.json({ error: "Runner pairing revoked", code: "runner_pair_revoked" }, 401);
-  if (raw.authRequired !== undefined && (!Array.isArray(raw.authRequired) || raw.authRequired.length > 2 || raw.authRequired.some((h: unknown) => h !== "codex" && h !== "claude_code"))) return c.json({ error: "invalid auth status" }, 400);
-  await f.heartbeatRunner(identity.pairId, raw.harnesses, raw.authRequired as ("codex" | "claude_code")[] | undefined); return c.json({ ok: true });
+  if (raw.authRequired !== undefined && (!Array.isArray(raw.authRequired) || raw.authRequired.length > AUTH_HARNESSES.length || raw.authRequired.some((h: unknown) => !AUTH_HARNESSES.includes(h as AuthHarness)))) return c.json({ error: "invalid auth status" }, 400);
+  await f.heartbeatRunner(identity.pairId, raw.harnesses, raw.authRequired as AuthHarness[] | undefined); return c.json({ ok: true });
 });
 
 app.post("/api/runner/:owner/:repo/renew", async (c) => {
@@ -971,7 +1060,7 @@ app.post("/webhooks/support/:owner/:repo/:token", async (c) => {
   try { payload = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
   const message = normalizeEmail(payload);
   if (!message) return c.json({ ok: true, ignored: true, reason: "no sender or text" });
-  return queueSupport(c, repo, message, body);
+  return queueSupport(c, repo, message);
 });
 
 // Intercom: /webhooks/intercom/<owner>/<repo>, signed with that map's client secret.
@@ -985,10 +1074,10 @@ app.post("/webhooks/intercom/:owner/:repo", async (c) => {
   try { payload = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
   const message = normalizeIntercom(payload);
   if (!message) return c.json({ ok: true, ignored: true });
-  return queueSupport(c, repo, message, body);
+  return queueSupport(c, repo, message);
 });
 
-async function queueSupport(c: Context<AppEnv>, repo: string, message: SupportMessage, body: string) {
+async function queueSupport(c: Context<AppEnv>, repo: string, message: SupportMessage) {
   if (!await admit(c.env, `webhook:support:${repo}`, 120, 60000, "Support webhook flood")) return c.json({ error: "webhook throttled" }, 429);
   const digest = `${repo}:` + [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${repo}:${message.channel}:${message.messageId}`)))].map((b) => b.toString(16).padStart(2, "0")).join("");
   const now = Date.now();
@@ -1001,7 +1090,7 @@ async function queueSupport(c: Context<AppEnv>, repo: string, message: SupportMe
   return c.json({ ok: true, queued: true }, 202);
 }
 
-adminRoutes(app, factory);
+adminRoutes(app);
 godRoutes(app, factory);
 tapsRoutes(app);
 
@@ -1011,6 +1100,9 @@ app.all("/connect/*", (c) => c.notFound());
 
 // Everything else is the web app.
 app.all("*", async (c) => {
+  // The staging product starts inside the pixel deck (redirect.ts deckFrontDoor); the preview gate has already run.
+  const deck = ["GET", "HEAD"].includes(c.req.method) ? deckFrontDoor(new URL(c.req.url)) : null;
+  if (deck) return c.redirect(deck, 302);
   const response = await c.env.ASSETS.fetch(c.req.raw);
   // Only trusted static art contains inline executable scripts. Never add nonces
   // to user-provided text or relax the application/API policy to allow them.

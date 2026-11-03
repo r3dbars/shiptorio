@@ -1,3 +1,4 @@
+import { privateSocketTiming, measureSocket } from "./private-socket-timing";
 import { rememberInstallationOwner } from "./installation-owner";
 import { gh } from "./github";
 import { signupAllowed } from "./signup";
@@ -8,6 +9,7 @@ import { testIdentityAllowed } from "./test-users-policy";
 
 import { authorizationRevoked, isAllowed, makeSessionCookie, readSessionDetails } from "./session";
 import { parseProgress, validProgress, type Progress } from "@shiptorio/shared";
+import { sha256Hex as sha256 } from "./encode";
 
 
 export interface AccountsEnv {
@@ -27,10 +29,6 @@ const isLocal = (url: URL) => url.hostname === "localhost" || url.hostname === "
 const MAX_AGE_MS = 14 * 86400_000;
 
 const b64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
-async function sha256(text: string): Promise<string> {
-  const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
-  return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
 
 /** Local dev (DEV_LOGIN on localhost) skips GitHub and sees every installed repo. */
 function devUser(env: AccountsEnv, url: URL | null): User | null {
@@ -62,11 +60,37 @@ export async function currentUser(env: AccountsEnv, cookie: string | null, url: 
   const session = await readSessionDetails(env.SESSION_SECRET, cookie, now);
   // Cookies from before accounts existed carry no session id; they sign in again (one click).
   if (!session?.ref || !env.DB) return null;
-  const row = await env.DB.prepare("SELECT u.id, u.login FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id_hash = ? AND s.user_id = ? AND s.expires_at > ?")
-    .bind(await sha256(session.ref.sid), session.ref.uid, now)
-    .first<{ id: number; login: string }>();
-  if (await authorizationRevoked(env.DB, session.login, session.issuedAt)) return null;
-  if (!row || !allowPending && !await signupAllowed(env,row.login)) return null;
+  const sessionHash = await sha256(session.ref.sid);
+  const statement = env.DB.prepare("SELECT u.id, u.login FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id_hash = ? AND s.user_id = ? AND s.expires_at > ?")
+    .bind(sessionHash, session.ref.uid, now);
+  if (typeof env.DB.batch === "function") {
+    // D1 reads the live session and both policies in one query, without retaining authority.
+    // Revocation follows the signed claim; admission follows the current database login.
+    const row = await measureSocket(privateSocketTiming(env), "session_d1", () => env.DB.prepare(`SELECT u.id, u.login, r.revoked_at AS policy_revoked_at, a.enabled AS policy_enabled
+      FROM sessions s JOIN users u ON u.id = s.user_id
+      LEFT JOIN github_authorization_revocations r ON r.login = ?
+      LEFT JOIN signup_allowlist a ON a.login = lower(u.login)
+      WHERE s.id_hash = ? AND s.user_id = ? AND s.expires_at > ?`)
+      .bind(session.login.toLowerCase(), sessionHash, session.ref!.uid, now)
+      .first<{ id: number; login: string; policy_revoked_at: number | null; policy_enabled: number | null }>());
+    if (!row || row.policy_revoked_at != null && session.issuedAt <= row.policy_revoked_at) return null;
+    if (!allowPending && !(row.policy_enabled != null ? row.policy_enabled === 1 : env.ALLOWED_LOGINS !== "*" && isAllowed(env.ALLOWED_LOGINS || "", row.login))) return null;
+    if (row.id < 0 && !testIdentityAllowed(env, row.id, row.login)) return null;
+    return { id: row.id, login: row.login };
+  }
+  // Lightweight adapters without the D1 batch capability keep the original independent reads.
+  const row = await statement.first<{ id: number; login: string }>();
+  // Both mutable policies are read afresh for this request. They are independent
+  // after the session lookup; overlap their D1 roundtrips without caching authority.
+  const [revoked, admitted] = await Promise.allSettled([
+    authorizationRevoked(env.DB, session.login, session.issuedAt),
+    row && !allowPending ? signupAllowed(env, row.login) : Promise.resolve(true),
+  ]);
+  // Preserve the original precedence: revocation denies even if admission failed.
+  if (revoked.status === "rejected") throw revoked.reason;
+  if (revoked.value || !row) return null;
+  if (admitted.status === "rejected") throw admitted.reason;
+  if (!admitted.value) return null;
   if (row.id < 0 && !testIdentityAllowed(env, row.id, row.login)) return null;
 
   return { id: row.id, login: row.login };
@@ -117,12 +141,6 @@ export async function saveReach(env: AccountsEnv, userId: number, reach: Reach):
     ]),
   ]);
   for (const i of reach.installations) await rememberInstallationOwner(db, i.id, {id: i.accountId, login: i.account, type: i.accountType});
-}
-
-export async function canSeeRepo(env: AccountsEnv, user: User, repo: string): Promise<boolean> {
-  if (user.dev) return true;
-  const row = await env.DB.prepare("SELECT 1 AS ok FROM user_repos WHERE user_id = ? AND repo = ?").bind(user.id, repo.toLowerCase()).first<{ ok: number }>();
-  return !!row;
 }
 
 export interface RepoRow { full_name: string; installation_id: number; default_branch: string | null }

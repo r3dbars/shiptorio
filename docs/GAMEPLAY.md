@@ -1,5 +1,9 @@
 # Gameplay: how Shiptorio plays
 
+> **Historical, 3D map era (marked 2026-10-29).** This page describes the old map, shaft or React UI, not the 2D deck
+> that is the product now. It stays here because code comments point at it. Where it disagrees with
+> [VISION.md](VISION.md), VISION wins.
+
 > Status: **design** (2026-10-27, thread "Design the core gameplay mechanics"). Nothing here is built yet unless
 > marked. Playbook (full write-up on real shaft renders): https://claude.ai/artifact/QDvFEZePgx5bzBv7TBHZz8 ·
 > A/B picks: https://claude.ai/artifact/HTDQR39URzPniTeugbZGkR. Justin's picks go in the table at the bottom.

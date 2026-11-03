@@ -113,7 +113,7 @@ const { starterLine } = await import("../src/engine");
 
 function factoryFixture(env: Record<string, unknown>) {
   const state = FactoryState.parse({ repo: "example/shop", baseBranch: "main", districts: DISTRICTS.map((name, i) => ({ name, x: i * 6, y: 0, w: 4, h: 4, files: 3 })), ...starterLine(), items: [], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 });
-  const data = new Map<string, unknown>([["githubRepoId", 503], ["state", structuredClone(state)], ["meta", { repo: state.repo, installationId: 1 }]]);
+  const data = new Map<string, unknown>([["githubAccessCheckedAt", Date.now()], ["githubRepoId", 503], ["state", structuredClone(state)], ["meta", { repo: state.repo, installationId: 1 }]]);
   const kv = new Map<string, string>();
   let alarm: number | null = null;
   const events: { type: string; text?: string }[] = [];
@@ -194,17 +194,20 @@ it("Factory: route traffic alone never creates a measured growth experiment", as
   expect(f.saved().machines.some(m => m.id === "measure-1")).toBe(false);
 });
 
-it("Factory: keys set as Worker secrets plug the mines in when the map opens, and stay unplugged once disconnected", async () => {
+it("Factory: keys set as Worker secrets plug the mines in on the next alarm, and stay unplugged once disconnected", async () => {
   const f = factoryFixture({ SENTRY_CLIENT_SECRET: "fake-sentry-client-secret", FAKE_POSTHOG: "1" });
   await f.factory.ensure("example/shop", 1);
+  await f.factory.alarm();
   expect(f.saved().machines.filter((m) => m.id.startsWith("ore-")).map((m) => m.id).sort()).toEqual(["ore-issues", "ore-posthog", "ore-sentry"]);
   expect(f.kv.get("link:sentry")).toBeUndefined();
   await f.factory.disconnectMine("sentry");
   await f.factory.ensure("example/shop", 1);
+  await f.factory.alarm();
   expect(f.saved().machines.some((m) => m.id === "ore-sentry")).toBe(false);
   // A mine already linked to another repo isn't stolen.
   const other = factoryFixture({ SENTRY_CLIENT_SECRET: "fake-sentry-client-secret", SENTRY_REPO: "example/other", SENTRY_REPO_ID: "999" });
   await other.factory.ensure("example/shop", 1);
+  await other.factory.alarm();
   expect(other.saved().machines.some((m) => m.id === "ore-sentry")).toBe(false);
 });
 

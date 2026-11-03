@@ -2,10 +2,9 @@
 // right to launch on its own. Clean = every gauntlet station passed with zero rework. One rework or failure
 // in the lane revokes its permit and resets the streak. Pure rules; the Factory DO stores the book.
 
-import type { Autonomy, DistrictTrust, Item, Move } from "@shiptorio/shared";
+import { isProsePath, type Autonomy, type DistrictTrust, type Item, type Move } from "@shiptorio/shared";
 import { countClean, ladderOf, nextStep, type Ladder } from "./levels";
 
-const DOCS_FILE = /\.(md|mdx|txt)$|(^|\/)docs\//i;
 
 export interface LaneRecord {
   lane: string;
@@ -32,9 +31,9 @@ export const emptyBook = (): PermitBook => ({ lanes: {}, launches: 0, autoLaunch
  */
 export function laneOf(files: string[]): string | null {
   if (!files.length) return null;
-  if (files.every((f) => DOCS_FILE.test(f))) return "docs";
+  if (files.every(isProsePath)) return "docs";
   const tops = new Set(files.map((f) => (f.includes("/") ? f.split("/")[0] : "")));
-  if (tops.size !== 1 || tops.has("")) return null;
+  if (tops.size !== 1 || tops.has("") || tops.has("docs")) return null;
   return [...tops][0];
 }
 
@@ -98,7 +97,7 @@ export function permitMove(r: LaneRecord, now = Date.now()): Move {
   return {
     id: crypto.randomUUID(),
     title: `${r.streak} ${name} PRs shipped clean, zero rework. Let ${name} ship on their own?`,
-    why: `Every one passed CI, the verify bay and AI review the first time. With a permit, ${name} PRs that pass every station launch without waiting on you.`,
+    why: `Every one passed Checks and Review the first time. With a permit, ${name} PRs that pass every station launch without waiting on you.`,
     stage: "pad",
     kind: "automate",
     focus: "gate-1",
@@ -117,13 +116,16 @@ export function permitMove(r: LaneRecord, now = Date.now()): Move {
   };
 }
 
-/** What the HUD shows: per-lane trust and permits, and how much of the shipping runs itself. Levels only with the "autonomy" flag. */
-export function autonomyView(book: PermitBook, levels = false, now = Date.now()): Autonomy {
+/**
+ * What the HUD shows: per-lane trust and permits, and how much of the shipping runs itself. Levels only with the
+ * "autonomy" flag, permits only with the "permits" flag: while they're parked a permit stored earlier never shows.
+ */
+export function autonomyView(book: PermitBook, { levels = false, permits = false } = {}, now = Date.now()): Autonomy {
   const lanes = Object.values(book.lanes);
   const step = levels ? nextStep(book, now) : null;
   return {
     level: levels ? ladderOf(book, now).level : "advisor",
-    districts: lanes.map((r) => ({ district: r.lane, score: Math.min(1, r.streak / needFor(r.lane)), risk: riskOf(r.lane), permit: r.permit })),
+    districts: lanes.map((r) => ({ district: r.lane, score: Math.min(1, r.streak / needFor(r.lane)), risk: riskOf(r.lane), permit: permits && r.permit })),
     next: step && { level: step.level, have: step.have, need: step.need, label: step.label },
     ranAlone: book.autoLaunches,
     automated: book.launches ? book.autoLaunches / book.launches : 0,

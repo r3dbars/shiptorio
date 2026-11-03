@@ -1,0 +1,20 @@
+[
+  {
+    "view": "desktop-1280",
+    "violations": [],
+    "errors": [],
+    "keyboard": "Tab Later -> Tab main -> Enter -> Review -> Escape -> next issue -> Escape -> canvas"
+  },
+  {
+    "view": "phone-390",
+    "violations": [],
+    "errors": [],
+    "keyboard": "Tab Later -> Tab main -> Enter -> Review -> Escape -> next issue -> Escape -> canvas"
+  },
+  {
+    "view": "phone-390-reduced",
+    "violations": [],
+    "errors": [],
+    "keyboard": "Tab Later -> Tab main -> Enter -> Review -> Escape -> next issue -> Escape -> canvas"
+  }
+]

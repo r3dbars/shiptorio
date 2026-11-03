@@ -10,6 +10,7 @@
  */
 import { signalId, type BrainSignal, type Evidence, type FactoryState, type SignalCollector } from "@shiptorio/shared";
 import { gh } from "../github";
+import { plural } from "../encode";
 
 export interface PullLite {
   number: number; title: string; html_url: string; draft?: boolean;
@@ -37,7 +38,6 @@ const ms = (iso?: string | null) => (iso ? Date.parse(iso) : NaN);
 const clamp = (n: number) => Math.round(Math.max(0, Math.min(1, n)) * 100) / 100;
 const hours = (n: number) => Math.round(n / HOUR * 10) / 10;
 const ago = (n: number) => n < HOUR ? `${Math.max(1, Math.round(n / 60_000))} min` : n < 2 * DAY ? `${Math.round(n / HOUR)} h` : `${Math.round(n / DAY)} days`;
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const median = (xs: number[]) => { if (!xs.length) return 0; const s = [...xs].sort((a, b) => a - b); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 const isBot = (u?: { login: string; type?: string } | null) => u?.type === "Bot" || !!u?.login.endsWith("[bot]");
 const label = (n: number, title: string) => `#${n} ${title}`.slice(0, 120);
@@ -131,7 +131,8 @@ export function repoSignals(snap: RepoSnapshot, options: RepoSignalOptions = {})
   const issueEvidence = (list: IssueLite[]): Evidence[] => [{ label: "Open issues", url: `https://github.com/${repo}/issues` }, ...list.slice(0, 4).map(i => ({ label: label(i.number, i.title), url: i.html_url }))];
   if (net >= REPO_LIMITS.backlogNet) push("backlog_growing", {
     title: `The issue backlog grew by ${net} this week: ${opened} opened, ${closed} closed.`,
-    severity: 0.25 + net / 20 + (net > netBefore ? 0.1 : 0),
+    // More asks coming in than going out is worth a look, but it never blocks a ship the way red CI does.
+    severity: Math.min(0.6, 0.25 + net / 20 + (net > netBefore ? 0.1 : 0)),
     metric: { value: net, unit: "issues", baseline: netBefore },
     evidence: issueEvidence(open.slice(-4).reverse()),
   });
