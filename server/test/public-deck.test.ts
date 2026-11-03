@@ -58,7 +58,8 @@ test("a self-hosted install keeps its landing page and gates the deck", async ()
   expect((await visit("/deck/art/sky.webp", undefined, "factory.example")).status).toBe(200);
 });
 
-test("the production deploy turns every Meta model call off (shiptorio.com is tutorial + waitlist only)", async () => {
+test("the production deploy calls Spark live under a $10/day site-wide spend cap", async () => {
   const { scripts } = await Bun.file(new URL("../package.json", import.meta.url)).json();
-  expect(scripts.deploy).toContain("wrangler deploy --name shiptorio --var SPARK_DISABLED:1 ");
+  expect(scripts.deploy).toContain("wrangler deploy --name shiptorio --var SPARK_SITE_DAILY_USD:10 ");
+  expect(scripts.deploy).not.toContain("SPARK_DISABLED");
 });
