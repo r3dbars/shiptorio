@@ -137,7 +137,7 @@ const readLabel = (key: string) => key === "read_issue" ? "issue" : key.startsWi
 
 // ---------- the planner: read around, then assign the job ----------
 
-export const PLAN_TURNS = 8;
+export const PLAN_TURNS = 5; // ~12s a turn: 8 turns ran past the 120s planning deadline on every live plan
 export const PlannerTool = z.enum([...READ_TOOLS, "assign_job", "ask_player"]);
 const plannerReply = z.object({
   tool: PlannerTool, reason: z.string().max(1000).min(1),
