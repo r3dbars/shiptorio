@@ -38,7 +38,7 @@
     "SPARK_BASE_URL": "https://api.meta.ai/v1",
     "SPARK_MODEL": "muse-spark-1.3"
     // shiptorio.com calls Muse Spark live for signed-in factories. The public tutorial is scripted and never calls it.
-    // The production deploy script (server/package.json "deploy") caps all Spark spend at $10/day site-wide
+    // The production deploy script (server/package.json "deploy") caps all Spark spend at $20/day site-wide
     // (SPARK_SITE_DAILY_USD) on top of $5/day per account; past the cap Shippy waits and fixed rules keep the deck working.
   },
   "triggers": { "crons": ["17 4 * * *"] },
