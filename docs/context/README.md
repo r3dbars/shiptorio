@@ -58,6 +58,6 @@ When you learn or decide something that will matter tomorrow, add it to the righ
 ## Evidence and history
 
 - Before/after screenshots live in project files (`shiptorio/evidence/<repo path>`), not in git. `.gitignore` blocks new ones.
-- [archive/](archive/README.md): retired docs (3D map era, old plans, one-off proofs). Not how things work today.
+- Retired docs (3D map era, old plans, one-off proofs) were removed from the repo; they are in git history only.
 
 No secrets in this folder, ever. Resource ids (D1, KV) aren't secrets.

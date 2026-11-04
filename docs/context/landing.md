@@ -13,5 +13,5 @@ Current source: `server/src/{redirect,access,landing}.ts`, checked 2026-10-30.
 - `/judge` serves the deck story. The old React game, shaft and island map are deleted.
 
 The retained landing assets and waitlist endpoint are compatibility surfaces, not another game.
-[Earlier landing implementation and capture notes](archive/landing-before-cleanup.md) are historical.
+Earlier landing implementation and capture notes were removed (git history only).
 No new tour work: freeze Oct 31, record Nov 1, submit Nov 4 at noon CT.
