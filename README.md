@@ -93,6 +93,28 @@ Every setting is listed, empty, in [`.env.example`](.env.example). Server values
 `bun run dev` creates for you: `META_API_KEY` turns on Muse Spark, the GitHub App keys turn on real repos.
 None of them are needed for the simulated factory.
 
+### For judges: watch Muse Spark think, locally
+
+The brain lab is a local page that sends real calls to Meta Muse Spark 1.3 (and Muse Wonder 1.0, side by side)
+with your own Meta API key. It needs nothing else: no GitHub App, no Cloudflare, no real repo.
+
+```sh
+git clone https://github.com/r3dbars/shiptorio.git
+cd shiptorio
+bun install
+cp server/.dev.vars.example server/.dev.vars   # then set META_API_KEY= in server/.dev.vars
+bun run brain:lab
+```
+
+Open [localhost:5199](http://localhost:5199). Pick a scenario, edit its signals, and ask the model which
+bottleneck to fix; **Run the eval** grades every case. `META_API_KEY=... bun run brain:lab` works too. Calls are
+billed to your key.
+
+**The live site is a private preview during judging.** GitHub sign-in on [shiptorio.dev](https://shiptorio.dev)
+is limited to an allow list (`ALLOWED_LOGINS`), so you can't load your own repo there. Use the repo instead: the
+brain lab above, the simulated factory (`bun run dev:web`, then
+[localhost:5173/deck.html?source=sim](http://localhost:5173/deck.html?source=sim)), or the full local Worker.
+
 To host it: [self-host on Cloudflare](docs/site/self-host.md) with your own GitHub App and Meta API key.
 Everything else is in the [docs](docs/site/index.md). Contributing: [AGENTS.md](AGENTS.md).
 
@@ -161,8 +183,9 @@ The git history is unedited, so you can check this:
   local dev), on top of GitHub's two-line "Initial commit" README.
 - **During the event:** `bc04a40d` at 11:32 AM CT reshaped the repo into `shared/`, `server/` and `web/` and
   replaced most of that scaffold. Everything since is event work.
-- **Planning notes:** [`docs/context/archive`](docs/context/archive) keeps earlier notes as history, including
-  a design canvas dated Oct 25 (`feedback-factory/`). None of it describes how Shiptorio works today.
+- **Planning notes:** earlier notes, including a design canvas dated Oct 25, used to live in
+  `docs/context/archive/`. They were removed from the repo on Nov 3 because none of it describes how Shiptorio
+  works today; they are still in the git history.
 
 ## License
 

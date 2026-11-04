@@ -1,7 +1,7 @@
 # AGENTS.md
 
-Read this before you change anything. It's short on purpose: what's true **today** (2026-10-30). History lives in
-[`docs/context/archive/`](docs/context/archive/README.md); don't follow rules you find there.
+Read this before you change anything. It's short on purpose: what's true **today** (2026-10-30). Older notes were
+removed from the repo and live only in git history; don't follow rules you find there.
 
 ## Read first
 
@@ -142,6 +142,5 @@ and names.
 
 `docs/PRODUCT.md`, `docs/LOOP.md`, `docs/ART.md`, `docs/GAMEPLAY*.md`, `docs/ATTENTION.md`, `docs/SIMPLE-UI.md`
 and the HTML art prototypes in `docs/` describe the 3D map era (each carries a banner). The day-one plan,
-architecture, build mode and lane briefs moved to `docs/context/archive/`. Read them for background only; this
-file and the docs above win.
+architecture, build mode and lane briefs were removed (see git history). This file and the docs above win.
 The public docs site is `docs/site/*.md` (served at /docs); keep it true when you change player-facing behavior.

@@ -5,8 +5,7 @@
 >
 > **Living doc:** whenever Justin states a new high-level goal, fold it in here (one dated line in the Goal log,
 > plus the sections it changes) and push. If this page and another doc disagree on *direction*, this page wins.
-> The pre-deck version (3D map, vertical shaft, island, build mode) is archived at
-> [context/archive/vision-before-deck.md](context/archive/vision-before-deck.md).
+> The pre-deck version (3D map, vertical shaft, island, build mode) was removed from the repo; it is in git history.
 >
 > Last updated: 2026-10-30.
 
@@ -128,7 +127,7 @@ New high-level goals from Justin go here, dated, then get folded into the sectio
   for everyone; both that shaft and the earlier island implementation were deleted on Oct 29.
 - 2026-10-27: Build mode (advanced, optional): players build and redesign the factory themselves, Factorio /
   RollerCoaster Tycoon style, on the Black Iron art. Every piece is a real pipeline part, so the layout is the
-  pipeline config, and the gauntlet can be added to but never bypassed. Spec (archived): `docs/context/archive/build-mode.md`.
+  pipeline config, and the gauntlet can be added to but never bypassed. Spec: removed, in git history.
 - 2026-10-27: Simple out of the box, complexity over months (principle 11). Justin approved the walkthrough cuts:
   no XP or levels (trust is the only progress bar), two counters (waiting on you, shipped), Next Move and the
   check-in deck become one queue, research / mines / tools hidden until needed, no first-run Check in / Build fork.
