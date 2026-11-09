@@ -9,13 +9,13 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p test"
   },
   "dependencies": {
-    "@sentry/cloudflare": "^11.9.0",
+    "@sentry/cloudflare": "^11.11.0",
     "@shiptorio/shared": "workspace:*",
-    "hono": "^4.9.0",
+    "hono": "^4.13.16",
     "zod": "^4.0.0"
   },
   "devDependencies": {
-    "@types/node": "^26.6.5",
-    "wrangler": "^4.153.0"
+    "@types/node": "^26.6.6",
+    "wrangler": "^4.158.0"
   }
 }

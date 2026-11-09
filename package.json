@@ -43,11 +43,11 @@
     "playtest:bot": "node playtest/bot/run.mjs"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20261026.1",
-    "@playwright/test": "^1.64.1",
+    "@cloudflare/workers-types": "^5.20261106.1",
+    "@playwright/test": "^1.65.0",
     "@types/bun": "^1.4.4",
     "@types/ws": "^8.18.2",
     "typescript": "^5.9.0",
-    "ws": "^8.22.0"
+    "ws": "^8.22.1"
   }
 }

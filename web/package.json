@@ -10,7 +10,7 @@
     "a11y": "node test/a11y/audit.mjs"
   },
   "dependencies": {
-    "@sentry/browser": "^11.9.0",
+    "@sentry/browser": "^11.11.0",
     "@shiptorio/shared": "workspace:*"
   },
   "devDependencies": {
