@@ -45,6 +45,29 @@ it("turns a Sentry issue into one chunk that grows on repeats and closes on reso
   expect(normalizeSentry({ data: {} }, "issue")).toEqual([]);
 });
 
+it("preserves terminal Sentry issue statuses on assignment and update", () => {
+  for (const action of ["assigned", "updated"]) {
+    expect(normalizeSentry({ action, data: { issue: { id: "4501", status: "resolved" } } })[0].action).toBe("resolved");
+    for (const status of ["ignored", "archived"]) {
+      expect(normalizeSentry({ action, data: { issue: { id: "4501", status } } })[0].action).toBe("close");
+    }
+  }
+});
+
+it("preserves explicit Sentry lifecycle actions without status", () => {
+  expect(normalizeSentry({ action: "resolved", data: { issue: { id: "4501" } } })[0].action).toBe("resolved");
+  for (const action of ["ignored", "archived"]) {
+    expect(normalizeSentry({ action, data: { issue: { id: "4501" } } })[0].action).toBe("close");
+  }
+});
+
+it("upserts unresolved and reopened Sentry issues", () => {
+  for (const action of ["assigned", "updated", "reopened"]) {
+    expect(normalizeSentry({ action, data: { issue: { id: "4501", status: "unresolved" } } })[0].action).toBe("upsert");
+  }
+  expect(normalizeSentry({ action: "reopened", data: { issue: { id: "4501" } } })[0].action).toBe("upsert");
+});
+
 it("finds the topmost in-app frame", () => {
   expect(topInAppPath({ exception: { values: [{ stacktrace: { frames: [{ filename: "./cart/a.ts", in_app: true }, { filename: "node_modules/x.js", in_app: false }] } }] } })).toBe("cart/a.ts");
 });
